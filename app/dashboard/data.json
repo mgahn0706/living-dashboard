@@ -1,0 +1,77 @@
+[
+  {
+    "id": "goals_trend",
+    "title": "Avg Goals per Game (Season)",
+    "color": "#2563eb",
+    "data": [
+      { "name": "00-01", "value": 2.61 },
+      { "name": "01-02", "value": 2.63 },
+      { "name": "02-03", "value": 2.63 },
+      { "name": "03-04", "value": 2.66 },
+      { "name": "04-05", "value": 2.57 },
+      { "name": "05-06", "value": 2.48 },
+      { "name": "06-07", "value": 2.45 },
+      { "name": "07-08", "value": 2.64 },
+      { "name": "08-09", "value": 2.48 },
+      { "name": "09-10", "value": 2.77 },
+      { "name": "10-11", "value": 2.8 },
+      { "name": "11-12", "value": 2.81 },
+      { "name": "12-13", "value": 2.8 },
+      { "name": "13-14", "value": 2.77 },
+      { "name": "14-15", "value": 2.57 },
+      { "name": "15-16", "value": 2.7 },
+      { "name": "16-17", "value": 2.8 },
+      { "name": "17-18", "value": 2.68 }
+    ]
+  },
+  {
+    "id": "home_dominance",
+    "title": "Home Win % Trend",
+    "color": "#16a34a",
+    "data": [
+      { "name": "00-01", "value": 48.4 },
+      { "name": "02-03", "value": 49.2 },
+      { "name": "04-05", "value": 45.5 },
+      { "name": "06-07", "value": 47.9 },
+      { "name": "08-09", "value": 45.5 },
+      { "name": "10-11", "value": 47.1 },
+      { "name": "12-13", "value": 43.7 },
+      { "name": "14-15", "value": 45.3 },
+      { "name": "16-17", "value": 49.2 },
+      { "name": "17-18", "value": 45.5 }
+    ]
+  },
+  {
+    "id": "top_teams_1718",
+    "title": "Top Scorers (2017-18)",
+    "color": "#dc2626",
+    "data": [
+      { "name": "Man City", "value": 106 },
+      { "name": "Liverpool", "value": 84 },
+      { "name": "Arsenal", "value": 74 },
+      { "name": "Spurs", "value": 74 },
+      { "name": "Man Utd", "value": 68 },
+      { "name": "Chelsea", "value": 62 },
+      { "name": "Leicester", "value": 56 },
+      { "name": "West Ham", "value": 48 },
+      { "name": "Palace", "value": 45 },
+      { "name": "Bournemouth", "value": 45 }
+    ]
+  },
+  {
+    "id": "mw_excitement",
+    "title": "Avg Goals by Match Week",
+    "color": "#d97706",
+    "data": [
+      { "name": "W1", "value": 2.74 },
+      { "name": "W5", "value": 2.73 },
+      { "name": "W10", "value": 2.58 },
+      { "name": "W15", "value": 2.77 },
+      { "name": "W20", "value": 2.88 },
+      { "name": "W25", "value": 2.7 },
+      { "name": "W30", "value": 2.69 },
+      { "name": "W35", "value": 2.56 },
+      { "name": "W38", "value": 3.12 }
+    ]
+  }
+]
