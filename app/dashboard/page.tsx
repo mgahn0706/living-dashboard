@@ -2,17 +2,12 @@
 
 import React from "react";
 import { AppSidebar } from "@/components/app-sidebar";
-import { SiteHeader } from "@/components/site-header";
+import { SiteHeader } from "@/components/SiteHeader";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { Button } from "@/components/ui/button";
-import { PlusCircle, LayoutDashboard } from "lucide-react";
 
 import { ChartSeries, ChartType } from "@/types/types";
 import dashboardData from "./data.json";
-import {
-  InteractionProvider,
-  useInteraction,
-} from "@/context/InteractionContext";
+import { InteractionProvider } from "@/context/InteractionContext";
 import { DashboardEngine } from "@/components/DashboardEngine";
 
 // --- Data Setup ---

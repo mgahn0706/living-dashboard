@@ -1,4 +1,4 @@
-import { IconBrandGithub, IconSoccerField } from "@tabler/icons-react";
+import { IconBrandGithub, IconDashboard } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -11,9 +11,9 @@ export function SiteHeader() {
         {/* Left: Brand / Title */}
         <div className="flex items-center gap-2">
           <div className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <IconSoccerField className="size-4" />
+            <IconDashboard className="size-4" />
           </div>
-          <h1 className="text-base font-medium">Match Dashboard</h1>
+          <h1 className="text-base font-medium">Living Dashboard</h1>
         </div>
 
         {/* Right: Actions & Sidebar Trigger */}
@@ -25,7 +25,7 @@ export function SiteHeader() {
             className="hidden sm:flex gap-2 text-muted-foreground"
           >
             <a
-              href="https://github.com/shadcn-ui/ui/tree/main/apps/v4/app/(examples)/dashboard"
+              href="https://github.com/mgahn0706/living-dashboard"
               rel="noopener noreferrer"
               target="_blank"
             >
