@@ -28,5 +28,12 @@ export async function POST(req: Request) {
       reason:
         "Users focusing on sales data might want to see profit correlation",
     },
+    {
+      id: "r3",
+      title: "Change table to bar chart",
+      type: "MODIFY_VIEW",
+      payload: { chartType: "bar" },
+      reason: "Bar charts are easier to read for trend analysis",
+    },
   ]);
 }

@@ -3,8 +3,8 @@ import { Card, CardHeader, CardTitle, CardDescription } from "../ui/card";
 import ChartRenderer from "./ChartRenderer";
 
 const SIZE_CLASS: Record<View["size"], string> = {
-  lg: "basis-full",
-  md: "basis-[48%]",
+  lg: "basis-[99%]",
+  md: "basis-[49%]",
   sm: "basis-[30%]",
 };
 

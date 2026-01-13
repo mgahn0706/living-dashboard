@@ -19,24 +19,44 @@ const initialViews: View[] = [
     size: "md",
     priority: 1,
   },
+  {
+    id: "v2",
+    x: "time",
+    y: "sales",
+    chartType: "bar",
+    size: "lg",
+    priority: 2,
+  },
+  {
+    id: "v3",
+    x: "time",
+    y: "sales",
+    chartType: "table",
+    size: "md",
+    priority: 2,
+  },
 ];
 
 function AppContent() {
   const [views, setViews] = useState<View[]>(initialViews);
   const { focusScore } = useFocus();
-  const recs = useRecommendation({ views, focusScore });
+  const { recommendations, removeRecommendations } = useRecommendation({
+    views,
+    focusScore,
+  });
 
   const apply = (r: any) => {
     setViews((prev) =>
       prev.map((v) => (v.id === r.payload.id ? { ...v, ...r.payload } : v))
     );
+    removeRecommendations(r);
   };
 
   return (
     <>
       <SidebarInset className="bg-muted/10">
         {" "}
-        {/* Subtle grey background for contrast */}
+        {/* Subtle grey backgrou dnd for contrast */}
         <SiteHeader />
         <div className="flex flex-1 flex-col overflow-hidden relative">
           {/* Main Content Area */}
@@ -47,7 +67,7 @@ function AppContent() {
           </div>
         </div>
       </SidebarInset>
-      <RecommendationSidebar recs={recs} onAccept={apply} />
+      <RecommendationSidebar recs={recommendations} onAccept={apply} />
     </>
   );
 }

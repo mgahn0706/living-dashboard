@@ -1,9 +1,8 @@
-// components/recommendation/RecommendationItem.tsx
 "use client";
 
 import { Recommendation } from "@/types/dashboard";
 import { Button } from "@/components/ui/button";
-import { IconCheck } from "@tabler/icons-react";
+import { IconCheck, IconSparkles } from "@tabler/icons-react";
 
 export default function RecommendationItem({
   recommendation,
@@ -14,28 +13,34 @@ export default function RecommendationItem({
 }) {
   return (
     <div className="flex w-full gap-2">
-      {/* AI bubble */}
-      <div className="flex max-w-[90%] flex-col gap-2 rounded-2xl bg-muted/50 px-4 py-3 text-sm shadow-sm">
-        <div className="font-medium">{recommendation.title}</div>
+      {/* Icon */}
+      <div className="pt-1 text-primary/60">
+        <IconSparkles className="size-4" />
+      </div>
 
-        <div className="text-xs text-muted-foreground leading-relaxed">
+      {/* Card */}
+      <div className="flex w-full flex-col gap-2 rounded-lg border bg-background px-3 py-2.5 text-sm">
+        {/* Title */}
+        <div className="font-medium leading-tight">{recommendation.title}</div>
+
+        {/* Reason */}
+        <div className="text-xs leading-relaxed text-muted-foreground">
           {recommendation.reason}
         </div>
 
-        {/* Meta */}
-        <div className="text-[10px] text-muted-foreground/60">
-          Type: {recommendation.type}
-        </div>
+        {/* Footer */}
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+            {recommendation.type}
+          </span>
 
-        {/* Action */}
-        <div className="pt-1">
           <Button
             size="sm"
-            variant="secondary"
-            className="h-7 gap-1 text-xs"
+            variant="ghost"
+            className="h-7 px-2 text-xs cursor-pointer"
             onClick={() => onAccept(recommendation)}
           >
-            <IconCheck className="size-3" />
+            <IconCheck className="mr-1 size-3" />
             Apply
           </Button>
         </div>
