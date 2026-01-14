@@ -18,18 +18,11 @@ import {
 } from "@tabler/icons-react";
 
 import RecommendationItem from "./RecommendationItem";
-import { VoiceUtterance, UseVoiceInputReturn } from "@/hooks/useVoiceInput";
+import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
 
 import { useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-
-/* =======================================================
-   Constants
-======================================================= */
-
-const TRANSCRIPT_HEIGHT = "h-16";
-const BOTTOM_STACK_PADDING = "pb-[280px]";
 
 /* =======================================================
    Types
@@ -54,20 +47,16 @@ function LiveTranscript({
   partial: string;
   placeholder: string;
 }) {
+  if (!isListening) return null;
+
   return (
-    <div
-      className={cn(
-        "border-t bg-background/95 backdrop-blur px-3 py-2",
-        TRANSCRIPT_HEIGHT,
-        !isListening && "hidden"
-      )}
-    >
+    <div className="border-t bg-background/95 backdrop-blur px-3 py-2">
       <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
         <div className="size-2 rounded-full bg-emerald-500 animate-pulse" />
         <span>Listening…</span>
       </div>
 
-      <div className="mt-1 text-xs leading-relaxed truncate">
+      <div className="mt-1 text-xs truncate">
         {partial || placeholder}
         <span className="ml-1 inline-block w-1.5 animate-pulse bg-muted-foreground/60">
           &nbsp;
@@ -86,12 +75,12 @@ function ConversationTimeline({ messages }: { messages: UnifiedMessage[] }) {
   );
 
   return (
-    <div className="flex-1 border-t bg-background/95 backdrop-blur px-3 py-2 overflow-hidden">
+    <div className="border-t bg-background/95 backdrop-blur px-3 py-2 max-h-40 overflow-y-auto">
       <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
         Conversation
       </div>
 
-      <div className="flex flex-col gap-1 overflow-y-auto h-full pr-1">
+      <div className="flex flex-col gap-1">
         {sorted.length === 0 && (
           <div className="text-[10px] text-muted-foreground/60">
             No conversation yet
@@ -105,26 +94,18 @@ function ConversationTimeline({ messages }: { messages: UnifiedMessage[] }) {
             <div
               key={m.id}
               className={cn(
-                "rounded-md border px-2 py-1 text-[11px]",
-                "border-l-4",
+                "rounded-md border px-2 py-1 text-[11px] border-l-4",
                 isVoice
                   ? "bg-emerald-500/5 border-emerald-500/20 border-l-emerald-500"
                   : "bg-violet-500/5 border-violet-500/20 border-l-violet-500"
               )}
             >
               <div className="mb-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                <span
-                  className={cn(
-                    "inline-flex items-center justify-center rounded-sm",
-                    isVoice ? "text-emerald-600" : "text-violet-600"
-                  )}
-                >
-                  {isVoice ? (
-                    <IconMicrophone className="size-3" />
-                  ) : (
-                    <IconMessageDots className="size-3" />
-                  )}
-                </span>
+                {isVoice ? (
+                  <IconMicrophone className="size-3 text-emerald-600" />
+                ) : (
+                  <IconMessageDots className="size-3 text-violet-600" />
+                )}
 
                 {m.lang && (
                   <>
@@ -151,7 +132,7 @@ function ConversationTimeline({ messages }: { messages: UnifiedMessage[] }) {
   );
 }
 
-/* ===================== Chat Input Bar ===================== */
+/* ===================== Chat Input ===================== */
 
 function ChatInputBar({
   isListening,
@@ -212,18 +193,22 @@ function ChatInputBar({
 
 export default function RecommendationSidebar({
   recs,
-  onAccept,
   voice,
   isGenerating = false,
   textChats = [],
+  onAccept,
   onSendTextChat,
+  onHover,
+  onLeave,
 }: {
   recs: Recommendation[];
-  onAccept: (r: Recommendation) => void;
   voice: UseVoiceInputReturn;
   isGenerating?: boolean;
   textChats?: string[];
+  onAccept: (r: Recommendation) => void;
   onSendTextChat?: (text: string) => void;
+  onHover: (r: Recommendation) => void;
+  onLeave: () => void;
 }) {
   const [language, setLanguage] = useState<"en-US" | "ko-KR" | "ja-JP">(
     "en-US"
@@ -259,7 +244,7 @@ export default function RecommendationSidebar({
 
   return (
     <Sidebar side="right" className="border-l h-screen flex flex-col">
-      {/* ================= Header ================= */}
+      {/* Header */}
       <SidebarHeader className="border-b p-3.5">
         <SidebarMenu>
           <SidebarMenuItem>
@@ -278,10 +263,7 @@ export default function RecommendationSidebar({
                 value={language}
                 disabled={isListening}
                 onChange={(e) => setLanguage(e.target.value as any)}
-                className={cn(
-                  "text-xs border rounded px-2 py-1 bg-background",
-                  isListening && "opacity-50 pointer-events-none"
-                )}
+                className="text-xs border rounded px-2 py-1 bg-background"
               >
                 <option value="en-US">EN</option>
                 <option value="ko-KR">KO</option>
@@ -292,9 +274,9 @@ export default function RecommendationSidebar({
         </SidebarMenu>
       </SidebarHeader>
 
-      {/* ================= MAIN CONTENT ================= */}
+      {/* Recommendations Scroll */}
       <SidebarContent className="flex-1 overflow-hidden">
-        <ScrollArea className={cn("h-full p-4", BOTTOM_STACK_PADDING)}>
+        <ScrollArea className="h-full p-4">
           <div className="flex flex-col gap-4">
             {isGenerating && !isListening && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -307,10 +289,18 @@ export default function RecommendationSidebar({
               {recs.map((r) => (
                 <motion.div
                   key={r.id}
+                  onMouseEnter={() => onHover(r)}
+                  onMouseLeave={onLeave}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                 >
-                  <RecommendationItem recommendation={r} onAccept={onAccept} />
+                  <RecommendationItem
+                    recommendation={r}
+                    onAccept={() => {
+                      onAccept(r);
+                      onLeave();
+                    }}
+                  />
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -318,27 +308,29 @@ export default function RecommendationSidebar({
         </ScrollArea>
       </SidebarContent>
 
-      {/* ================= FIXED BOTTOM STACK ================= */}
-      <LiveTranscript
-        isListening={isListening}
-        partial={partial}
-        placeholder={placeholder}
-      />
-
-      <ConversationTimeline messages={unifiedMessages} />
-
-      <SidebarFooter className="border-t p-3 space-y-2">
-        <ChatInputBar
+      {/* Bottom Stack */}
+      <div className="sticky bottom-0 z-10">
+        <LiveTranscript
           isListening={isListening}
-          onStart={start}
-          onStop={stop}
-          onSend={(text) => onSendTextChat?.(text)}
+          partial={partial}
+          placeholder={placeholder}
         />
 
-        <div className="text-[10px] text-muted-foreground/60">
-          Voice and text both influence recommendations.
-        </div>
-      </SidebarFooter>
+        <ConversationTimeline messages={unifiedMessages} />
+
+        <SidebarFooter className="border-t p-3 space-y-2 bg-background/95 backdrop-blur">
+          <ChatInputBar
+            isListening={isListening}
+            onStart={start}
+            onStop={stop}
+            onSend={(text) => onSendTextChat?.(text)}
+          />
+
+          <div className="text-[10px] text-muted-foreground/60">
+            Voice and text both influence recommendations.
+          </div>
+        </SidebarFooter>
+      </div>
     </Sidebar>
   );
 }

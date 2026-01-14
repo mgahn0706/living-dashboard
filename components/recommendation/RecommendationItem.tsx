@@ -38,7 +38,9 @@ export default function RecommendationItem({
             size="sm"
             variant="ghost"
             className="h-7 px-2 text-xs cursor-pointer"
-            onClick={() => onAccept(recommendation)}
+            onClick={() => {
+              onAccept(recommendation);
+            }}
           >
             <IconCheck className="mr-1 size-3" />
             Apply

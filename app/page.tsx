@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { useRecommendation } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
@@ -55,10 +55,10 @@ function AppContent() {
   >([]);
   const [textChats, setTextChats] = useState<string[]>([]);
 
-  /* 🔹 focus signal */
-  const { focusScore } = useFocus();
+  /** 🔥 핵심: hover된 recommendation */
+  const [hoveredRec, setHoveredRec] = useState<Recommendation | null>(null);
 
-  /* 🔹 voice conversation (single source of truth) */
+  const { focusScore } = useFocus();
   const voice = useVoiceInput({ lang: "en-US" });
 
   const { recommendations, acceptRecommendation, isLoading } =
@@ -70,89 +70,129 @@ function AppContent() {
       enabled: voice.isListening,
     });
 
+  /* ================= PREVIEW DERIVATION ================= */
+
+  const previewMap = useMemo(() => {
+    if (!hoveredRec) return {};
+
+    const r = hoveredRec;
+    const map: Record<string, any> = {};
+
+    switch (r.type) {
+      case "MODIFY_CONTENT":
+      case "RESIZE": {
+        if (!r.payload?.id) break;
+        map[r.payload.id] = {
+          type: "MODIFY",
+          view: { ...views.find((v) => v.id === r.payload.id)!, ...r.payload },
+        };
+        break;
+      }
+
+      case "REMOVE_CONTENT": {
+        if (!r.payload?.id) break;
+        map[r.payload.id] = { type: "REMOVE" };
+        break;
+      }
+    }
+
+    return map;
+  }, [hoveredRec, views]);
+
+  const addPreview = useMemo(() => {
+    if (!hoveredRec) return null;
+    if (hoveredRec.type !== "NEW_CONTENT") return null;
+
+    return {
+      id: hoveredRec.payload.id ?? "preview_add",
+      x: hoveredRec.payload.x ?? [],
+      y: hoveredRec.payload.y ?? [],
+      chartType: hoveredRec.payload.chartType ?? "BAR",
+      size: hoveredRec.payload.size ?? "md",
+      priority: views.length + 1,
+    } satisfies View;
+  }, [hoveredRec, views.length]);
+
+  /* ================= APPLY (unchanged) ================= */
+
   const apply = (r: Recommendation) => {
     setAcceptedRecommendationIds((prev) => [...prev, r.id]);
 
     setViews((prev) => {
       switch (r.type) {
-        /* ================= MODIFY / RESIZE ================= */
         case "MODIFY_CONTENT":
-        case "RESIZE": {
-          if (!r.payload?.id) return prev;
-
+        case "RESIZE":
           return prev.map((v) =>
-            v.id === r.payload.id
-              ? {
-                  ...v,
-                  ...r.payload,
-                }
-              : v
+            v.id === r.payload.id ? { ...v, ...r.payload } : v
           );
-        }
 
-        /* ================= REORDER ================= */
         case "REORDER": {
-          if (!r.payload?.id || r.payload.priority == null) return prev;
+          if (!r.payload?.id) return prev;
 
           return [...prev]
-            .map((v) =>
-              v.id === r.payload.id
-                ? { ...v, priority: r.payload.priority! }
-                : v
-            )
-            .sort((a, b) => a.priority - b.priority);
+            .map((v, i) => {
+              if (v.id !== r.payload.id) return v;
+
+              return {
+                ...v,
+                priority: r.payload.priority ?? v.priority ?? i,
+              };
+            })
+            .sort(
+              (a, b) =>
+                (a.priority ?? Number.MAX_SAFE_INTEGER) -
+                (b.priority ?? Number.MAX_SAFE_INTEGER)
+            );
         }
 
-        /* ================= NEW CONTENT ================= */
-        case "NEW_CONTENT": {
-          const newView: View = {
-            id: r.payload.id ?? `v_${Date.now()}`,
-            x: r.payload.x ?? [],
-            y: r.payload.y ?? [],
-            chartType: r.payload.chartType ?? "BAR",
-            size: r.payload.size ?? "md",
-            priority: prev.length + 1,
-          };
+        case "NEW_CONTENT":
+          return [
+            ...prev,
+            {
+              id: r.payload.id ?? `v_${Date.now()}`,
+              x: r.payload.x ?? [],
+              y: r.payload.y ?? [],
+              chartType: r.payload.chartType ?? "BAR",
+              size: r.payload.size ?? "md",
+              priority: prev.length + 1,
+            },
+          ];
 
-          return [...prev, newView];
-        }
-
-        /* ================= REMOVE ================= */
-        case "REMOVE_CONTENT": {
-          if (!r.payload?.id) return prev;
+        case "REMOVE_CONTENT":
           return prev.filter((v) => v.id !== r.payload.id);
-        }
 
         default:
           return prev;
       }
     });
 
-    /* ✅ mark accepted (important for dedup / fade-out) */
     acceptRecommendation(r);
   };
 
   return (
     <>
-      {/* ================= MAIN DASHBOARD ================= */}
+      {/* ================= DASHBOARD ================= */}
       <SidebarInset className="bg-muted/10">
         <SiteHeader />
-
-        <div className="flex flex-1 flex-col overflow-hidden relative">
-          <div className="flex-1 overflow-y-auto">
-            <div className="max-w-[1600px] mx-auto p-6 md:p-8">
-              <DashboardView views={views} />
-            </div>
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-[1600px] mx-auto p-6 md:p-8">
+            <DashboardView
+              views={views}
+              previewMap={previewMap}
+              addPreview={addPreview}
+            />
           </div>
         </div>
       </SidebarInset>
 
-      {/* ================= RECOMMENDATION SIDEBAR ================= */}
+      {/* ================= SIDEBAR ================= */}
       <RecommendationSidebar
         recs={recommendations.filter(
           (r) => !acceptedRecommendationIds.includes(r.id)
         )}
         onAccept={apply}
+        onHover={setHoveredRec}
+        onLeave={() => setHoveredRec(null)}
         voice={voice}
         textChats={textChats}
         isGenerating={isLoading}

@@ -48,12 +48,16 @@ export async function POST(req: Request) {
 
   const conversation: VoiceUtterance[] = body.conversation ?? [];
   const views: View[] = body.views ?? [];
+  const textChats: string[] = body.textChats ?? [];
 
   const recentFive = [...conversation]
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, 5);
 
-  const textBlob = recentFive.map((u) => u.text.toLowerCase()).join(" ");
+  const textBlob =
+    recentFive.map((u) => u.text.toLowerCase()).join(" ") +
+    " " +
+    textChats.join(" ").toLowerCase();
 
   const recommendations: Recommendation[] = [];
 
