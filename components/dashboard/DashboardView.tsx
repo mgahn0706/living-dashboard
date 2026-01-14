@@ -34,7 +34,6 @@ export default function DashboardView({
         />
       ))}
 
-      {/* ADD preview는 새로운 카드로 ghost 표시 */}
       {addPreview && (
         <ViewCard
           view={addPreview}
