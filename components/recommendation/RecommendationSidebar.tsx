@@ -14,6 +14,7 @@ import {
   IconSparkles,
   IconMicrophone,
   IconPlayerStop,
+  IconMessageDots,
 } from "@tabler/icons-react";
 
 import RecommendationItem from "./RecommendationItem";
@@ -28,8 +29,19 @@ import { cn } from "@/lib/utils";
 ======================================================= */
 
 const TRANSCRIPT_HEIGHT = "h-16";
-const CONVERSATION_HEIGHT = "h-32";
-const BOTTOM_STACK_PADDING = "pb-[220px]";
+const BOTTOM_STACK_PADDING = "pb-[280px]";
+
+/* =======================================================
+   Types
+======================================================= */
+
+type UnifiedMessage = {
+  id: string;
+  source: "voice" | "text";
+  text: string;
+  timestamp: number;
+  lang?: string;
+};
 
 /* ===================== Live Transcript ===================== */
 
@@ -51,7 +63,7 @@ function LiveTranscript({
       )}
     >
       <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-        <div className="size-2 rounded-full bg-red-500 animate-pulse" />
+        <div className="size-2 rounded-full bg-emerald-500 animate-pulse" />
         <span>Listening…</span>
       </div>
 
@@ -65,25 +77,16 @@ function LiveTranscript({
   );
 }
 
-/* ===================== Conversation Panel ===================== */
+/* ===================== Conversation Timeline ===================== */
 
-function ConversationPanel({
-  conversation,
-}: {
-  conversation: VoiceUtterance[];
-}) {
+function ConversationTimeline({ messages }: { messages: UnifiedMessage[] }) {
   const sorted = useMemo(
-    () => [...conversation].sort((a, b) => b.timestamp - a.timestamp),
-    [conversation]
+    () => [...messages].sort((a, b) => a.timestamp - b.timestamp),
+    [messages]
   );
 
   return (
-    <div
-      className={cn(
-        "border-t bg-background/95 backdrop-blur px-3 py-2",
-        CONVERSATION_HEIGHT
-      )}
-    >
+    <div className="flex-1 border-t bg-background/95 backdrop-blur px-3 py-2 overflow-hidden">
       <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
         Conversation
       </div>
@@ -95,85 +98,113 @@ function ConversationPanel({
           </div>
         )}
 
-        {sorted.map((u) => (
-          <div
-            key={u.id}
-            className="rounded-md border bg-background/50 px-2 py-1 text-[11px]"
-          >
-            <div className="mb-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-              <span>{u.lang}</span>
-              <span>·</span>
-              <span>
-                {new Date(u.timestamp).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-            </div>
+        {sorted.map((m) => {
+          const isVoice = m.source === "voice";
 
-            <div className="leading-snug">{u.text}</div>
-          </div>
-        ))}
+          return (
+            <div
+              key={m.id}
+              className={cn(
+                "rounded-md border px-2 py-1 text-[11px]",
+                "border-l-4",
+                isVoice
+                  ? "bg-emerald-500/5 border-emerald-500/20 border-l-emerald-500"
+                  : "bg-violet-500/5 border-violet-500/20 border-l-violet-500"
+              )}
+            >
+              <div className="mb-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                <span
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-sm",
+                    isVoice ? "text-emerald-600" : "text-violet-600"
+                  )}
+                >
+                  {isVoice ? (
+                    <IconMicrophone className="size-3" />
+                  ) : (
+                    <IconMessageDots className="size-3" />
+                  )}
+                </span>
+
+                {m.lang && (
+                  <>
+                    <span>·</span>
+                    <span>{m.lang}</span>
+                  </>
+                )}
+
+                <span>·</span>
+                <span>
+                  {new Date(m.timestamp).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
+
+              <div className="leading-snug">{m.text}</div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-/* ===================== Voice Footer ===================== */
+/* ===================== Chat Input Bar ===================== */
 
-function VoiceFooterBar({
+function ChatInputBar({
   isListening,
   onStart,
   onStop,
-  onClear,
+  onSend,
 }: {
   isListening: boolean;
   onStart: () => void;
   onStop: () => void;
-  onClear: () => void;
+  onSend: (text: string) => void;
 }) {
-  return (
-    <motion.div
-      initial={false}
-      animate={
-        isListening
-          ? { scale: 1.03, boxShadow: "0 0 0 4px rgba(239,68,68,0.15)" }
-          : { scale: 1, boxShadow: "0 0 0 0 rgba(0,0,0,0)" }
-      }
-      transition={{ duration: 0.25, ease: "easeOut" }}
-      className="rounded-lg"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <button
-          onClick={isListening ? onStop : onStart}
-          className={cn(
-            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs border transition",
-            isListening
-              ? "bg-red-500/10 border-red-500/30 text-red-600"
-              : "hover:bg-muted"
-          )}
-        >
-          {isListening ? (
-            <>
-              <IconPlayerStop className="size-4" />
-              Stop
-            </>
-          ) : (
-            <>
-              <IconMicrophone className="size-4" />
-              Voice
-            </>
-          )}
-        </button>
+  const [text, setText] = useState("");
 
-        <button
-          onClick={onClear}
-          className="text-[10px] text-muted-foreground hover:text-foreground"
-        >
-          Clear
-        </button>
-      </div>
-    </motion.div>
+  const submit = () => {
+    if (!text.trim()) return;
+    onSend(text.trim());
+    setText("");
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={isListening ? onStop : onStart}
+        className={cn(
+          "rounded-md p-2 border transition",
+          isListening
+            ? "bg-red-500/10 border-red-500/30 text-red-600"
+            : "hover:bg-muted"
+        )}
+      >
+        {isListening ? (
+          <IconPlayerStop className="size-4" />
+        ) : (
+          <IconMicrophone className="size-4" />
+        )}
+      </button>
+
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        placeholder="Type a message…"
+        className="flex-1 rounded-md border bg-background px-2 py-1.5 text-xs"
+      />
+
+      <button
+        onClick={submit}
+        className="text-xs px-2 py-1 rounded border hover:bg-muted"
+      >
+        Send
+      </button>
+    </div>
   );
 }
 
@@ -184,18 +215,21 @@ export default function RecommendationSidebar({
   onAccept,
   voice,
   isGenerating = false,
+  textChats = [],
+  onSendTextChat,
 }: {
   recs: Recommendation[];
   onAccept: (r: Recommendation) => void;
   voice: UseVoiceInputReturn;
   isGenerating?: boolean;
+  textChats?: string[];
+  onSendTextChat?: (text: string) => void;
 }) {
   const [language, setLanguage] = useState<"en-US" | "ko-KR" | "ja-JP">(
     "en-US"
   );
 
-  const { isListening, partial, conversation, start, stop, clearConversation } =
-    voice;
+  const { isListening, partial, conversation, start, stop } = voice;
 
   const placeholder =
     language === "ko-KR"
@@ -203,6 +237,25 @@ export default function RecommendationSidebar({
       : language === "ja-JP"
       ? "話してください…"
       : "Speak now…";
+
+  const unifiedMessages: UnifiedMessage[] = useMemo(() => {
+    const voiceMsgs = conversation.map((v) => ({
+      id: v.id,
+      source: "voice" as const,
+      text: v.text,
+      timestamp: v.timestamp,
+      lang: v.lang,
+    }));
+
+    const textMsgs = textChats.map((t, i) => ({
+      id: `text-${i}`,
+      source: "text" as const,
+      text: t,
+      timestamp: Date.now() - i,
+    }));
+
+    return [...voiceMsgs, ...textMsgs];
+  }, [conversation, textChats]);
 
   return (
     <Sidebar side="right" className="border-l h-screen flex flex-col">
@@ -272,20 +325,18 @@ export default function RecommendationSidebar({
         placeholder={placeholder}
       />
 
-      <ConversationPanel conversation={conversation} />
+      <ConversationTimeline messages={unifiedMessages} />
 
       <SidebarFooter className="border-t p-3 space-y-2">
-        <VoiceFooterBar
+        <ChatInputBar
           isListening={isListening}
           onStart={start}
           onStop={stop}
-          onClear={clearConversation}
+          onSend={(text) => onSendTextChat?.(text)}
         />
 
         <div className="text-[10px] text-muted-foreground/60">
-          {isListening
-            ? "Listening to conversation… speak naturally"
-            : "Suggestions are generated based on interaction focus."}
+          Voice and text both influence recommendations.
         </div>
       </SidebarFooter>
     </Sidebar>

@@ -53,6 +53,7 @@ function AppContent() {
   const [acceptedRecommendationIds, setAcceptedRecommendationIds] = useState<
     string[]
   >([]);
+  const [textChats, setTextChats] = useState<string[]>([]);
 
   /* 🔹 focus signal */
   const { focusScore } = useFocus();
@@ -60,12 +61,14 @@ function AppContent() {
   /* 🔹 voice conversation (single source of truth) */
   const voice = useVoiceInput({ lang: "en-US" });
 
-  const { recommendations, acceptRecommendation } = useRecommendation({
-    views,
-    focusScore,
-    conversation: voice.conversation,
-    enabled: voice.isListening,
-  });
+  const { recommendations, acceptRecommendation, isLoading } =
+    useRecommendation({
+      views,
+      focusScore,
+      conversation: voice.conversation,
+      textChats,
+      enabled: voice.isListening,
+    });
 
   const apply = (r: Recommendation) => {
     setAcceptedRecommendationIds((prev) => [...prev, r.id]);
@@ -129,8 +132,6 @@ function AppContent() {
     acceptRecommendation(r);
   };
 
-  console.log("Recommendations:", recommendations, acceptedRecommendationIds);
-
   return (
     <>
       {/* ================= MAIN DASHBOARD ================= */}
@@ -153,6 +154,9 @@ function AppContent() {
         )}
         onAccept={apply}
         voice={voice}
+        textChats={textChats}
+        isGenerating={isLoading}
+        onSendTextChat={(msg) => setTextChats((prev) => [...prev, msg])}
       />
     </>
   );

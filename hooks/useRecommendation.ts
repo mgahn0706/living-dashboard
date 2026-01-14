@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Recommendation } from "@/types/dashboard";
+import { VoiceUtterance } from "./useVoiceInput";
 
 const POLL_INTERVAL = 3000;
 
@@ -20,11 +21,13 @@ export function useRecommendation({
   views,
   focusScore,
   conversation,
-  enabled = true,
+  textChats,
+  enabled = false,
 }: {
   views: any[];
   focusScore: Record<string, number>;
-  conversation: any[];
+  conversation: VoiceUtterance[];
+  textChats: string[];
   enabled?: boolean;
 }) {
   /** 🔥 dismissed = client-side truth */
@@ -33,9 +36,12 @@ export function useRecommendation({
   );
 
   const [recs, setRecs] = useState<Recommendation[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const hasLoadedOnceRef = useRef(false);
 
   const stableContext = useMemo(
-    () => ({ views, focusScore, conversation }),
+    () => ({ views, focusScore, conversation, textChats }),
     [JSON.stringify({ views, focusScore, conversation })]
   );
 
@@ -45,6 +51,11 @@ export function useRecommendation({
     let cancelled = false;
 
     const poll = async () => {
+      // react-query 스타일: 최초 1회만 loading
+      if (!hasLoadedOnceRef.current) {
+        setIsLoading(true);
+      }
+
       const res = await fetch("/api/recommend", {
         method: "POST",
         body: JSON.stringify(stableContext),
@@ -53,14 +64,18 @@ export function useRecommendation({
       const data: Recommendation[] = await res.json();
       if (cancelled) return;
 
-      setRecs((prev) => {
+      setRecs(() => {
         const merged = data.filter((r) => {
           const key = getRecommendationKey(r);
           return !dismissedKeys.has(key);
         });
-
         return merged;
       });
+
+      if (!hasLoadedOnceRef.current) {
+        hasLoadedOnceRef.current = true;
+        setIsLoading(false);
+      }
     };
 
     poll();
@@ -90,10 +105,12 @@ export function useRecommendation({
   return {
     recommendations: recs,
     acceptRecommendation,
+    isLoading,
 
     /** optional */
     resetAccepted: () => {
       setDismissedKeys(new Set());
+      hasLoadedOnceRef.current = false;
     },
   };
 }

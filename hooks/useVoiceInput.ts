@@ -33,17 +33,25 @@ export default function useVoiceInput({
   lang: string;
   onFinal?: (text: string) => void;
 }): UseVoiceInputReturn {
+  /* ---------- refs ---------- */
+
   const recognitionRef = useRef<any>(null);
+
+  // 사용자가 "계속 듣고 싶다"는 의도
   const shouldListenRef = useRef(false);
+
+  // 🔑 실제 SpeechRecognition 실행 상태 (React state ❌)
+  const recognitionActiveRef = useRef(false);
+
+  /* ---------- states ---------- */
 
   const [isSupported, setIsSupported] = useState(true);
   const [isListening, setIsListening] = useState(false);
 
-  // 현재 발화 (UI용)
   const [partial, setPartial] = useState("");
-
-  // 🔥 누적 대화
   const [conversation, setConversation] = useState<VoiceUtterance[]>([]);
+
+  /* ===================== Init ===================== */
 
   useEffect(() => {
     const SpeechRecognition =
@@ -60,17 +68,37 @@ export default function useVoiceInput({
     recognition.interimResults = true;
     recognition.continuous = true;
 
+    /* ---------- lifecycle ---------- */
+
     recognition.onstart = () => {
+      recognitionActiveRef.current = true;
       setIsListening(true);
     };
 
     recognition.onend = () => {
+      recognitionActiveRef.current = false;
+
       if (shouldListenRef.current) {
-        recognition.start();
+        // ⚠️ Chrome 안정화: 한 tick 늦춰 재시작
+        setTimeout(() => {
+          if (shouldListenRef.current && !recognitionActiveRef.current) {
+            try {
+              recognition.start();
+            } catch {
+              // ignore InvalidStateError
+            }
+          }
+        }, 200);
       } else {
         setIsListening(false);
         setPartial("");
       }
+    };
+
+    recognition.onerror = () => {
+      // ❌ 여기서 start() 호출 금지
+      recognitionActiveRef.current = false;
+      // onend가 알아서 처리
     };
 
     recognition.onresult = (event: any) => {
@@ -91,6 +119,7 @@ export default function useVoiceInput({
 
       if (finalText) {
         const cleaned = finalText.trim();
+        if (!cleaned) return;
 
         setConversation((prev) => [
           ...prev,
@@ -107,32 +136,42 @@ export default function useVoiceInput({
       }
     };
 
-    recognition.onerror = () => {
-      if (shouldListenRef.current) {
-        recognition.stop();
-        recognition.start();
-      }
-    };
-
     recognitionRef.current = recognition;
 
     return () => {
       shouldListenRef.current = false;
-      recognition.stop();
+
+      if (recognitionActiveRef.current) {
+        try {
+          recognition.stop();
+        } catch {}
+      }
     };
   }, [lang, onFinal]);
 
   /* ===================== Controls ===================== */
 
   const start = () => {
-    if (isListening) return;
+    if (!recognitionRef.current || recognitionActiveRef.current) return;
+
     shouldListenRef.current = true;
-    recognitionRef.current?.start();
+
+    try {
+      recognitionRef.current.start();
+    } catch {
+      // ignore InvalidStateError
+    }
   };
 
   const stop = () => {
     shouldListenRef.current = false;
-    recognitionRef.current?.stop();
+
+    if (recognitionActiveRef.current) {
+      try {
+        recognitionRef.current?.stop();
+      } catch {}
+    }
+
     setPartial("");
   };
 
@@ -140,6 +179,8 @@ export default function useVoiceInput({
     setConversation([]);
     setPartial("");
   };
+
+  /* ===================== Return ===================== */
 
   return {
     isSupported,
