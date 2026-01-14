@@ -67,7 +67,7 @@ function AppContent() {
       focusScore,
       conversation: voice.conversation,
       textChats,
-      enabled: voice.isListening,
+      enabled: voice.isListening || textChats.length > 0,
     });
 
   /* ================= PREVIEW DERIVATION ================= */
