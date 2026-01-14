@@ -1,38 +1,99 @@
-// hooks/useRecommendation.ts
 "use client";
-import { useEffect, useState } from "react";
+
+import { useEffect, useMemo, useState } from "react";
 import { Recommendation } from "@/types/dashboard";
 
-export function useRecommendation(context: any) {
+const POLL_INTERVAL = 3000;
+
+/* ===================== Semantic Key ===================== */
+
+function getRecommendationKey(r: Recommendation) {
+  return JSON.stringify({
+    type: r.type,
+    payload: r.payload,
+  });
+}
+
+/* ===================== Hook ===================== */
+
+export function useRecommendation({
+  views,
+  focusScore,
+  conversation,
+  enabled = true,
+}: {
+  views: any[];
+  focusScore: Record<string, number>;
+  conversation: any[];
+  enabled?: boolean;
+}) {
+  /** 🔥 dismissed = client-side truth */
+  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(
+    () => new Set()
+  );
+
   const [recs, setRecs] = useState<Recommendation[]>([]);
 
+  const stableContext = useMemo(
+    () => ({ views, focusScore, conversation }),
+    [JSON.stringify({ views, focusScore, conversation })]
+  );
+
   useEffect(() => {
-    const interval = setInterval(async () => {
+    if (!enabled) return;
+
+    let cancelled = false;
+
+    const poll = async () => {
       const res = await fetch("/api/recommend", {
         method: "POST",
-        body: JSON.stringify(context),
+        body: JSON.stringify(stableContext),
       });
-      const data = await res.json();
-      setRecs(data);
-    }, 3000000);
 
-    return () => clearInterval(interval);
-  }, [context]);
+      const data: Recommendation[] = await res.json();
+      if (cancelled) return;
 
-  const refresh = async () => {
-    const res = await fetch("/api/recommend", {
-      method: "POST",
-      body: JSON.stringify(context),
+      setRecs((prev) => {
+        const merged = data.filter((r) => {
+          const key = getRecommendationKey(r);
+          return !dismissedKeys.has(key);
+        });
+
+        return merged;
+      });
+    };
+
+    poll();
+    const interval = setInterval(poll, POLL_INTERVAL);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [stableContext, enabled, dismissedKeys]);
+
+  /* ===================== Accept ===================== */
+
+  const acceptRecommendation = (rec: Recommendation) => {
+    const key = getRecommendationKey(rec);
+
+    setDismissedKeys((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
     });
-    const data = await res.json();
-    setRecs(data);
+
+    // optimistic UI
+    setRecs((prev) => prev.filter((r) => getRecommendationKey(r) !== key));
   };
 
   return {
     recommendations: recs,
-    refresh,
-    removeRecommendations: (rec: Recommendation) => {
-      setRecs((prev) => prev.filter((r) => r.id !== rec.id));
+    acceptRecommendation,
+
+    /** optional */
+    resetAccepted: () => {
+      setDismissedKeys(new Set());
     },
   };
 }
