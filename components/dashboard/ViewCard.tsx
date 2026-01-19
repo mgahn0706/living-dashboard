@@ -1,4 +1,3 @@
-// components/ViewCard.tsx
 "use client";
 
 import { View } from "@/types/dashboard";
@@ -11,15 +10,16 @@ import {
 } from "../ui/card";
 import ChartRenderer from "./ChartRenderer";
 import { cn } from "@/lib/utils";
+import React from "react";
 
 /* =======================================================
    Layout constants
 ======================================================= */
 
 const SIZE_CLASS: Record<View["size"], string> = {
-  lg: "basis-[99%]",
-  md: "basis-[49%]",
-  sm: "basis-[30%]",
+  lg: "basis-[25%]",
+  md: "basis-[25%]",
+  sm: "basis-[25%]",
 };
 
 const CHART_HEIGHT: Record<View["size"], string> = {
@@ -39,17 +39,30 @@ export type PreviewState =
   | null;
 
 /* =======================================================
+   Utils
+======================================================= */
+
+function formatFocus(score: number) {
+  const pct = Math.round(score * 100);
+  if (pct >= 75) return `High (${pct}%)`;
+  if (pct >= 40) return `Medium (${pct}%)`;
+  return `Low (${pct}%)`;
+}
+
+/* =======================================================
    ViewCard
 ======================================================= */
 
 export default function ViewCard({
   view,
   preview = null,
+  focusScore,
   onMouseMove,
 }: {
   view: View;
   preview?: PreviewState;
-  onMouseMove: () => void;
+  focusScore: number;
+  onMouseMove: React.MouseEventHandler<HTMLDivElement>;
 }) {
   return (
     <Card
@@ -67,9 +80,18 @@ export default function ViewCard({
         )}
       >
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">
-            {view.chartType.toUpperCase()}
-          </CardTitle>
+          {/* Title row */}
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm">
+              {view.chartType.toUpperCase()}
+            </CardTitle>
+
+            {/* 👇 Explicit focus text */}
+            <span className="text-[10px] text-muted-foreground">
+              Focus: {formatFocus(focusScore)}
+            </span>
+          </div>
+
           <CardDescription className="text-xs truncate">
             X: [{view.x.length}] · Y: [{view.y.length}]
           </CardDescription>
@@ -102,16 +124,14 @@ export default function ViewCard({
 }
 
 /* =======================================================
-   MODIFY overlay (ghost overlap)
+   MODIFY overlay
 ======================================================= */
 
 function ModifyOverlay({ view, size }: { view: View; size: View["size"] }) {
   return (
     <div className="absolute inset-0 z-10 pointer-events-none">
-      {/* soft dim */}
       <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
 
-      {/* preview content */}
       <div className="absolute inset-0 opacity-45">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
@@ -136,7 +156,7 @@ function ModifyOverlay({ view, size }: { view: View; size: View["size"] }) {
 }
 
 /* =======================================================
-   REMOVE overlay (neutral warning)
+   REMOVE overlay
 ======================================================= */
 
 function RemoveOverlay() {
@@ -150,7 +170,7 @@ function RemoveOverlay() {
 }
 
 /* =======================================================
-   ADD overlay (ghost new view)
+   ADD overlay
 ======================================================= */
 
 function AddOverlay({ view, size }: { view: View; size: View["size"] }) {

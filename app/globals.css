@@ -135,3 +135,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+:root {
+  /* Unified chart blue */
+  --chart-blue: 210 90% 55%; /* HSL blue */
+}
+
+/* ChartContainer injects this automatically */
+:root {
+  --color-y: hsl(var(--chart-blue));
+}

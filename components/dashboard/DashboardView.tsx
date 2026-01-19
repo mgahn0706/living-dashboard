@@ -19,24 +19,31 @@ export default function DashboardView({
   previewMap?: Record<string, PreviewState>;
   addPreview?: View | null;
 }) {
-  const { updateFocus } = useFocus();
+  const { updateFocus, focusScore } = useFocus();
 
   const sortedViews = [...views].sort((a, b) => b.priority - a.priority);
 
   return (
     <div className="flex flex-wrap gap-4 items-stretch">
-      {sortedViews.map((v) => (
+      {sortedViews.map((view) => (
         <ViewCard
-          key={v.id}
-          view={v}
-          preview={previewMap[v.id] ?? null}
-          onMouseMove={() => updateFocus(v.id)}
+          key={view.id}
+          view={view}
+          focusScore={focusScore[view.id] ?? 0}
+          preview={previewMap[view.id] ?? null}
+          onMouseMove={(event) =>
+            updateFocus(view.id, {
+              clientX: event.clientX,
+              clientY: event.clientY,
+            })
+          }
         />
       ))}
 
       {addPreview && (
         <ViewCard
           view={addPreview}
+          focusScore={0}
           preview={{ type: "ADD", view: addPreview }}
           onMouseMove={() => {}}
         />
