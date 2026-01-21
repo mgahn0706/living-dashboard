@@ -17,9 +17,9 @@ import React from "react";
 ======================================================= */
 
 const SIZE_CLASS: Record<View["size"], string> = {
-  lg: "basis-[25%]",
-  md: "basis-[25%]",
-  sm: "basis-[25%]",
+  lg: "basis-[24%]",
+  md: "basis-[24%]",
+  sm: "basis-[24%]",
 };
 
 const CHART_HEIGHT: Record<View["size"], string> = {
@@ -82,9 +82,7 @@ export default function ViewCard({
         <CardHeader className="pb-2">
           {/* Title row */}
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm">
-              {view.chartType.toUpperCase()}
-            </CardTitle>
+            <CardTitle className="text-sm">{view.id}</CardTitle>
 
             {/* 👇 Explicit focus text */}
             <span className="text-[10px] text-muted-foreground">

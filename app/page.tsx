@@ -14,19 +14,22 @@ import useVoiceInput from "@/hooks/useVoiceInput";
 /* ===================== Initial Views ===================== */
 
 const initialViews: View[] = [
+  /* ===================== 1. Overall Trend ===================== */
   {
     id: "v_sales_trend",
     // time (e.g., weeks)
     x: [1, 2, 3, 4, 5, 6],
-    // sales
+    // total sales
     y: [120, 135, 128, 150, 170, 165],
     chartType: "LINE",
     size: "lg",
     priority: 1,
   },
+
+  /* ===================== 2. Category Comparison ===================== */
   {
-    id: "v_sales_comparison",
-    // categories encoded as indices
+    id: "v_sales_by_category",
+    // category indices: A, B, C, D
     x: [0, 1, 2, 3],
     // sales per category
     y: [320, 210, 180, 260],
@@ -34,15 +37,53 @@ const initialViews: View[] = [
     size: "md",
     priority: 2,
   },
+
+  /* ===================== 3. Growth Rate Over Time ===================== */
   {
-    id: "v_sales_table",
-    // row index
+    id: "v_sales_growth_rate",
+    // weeks
+    x: [2, 3, 4, 5, 6],
+    // week-over-week growth (%)
+    y: [12, -5, 17, 13, -3],
+    chartType: "LINE",
+    size: "md",
+    priority: 3,
+  },
+
+  /* ===================== 4. Regional Contribution ===================== */
+  {
+    id: "v_sales_by_region",
+    // regions: North, South, East, West
+    x: [0, 1, 2, 3],
+    // contribution (%)
+    y: [35, 25, 20, 20],
+    chartType: "BAR",
+    size: "sm",
+    priority: 4,
+  },
+
+  /* ===================== 5. Top Products Table ===================== */
+  {
+    id: "v_top_products",
+    // product rank
     x: [1, 2, 3, 4, 5],
-    // sales values
-    y: [120, 135, 128, 150, 170],
+    // sales
+    y: [95, 88, 76, 61, 54],
     chartType: "TABLE",
     size: "sm",
-    priority: 3,
+    priority: 5,
+  },
+
+  /* ===================== 6. Anomaly / Spike Detection ===================== */
+  {
+    id: "v_sales_spikes",
+    // weeks
+    x: [1, 2, 3, 4, 5, 6],
+    // deviation from moving average
+    y: [0, 5, -8, 12, 18, -4],
+    chartType: "LINE",
+    size: "sm",
+    priority: 6,
   },
 ];
 
