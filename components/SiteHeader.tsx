@@ -84,6 +84,28 @@ function buildSchema(value: unknown): SchemaNode {
 }
 
 /* =====================================================
+   CSV → Object[] parser (simple, intentional)
+===================================================== */
+
+function parseCSV(text: string): Record<string, any>[] {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].split(",").map((h) => h.trim());
+
+  return lines.slice(1).map((line) => {
+    const values = line.split(",").map((v) => v.trim());
+    const row: Record<string, any> = {};
+
+    headers.forEach((h, i) => {
+      row[h] = values[i];
+    });
+
+    return row;
+  });
+}
+
+/* =====================================================
    SiteHeader
 ===================================================== */
 
@@ -102,26 +124,34 @@ export function SiteHeader() {
 
     try {
       const text = await file.text();
-      const json = JSON.parse(text);
+      let data: any;
 
-      if (typeof json !== "object" || json === null) {
-        throw new Error("Invalid JSON root");
+      /* ---------- JSON ---------- */
+      if (file.name.endsWith(".json")) {
+        data = JSON.parse(text);
+      } else if (file.name.endsWith(".csv")) {
+
+      /* ---------- CSV ---------- */
+        data = parseCSV(text); // array of rows
+      } else {
+        throw new Error("Unsupported file type");
       }
 
-      // 1️⃣ flat keys
-      const flatKeys = Array.from(extractKeysRecursive(json)).sort();
+      if (typeof data !== "object" || data === null) {
+        throw new Error("Invalid data");
+      }
 
-      // 2️⃣ hierarchical schema
-      const hierarchicalSchema = buildSchema(json);
+      const flatKeys = Array.from(extractKeysRecursive(data)).sort();
+
+      const hierarchicalSchema = buildSchema(data);
 
       setAttributeKeys(flatKeys);
       setSchema(hierarchicalSchema);
 
-      // 🔍 Debug only
       console.log("Flat attribute keys:", flatKeys);
       console.log("Hierarchical schema (LLM-ready):", hierarchicalSchema);
     } catch (err) {
-      alert("Invalid JSON file");
+      alert("Invalid JSON / CSV file");
     } finally {
       e.target.value = "";
     }
@@ -130,7 +160,7 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 flex h-(--header-height) w-full items-center border-b bg-background">
       <div className="flex w-full items-center px-4 lg:px-6">
-        {/* Left: Brand */}
+        {/* Left */}
         <div className="flex items-center gap-2">
           <div className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
             <IconDashboard className="size-4" />
@@ -138,9 +168,8 @@ export function SiteHeader() {
           <h1 className="text-base font-medium">Living Dashboard</h1>
         </div>
 
-        {/* Right: Actions */}
+        {/* Right */}
         <div className="ml-auto flex items-center gap-2">
-          {/* Upload JSON */}
           <Button
             variant="ghost"
             size="sm"
@@ -148,18 +177,17 @@ export function SiteHeader() {
             onClick={() => fileInputRef.current?.click()}
           >
             <IconUpload className="size-4" />
-            <span>Upload JSON</span>
+            <span>Upload JSON / CSV</span>
           </Button>
 
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/json"
+            accept=".json,.csv,application/json,text/csv"
             className="hidden"
             onChange={handleFileChange}
           />
 
-          {/* Debug indicator */}
           {attributeKeys.length > 0 && (
             <span className="text-xs text-muted-foreground">
               {attributeKeys.length} attributes
