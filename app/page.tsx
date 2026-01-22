@@ -24,6 +24,9 @@ const initialViews: View[] = [
     chartType: "LINE",
     size: "lg",
     priority: 1,
+    xLabel: "Weeks",
+    yLabel: "Sales ($K)",
+    title: "Overall Sales Trend",
   },
 
   /* ===================== 2. Category Comparison ===================== */
@@ -36,6 +39,9 @@ const initialViews: View[] = [
     chartType: "BAR",
     size: "md",
     priority: 2,
+    xLabel: "Categories",
+    yLabel: "Sales ($K)",
+    title: "Sales by Category",
   },
 
   /* ===================== 3. Growth Rate Over Time ===================== */
@@ -48,6 +54,9 @@ const initialViews: View[] = [
     chartType: "LINE",
     size: "md",
     priority: 3,
+    xLabel: "Weeks",
+    yLabel: "Growth Rate (%)",
+    title: "Week-over-Week Sales Growth Rate",
   },
 
   /* ===================== 4. Regional Contribution ===================== */
@@ -60,6 +69,9 @@ const initialViews: View[] = [
     chartType: "BAR",
     size: "sm",
     priority: 4,
+    xLabel: "Regions",
+    yLabel: "Contribution (%)",
+    title: "Sales Contribution by Region",
   },
 
   /* ===================== 5. Top Products Table ===================== */
@@ -72,6 +84,9 @@ const initialViews: View[] = [
     chartType: "TABLE",
     size: "sm",
     priority: 5,
+    xLabel: "Product Rank",
+    yLabel: "Sales ($K)",
+    title: "Top 5 Products by Sales",
   },
 
   /* ===================== 6. Anomaly / Spike Detection ===================== */
@@ -84,6 +99,9 @@ const initialViews: View[] = [
     chartType: "LINE",
     size: "sm",
     priority: 6,
+    xLabel: "Weeks",
+    yLabel: "Deviation ($K)",
+    title: "Sales Deviation from Moving Average",
   },
 ];
 

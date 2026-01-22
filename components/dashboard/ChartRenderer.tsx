@@ -23,6 +23,7 @@ import {
   CartesianGrid,
   XAxis,
   YAxis,
+  ResponsiveContainer,
 } from "recharts";
 import { ChartType } from "@/types/dashboard";
 
@@ -70,7 +71,7 @@ export default function ChartRenderer({
 }: ChartRendererProps) {
   const data = React.useMemo(() => buildSeries(x, y), [x, y]);
 
-  const blue = "#3b82f6"; // blue-500
+  const blue = "#3b82f6";
 
   const chartConfig = React.useMemo(
     () =>
@@ -82,7 +83,7 @@ export default function ChartRenderer({
 
   if (data.length === 0) {
     return (
-      <div className="h-full w-full rounded-md border bg-background flex items-center justify-center text-xs text-muted-foreground">
+      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
         No data
       </div>
     );
@@ -92,22 +93,19 @@ export default function ChartRenderer({
 
   if (type === "TABLE") {
     return (
-      <div
-        className="h-full w-full rounded-md border bg-background p-3"
-        style={{ height }}
-      >
+      <div className="h-full w-full p-2" style={{ height }}>
         <ShadTable className="text-xs">
           <TableHeader>
             <TableRow>
-              <TableHead className="text-muted-foreground">{xLabel}</TableHead>
-              <TableHead className="text-muted-foreground">{yLabel}</TableHead>
+              <TableHead>{xLabel}</TableHead>
+              <TableHead>{yLabel}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {data.map((row, i) => (
               <TableRow key={i}>
-                <TableCell className="py-1">{row.x}</TableCell>
-                <TableCell className="py-1">{row.y}</TableCell>
+                <TableCell>{row.x}</TableCell>
+                <TableCell>{row.y}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -119,19 +117,13 @@ export default function ChartRenderer({
   /* ===================== CHART ===================== */
 
   return (
-    <div
-      className="h-full w-full rounded-md border bg-background"
-      style={{ height }}
-    >
-      <ChartContainer
-        config={chartConfig}
-        className="h-full w-full px-4 pt-3 pb-2"
-      >
-        {type === "LINE" ? (
-          <>
+    <div className="h-full w-full" style={{ height }}>
+      <ChartContainer config={chartConfig} className="h-full w-full p-0">
+        <ResponsiveContainer width="100%" height="100%">
+          {type === "LINE" ? (
             <AreaChart
               data={data}
-              margin={{ top: 8, right: 8, left: -10, bottom: 0 }}
+              margin={{ top: 4, right: 6, left: -8, bottom: 10 }}
             >
               <defs>
                 <linearGradient id="fillBlue" x1="0" y1="0" x2="0" y2="1">
@@ -140,23 +132,32 @@ export default function ChartRenderer({
                 </linearGradient>
               </defs>
 
-              <CartesianGrid
-                vertical={false}
-                strokeDasharray="2 6"
-                strokeOpacity={0.15}
-              />
+              <CartesianGrid vertical={false} strokeOpacity={0.15} />
 
               <XAxis
                 dataKey="x"
                 tickLine={false}
                 axisLine={false}
-                tick={{
-                  fontSize: 11,
-                  fill: "hsl(var(--muted-foreground))",
+                tick={{ fontSize: 11 }}
+                label={{
+                  value: xLabel,
+                  position: "insideBottom",
+                  offset: -2,
+                  style: { fontSize: 10 },
                 }}
               />
 
-              <YAxis tick={false} tickLine={false} axisLine={false} />
+              <YAxis
+                tick={false}
+                axisLine={false}
+                label={{
+                  value: yLabel,
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: 0,
+                  style: { fontSize: 10 },
+                }}
+              />
 
               <ChartTooltip content={<ChartTooltipContent />} />
 
@@ -164,42 +165,50 @@ export default function ChartRenderer({
                 type="monotone"
                 dataKey="y"
                 stroke={blue}
-                strokeWidth={2.2}
+                strokeWidth={2}
                 fill="url(#fillBlue)"
                 dot={false}
               />
             </AreaChart>
-          </>
-        ) : (
-          <BarChart
-            data={data}
-            barCategoryGap={14}
-            margin={{ top: 8, right: 8, left: -10, bottom: 0 }}
-          >
-            <CartesianGrid vertical={false} strokeOpacity={0.15} />
+          ) : (
+            <BarChart
+              data={data}
+              barCategoryGap={14}
+              margin={{ top: 4, right: 6, left: -8, bottom: 10 }}
+            >
+              <CartesianGrid vertical={false} strokeOpacity={0.15} />
 
-            <XAxis
-              dataKey="x"
-              tickLine={false}
-              axisLine={false}
-              tick={{
-                fontSize: 11,
-                fill: "hsl(var(--muted-foreground))",
-              }}
-            />
+              <XAxis
+                dataKey="x"
+                tickLine={false}
+                axisLine={false}
+                tick={{ fontSize: 11 }}
+                label={{
+                  value: xLabel,
+                  position: "insideBottom",
+                  offset: -2,
+                  style: { fontSize: 10 },
+                }}
+              />
 
-            <YAxis tick={false} tickLine={false} axisLine={false} />
+              <YAxis
+                tick={false}
+                axisLine={false}
+                label={{
+                  value: yLabel,
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: 0,
+                  style: { fontSize: 10 },
+                }}
+              />
 
-            <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartTooltip content={<ChartTooltipContent />} />
 
-            <Bar
-              dataKey="y"
-              radius={[6, 6, 4, 4]}
-              fill={blue}
-              fillOpacity={0.9}
-            />
-          </BarChart>
-        )}
+              <Bar dataKey="y" radius={[6, 6, 4, 4]} fill={blue} />
+            </BarChart>
+          )}
+        </ResponsiveContainer>
       </ChartContainer>
     </div>
   );

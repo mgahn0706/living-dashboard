@@ -44,8 +44,8 @@ export type PreviewState =
 
 function formatFocus(score: number) {
   const pct = Math.round(score * 100);
-  if (pct >= 75) return `High (${pct}%)`;
-  if (pct >= 40) return `Medium (${pct}%)`;
+  if (pct >= 1000) return `High (${pct}%)`;
+  if (pct >= 500) return `Med (${pct}%)`;
   return `Low (${pct}%)`;
 }
 
@@ -75,34 +75,32 @@ export default function ViewCard({
       {/* ================= Base View ================= */}
       <div
         className={cn(
-          "relative z-0",
+          "relative z-0 flex flex-col",
           preview?.type === "REMOVE" && "opacity-40"
         )}
       >
+        {/* ---------- Header ---------- */}
         <CardHeader className="pb-2">
-          {/* Title row */}
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm">{view.id}</CardTitle>
+            <CardTitle className="text-sm">{view.title || view.id}</CardTitle>
 
-            {/* 👇 Explicit focus text */}
             <span className="text-[10px] text-muted-foreground">
               Focus: {formatFocus(focusScore)}
             </span>
           </div>
-
-          <CardDescription className="text-xs truncate">
-            X: [{view.x.length}] · Y: [{view.y.length}]
-          </CardDescription>
         </CardHeader>
 
+        {/* ---------- Chart ---------- */}
         <CardContent
-          className={cn(CHART_HEIGHT[view.size], "overflow-hidden p-2")}
+          className={cn(CHART_HEIGHT[view.size], "flex p-0 overflow-hidden")}
         >
           <ChartRenderer
             x={view.x}
             y={view.y}
             type={view.chartType}
             height="100%"
+            xLabel={view.xLabel}
+            yLabel={view.yLabel}
           />
         </CardContent>
       </div>
@@ -130,7 +128,7 @@ function ModifyOverlay({ view, size }: { view: View; size: View["size"] }) {
     <div className="absolute inset-0 z-10 pointer-events-none">
       <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
 
-      <div className="absolute inset-0 opacity-45">
+      <div className="absolute inset-0 opacity-45 flex flex-col">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
             {view.chartType.toUpperCase()}
@@ -140,7 +138,9 @@ function ModifyOverlay({ view, size }: { view: View; size: View["size"] }) {
           </CardDescription>
         </CardHeader>
 
-        <CardContent className={cn(CHART_HEIGHT[size], "p-2")}>
+        <CardContent
+          className={cn(CHART_HEIGHT[size], "flex p-0 overflow-hidden")}
+        >
           <ChartRenderer
             x={view.x}
             y={view.y}
@@ -176,7 +176,7 @@ function AddOverlay({ view, size }: { view: View; size: View["size"] }) {
     <div className="absolute inset-0 z-10 pointer-events-none">
       <div className="absolute inset-0 bg-background/70 backdrop-blur-sm" />
 
-      <div className="absolute inset-0 opacity-50">
+      <div className="absolute inset-0 opacity-50 flex flex-col">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
             {view.chartType.toUpperCase()}
@@ -186,7 +186,9 @@ function AddOverlay({ view, size }: { view: View; size: View["size"] }) {
           </CardDescription>
         </CardHeader>
 
-        <CardContent className={cn(CHART_HEIGHT[size], "p-2")}>
+        <CardContent
+          className={cn(CHART_HEIGHT[size], "flex p-0 overflow-hidden")}
+        >
           <ChartRenderer
             x={view.x}
             y={view.y}

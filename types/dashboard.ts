@@ -8,6 +8,9 @@ export type View = {
   chartType: ChartType;
   size: "sm" | "md" | "lg";
   priority: number;
+  xLabel?: string;
+  yLabel?: string;
+  title?: string;
 };
 
 export type Recommendation = {
