@@ -120,14 +120,13 @@ function AppContent() {
   const { focusScore } = useFocus();
   const voice = useVoiceInput({ lang: "en-US" });
 
-  const { recommendations, acceptRecommendation, isLoading } =
-    useRecommendation({
-      views,
-      focusScore,
-      conversation: voice.conversation,
-      textChats,
-      enabled: voice.isListening || textChats.length > 0,
-    });
+  const {
+    recommendations,
+
+    acceptRecommendation,
+    isLoading,
+    triggerRecommendation,
+  } = useRecommendation();
 
   /* ================= PREVIEW DERIVATION ================= */
 
@@ -255,7 +254,16 @@ function AppContent() {
         voice={voice}
         textChats={textChats}
         isGenerating={isLoading}
-        onSendTextChat={(msg) => setTextChats((prev) => [...prev, msg])}
+        onSendTextChat={(msg) => {
+          setTextChats((prev) => [...prev, msg]);
+          triggerRecommendation({
+            views,
+            textChats: [...textChats, msg],
+            focusScore,
+            dataSchema: null,
+            conversation: [],
+          });
+        }}
       />
     </>
   );

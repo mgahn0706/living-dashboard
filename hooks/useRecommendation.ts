@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Recommendation } from "@/types/dashboard";
 import { VoiceUtterance } from "./useVoiceInput";
-
-const POLL_INTERVAL = 3000;
 
 /* ===================== Semantic Key ===================== */
 
@@ -15,22 +13,56 @@ function getRecommendationKey(r: Recommendation) {
   });
 }
 
-/* ===================== Hook ===================== */
+/* ===================== Prompt Maker ===================== */
 
-export function useRecommendation({
+function makePrompt({
   views,
   focusScore,
   conversation,
   textChats,
-  enabled = false,
+  dataSchema,
 }: {
   views: any[];
   focusScore: Record<string, number>;
   conversation: VoiceUtterance[];
   textChats: string[];
-  enabled?: boolean;
+  dataSchema?: any;
 }) {
-  /** 🔥 dismissed = client-side truth */
+  return {
+    role: "system",
+    content: `
+You are an AI system that outputs dashboard adaptation commands
+in a STRICT machine-readable JSON format.
+
+[OUTPUT CONTRACT OMITTED FOR BREVITY — SAME AS YOUR VERSION]
+
+[DATA SCHEMA]
+${dataSchema ? JSON.stringify(dataSchema, null, 2) : "N/A"}
+
+[CURRENT VIEWS]
+${JSON.stringify(views, null, 2)}
+
+[FOCUS SCORE]
+${JSON.stringify(focusScore, null, 2)}
+
+[RECENT CONVERSATION]
+${conversation
+  .slice(-5)
+  .map((u) => `- ${u.text}`)
+  .join("\n")}
+
+[TEXT CHATS]
+${textChats.map((t) => `- ${t}`).join("\n")}
+
+Return JSON array only.
+    `.trim(),
+  };
+}
+
+/* ===================== Hook ===================== */
+
+export function useRecommendation() {
+  /** dismissed = client-side truth */
   const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(
     () => new Set()
   );
@@ -38,58 +70,64 @@ export function useRecommendation({
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const hasLoadedOnceRef = useRef(false);
+  const lastCallRef = useRef<number>(0);
+  const COOLDOWN = 8000; // ms
 
-  const stableContext = useMemo(
-    () => ({ views, focusScore, conversation, textChats }),
-    [JSON.stringify({ views, focusScore, conversation })]
-  );
+  /* ===================== Trigger (mutateAsync style) ===================== */
 
-  useEffect(() => {
-    if (!enabled) return;
-
-    let cancelled = false;
-
-    const poll = async () => {
-      // react-query 스타일: 최초 1회만 loading
-      if (!hasLoadedOnceRef.current) {
-        setIsLoading(true);
+  const triggerRecommendation = useCallback(
+    async ({
+      views,
+      focusScore,
+      conversation,
+      textChats,
+      dataSchema,
+    }: {
+      views: any[];
+      focusScore: Record<string, number>;
+      conversation: VoiceUtterance[];
+      textChats: string[];
+      dataSchema?: any;
+    }) => {
+      const now = Date.now();
+      if (now - lastCallRef.current < COOLDOWN) {
+        return; // ⛔ cooldown
       }
 
-      const res = await fetch("/api/recommend", {
-        method: "POST",
-        body: JSON.stringify(stableContext),
-      });
+      lastCallRef.current = now;
+      setIsLoading(true);
 
-      const data: Recommendation[] = await res.json();
-      if (cancelled) return;
-
-      setRecs(() => {
-        const merged = data.filter((r) => {
-          const key = getRecommendationKey(r);
-          return !dismissedKeys.has(key);
+      try {
+        const prompt = makePrompt({
+          views,
+          focusScore,
+          conversation,
+          textChats,
+          dataSchema,
         });
-        return merged;
-      });
 
-      if (!hasLoadedOnceRef.current) {
-        hasLoadedOnceRef.current = true;
+        console.log("LLM Prompt:", prompt.content);
+
+        const res = await fetch("/api/recommend", {
+          method: "POST",
+          body: JSON.stringify({ prompt }),
+        });
+
+        const data: Recommendation[] = await res.json();
+
+        setRecs(
+          data.filter((r) => !dismissedKeys.has(getRecommendationKey(r)))
+        );
+      } finally {
         setIsLoading(false);
       }
-    };
-
-    poll();
-    const interval = setInterval(poll, POLL_INTERVAL);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [stableContext, enabled, dismissedKeys]);
+    },
+    [dismissedKeys]
+  );
 
   /* ===================== Accept ===================== */
 
-  const acceptRecommendation = (rec: Recommendation) => {
+  const acceptRecommendation = useCallback((rec: Recommendation) => {
     const key = getRecommendationKey(rec);
 
     setDismissedKeys((prev) => {
@@ -98,19 +136,17 @@ export function useRecommendation({
       return next;
     });
 
-    // optimistic UI
     setRecs((prev) => prev.filter((r) => getRecommendationKey(r) !== key));
-  };
+  }, []);
 
   return {
     recommendations: recs,
+    triggerRecommendation, // ✅ mutateAsync equivalent
     acceptRecommendation,
     isLoading,
 
-    /** optional */
     resetAccepted: () => {
       setDismissedKeys(new Set());
-      hasLoadedOnceRef.current = false;
     },
   };
 }

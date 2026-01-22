@@ -2,13 +2,6 @@ import { NextResponse } from "next/server";
 
 /* ===================== Types ===================== */
 
-type VoiceUtterance = {
-  id: string;
-  text: string;
-  timestamp: number;
-  lang: string;
-};
-
 type View = {
   id: string;
   chartType: "LINE" | "BAR" | "TABLE";
@@ -31,14 +24,141 @@ type Recommendation = {
   reason: string;
 };
 
-/* ===================== Utils ===================== */
+/* ===================== Utilities ===================== */
 
-function pickViewId(views: View[], preference: Array<View["chartType"]>) {
+function softIncludes(text: string, keywords: string[]) {
+  return keywords.some((k) => text.includes(k));
+}
+
+function pickView(
+  views: View[],
+  preference: View["chartType"][]
+): View | undefined {
   for (const t of preference) {
     const found = views.find((v) => v.chartType === t);
-    if (found) return found.id;
+    if (found) return found;
   }
-  return views[0]?.id;
+  return views[0];
+}
+
+/* ===================== LLM-like Intent Parsing ===================== */
+
+function parseIntentFromPrompt(prompt: string) {
+  const text = prompt.toLowerCase();
+
+  return {
+    wantsTrend: softIncludes(text, [
+      "trend",
+      "over time",
+      "change",
+      "evolution",
+    ]),
+    wantsComparison: softIncludes(text, [
+      "compare",
+      "difference",
+      "vs",
+      "distribution",
+    ]),
+    wantsExplanation: softIncludes(text, ["why", "reason", "explain", "cause"]),
+    wantsFocus: softIncludes(text, ["important", "focus", "key", "main"]),
+    wantsCleanup: softIncludes(text, ["ignore", "not relevant", "remove"]),
+  };
+}
+
+/* ===================== LLM-like Reasoning Engine ===================== */
+
+function inferRecommendations({
+  views,
+  intent,
+}: {
+  views: View[];
+  intent: ReturnType<typeof parseIntentFromPrompt>;
+}): Recommendation[] {
+  const recs: Recommendation[] = [];
+
+  /* ---------- MODIFY CONTENT ---------- */
+
+  if (intent.wantsTrend) {
+    const target = pickView(views, ["LINE", "BAR", "TABLE"]);
+    if (target && target.chartType !== "LINE") {
+      recs.push({
+        id: `r_modify_line_${target.id}`,
+        title: "Emphasize trends with a line chart",
+        type: "MODIFY_CONTENT",
+        payload: { id: target.id, chartType: "LINE" },
+        reason:
+          "The discussion indicates interest in temporal trends or changes.",
+      });
+    }
+  }
+
+  if (intent.wantsComparison) {
+    const target = pickView(views, ["BAR", "LINE", "TABLE"]);
+    if (target && target.chartType !== "BAR") {
+      recs.push({
+        id: `r_modify_bar_${target.id}`,
+        title: "Use bar chart for comparison",
+        type: "MODIFY_CONTENT",
+        payload: { id: target.id, chartType: "BAR" },
+        reason: "The conversation suggests comparing values across categories.",
+      });
+    }
+  }
+
+  /* ---------- FOCUS / RESIZE ---------- */
+
+  if (intent.wantsFocus) {
+    const target = [...views].sort((a, b) => a.priority - b.priority)[0];
+
+    if (target && target.size !== "lg") {
+      recs.push({
+        id: `r_resize_focus_${target.id}`,
+        title: "Highlight a key view",
+        type: "RESIZE",
+        payload: { id: target.id, size: "lg" },
+        reason: "Participants appear to be focusing on a particular metric.",
+      });
+    }
+  }
+
+  /* ---------- NEW CONTENT ---------- */
+
+  if (intent.wantsExplanation) {
+    const exists = views.some((v) => v.id === "v_explanation");
+
+    if (!exists) {
+      recs.push({
+        id: "r_new_explanation",
+        title: "Add explanatory breakdown view",
+        type: "NEW_CONTENT",
+        payload: {
+          id: "v_explanation",
+          chartType: "BAR",
+          x: ["A", "B", "C"],
+          y: [30, 45, 25],
+          size: "md",
+          priority: views.length + 1,
+        },
+        reason: "Users are asking for explanations or underlying causes.",
+      });
+    }
+  }
+
+  /* ---------- REMOVE ---------- */
+
+  if (intent.wantsCleanup && views.length > 1) {
+    const target = [...views].sort((a, b) => b.priority - a.priority)[0];
+
+    recs.push({
+      id: `r_remove_${target.id}`,
+      title: "Remove less relevant view",
+      type: "REMOVE_CONTENT",
+      payload: { id: target.id },
+      reason: "Some views appear to be no longer relevant to the discussion.",
+    });
+  }
+
+  return recs;
 }
 
 /* ===================== API ===================== */
@@ -46,136 +166,21 @@ function pickViewId(views: View[], preference: Array<View["chartType"]>) {
 export async function POST(req: Request) {
   const body = await req.json();
 
-  const conversation: VoiceUtterance[] = body.conversation ?? [];
-  const views: View[] = body.views ?? [];
-  const textChats: string[] = body.textChats ?? [];
+  const prompt: string = body?.prompt?.content ?? "";
 
-  const recentFive = [...conversation]
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 5);
+  const views: View[] = body?.views ?? body?.prompt?.views ?? [];
 
-  const textBlob =
-    recentFive.map((u) => u.text.toLowerCase()).join(" ") +
-    " " +
-    textChats.join(" ").toLowerCase();
+  /* 1️⃣ Parse intent (LLM-like) */
+  const intent = parseIntentFromPrompt(prompt);
 
-  const recommendations: Recommendation[] = [];
+  /* 2️⃣ Infer recommendations */
+  const recommendations = inferRecommendations({
+    views,
+    intent,
+  });
 
-  /* ===================== MODIFY: LINE ===================== */
-
-  if (textBlob.includes("line")) {
-    const targetId = pickViewId(views, ["LINE", "BAR", "TABLE"]);
-    if (targetId) {
-      recommendations.push({
-        id: `r_line_${targetId}`, // ✅ stable
-        title: "Switch to line chart",
-        type: "MODIFY_CONTENT",
-        payload: { id: targetId, chartType: "LINE" },
-        reason: "Users mentioned trends or changes over time",
-      });
-    }
-  }
-
-  /* ===================== MODIFY: BAR ===================== */
-
-  if (textBlob.includes("bar") || textBlob.includes("compare")) {
-    const targetId = pickViewId(views, ["BAR", "LINE", "TABLE"]);
-    if (targetId) {
-      recommendations.push({
-        id: `r_bar_${targetId}`, // ✅ stable
-        title: "Switch to bar chart",
-        type: "MODIFY_CONTENT",
-        payload: { id: targetId, chartType: "BAR" },
-        reason: "Conversation suggests comparing values",
-      });
-    }
-  }
-
-  /* ===================== RESIZE ===================== */
-
-  if (
-    textBlob.includes("focus") ||
-    textBlob.includes("important") ||
-    textBlob.includes("look at this")
-  ) {
-    const target = [...views].sort((a, b) => a.priority - b.priority)[0];
-
-    if (target) {
-      recommendations.push({
-        id: `r_resize_lg_${target.id}`, // ✅ stable
-        title: "Emphasize this view",
-        type: "RESIZE",
-        payload: { id: target.id, size: "lg" },
-        reason: "Users are focusing on this metric",
-      });
-    }
-  }
-
-  /* ===================== REORDER ===================== */
-
-  if (
-    textBlob.includes("first") ||
-    textBlob.includes("start with") ||
-    textBlob.includes("main")
-  ) {
-    const targetId = pickViewId(views, ["LINE", "BAR", "TABLE"]);
-    if (targetId) {
-      recommendations.push({
-        id: `r_reorder_top_${targetId}`, // ✅ stable
-        title: "Move view to top",
-        type: "REORDER",
-        payload: { id: targetId, priority: 0 },
-        reason: "Conversation implies this view should be primary",
-      });
-    }
-  }
-
-  /* ===================== NEW CONTENT (STABLE!) ===================== */
-
-  if (
-    textBlob.includes("why") ||
-    textBlob.includes("reason") ||
-    textBlob.includes("explain")
-  ) {
-    const EXISTS = views.some((v) => v.id === "v_breakdown");
-
-    if (!EXISTS) {
-      recommendations.push({
-        id: "r_new_breakdown", // ✅ single semantic id
-        title: "Add breakdown view",
-        type: "NEW_CONTENT",
-        payload: {
-          id: "v_breakdown", // ✅ stable view id
-          chartType: "BAR",
-          x: [0, 1, 2, 3],
-          y: [40, 25, 20, 15],
-          size: "md",
-          priority: views.length + 1,
-        },
-        reason: "Users are asking for explanations or causes",
-      });
-    }
-  }
-
-  /* ===================== REMOVE ===================== */
-
-  if (
-    textBlob.includes("ignore") ||
-    textBlob.includes("not relevant") ||
-    textBlob.includes("doesn't matter")
-  ) {
-    const target = [...views].sort((a, b) => b.priority - a.priority)[0];
-
-    if (target) {
-      recommendations.push({
-        id: `r_remove_${target.id}`, // ✅ stable
-        title: "Remove the least relevant view",
-        type: "REMOVE_CONTENT",
-        payload: { id: target.id },
-        reason: "Conversation suggests this view is no longer useful",
-      });
-    }
-  }
+  /* 3️⃣ Simulate LLM latency */
+  await new Promise((r) => setTimeout(r, 400 + Math.random() * 600));
 
   return NextResponse.json(recommendations);
 }
