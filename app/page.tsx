@@ -6,20 +6,27 @@ import { useRecommendation } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
 import { Recommendation, View } from "@/types/dashboard";
 import RecommendationSidebar from "@/components/recommendation/RecommendationSidebar";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import {
+  Sidebar,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+} from "@/components/ui/sidebar";
 import { SiteHeader } from "@/components/SiteHeader";
 
 import useVoiceInput from "@/hooks/useVoiceInput";
+import ChartCreatorSidebar from "@/components/chartCreator/chartCreatorSidebar";
+
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Brush, LayoutGrid, Plus } from "lucide-react";
+import { IconSparkles } from "@tabler/icons-react";
 
 /* ===================== Initial Views ===================== */
 
 const initialViews: View[] = [
-  /* ===================== 1. Overall Trend ===================== */
   {
     id: "v_sales_trend",
-    // time (e.g., weeks)
     x: [1, 2, 3, 4, 5, 6],
-    // total sales
     y: [120, 135, 128, 150, 170, 165],
     chartType: "LINE",
     size: "lg",
@@ -28,13 +35,9 @@ const initialViews: View[] = [
     yLabel: "Sales ($K)",
     title: "Overall Sales Trend",
   },
-
-  /* ===================== 2. Category Comparison ===================== */
   {
     id: "v_sales_by_category",
-    // category indices: A, B, C, D
     x: [0, 1, 2, 3],
-    // sales per category
     y: [320, 210, 180, 260],
     chartType: "BAR",
     size: "md",
@@ -42,66 +45,6 @@ const initialViews: View[] = [
     xLabel: "Categories",
     yLabel: "Sales ($K)",
     title: "Sales by Category",
-  },
-
-  /* ===================== 3. Growth Rate Over Time ===================== */
-  {
-    id: "v_sales_growth_rate",
-    // weeks
-    x: [2, 3, 4, 5, 6],
-    // week-over-week growth (%)
-    y: [12, -5, 17, 13, -3],
-    chartType: "LINE",
-    size: "md",
-    priority: 3,
-    xLabel: "Weeks",
-    yLabel: "Growth Rate (%)",
-    title: "Week-over-Week Sales Growth Rate",
-  },
-
-  /* ===================== 4. Regional Contribution ===================== */
-  {
-    id: "v_sales_by_region",
-    // regions: North, South, East, West
-    x: [0, 1, 2, 3],
-    // contribution (%)
-    y: [35, 25, 20, 20],
-    chartType: "BAR",
-    size: "sm",
-    priority: 4,
-    xLabel: "Regions",
-    yLabel: "Contribution (%)",
-    title: "Sales Contribution by Region",
-  },
-
-  /* ===================== 5. Top Products Table ===================== */
-  {
-    id: "v_top_products",
-    // product rank
-    x: [1, 2, 3, 4, 5],
-    // sales
-    y: [95, 88, 76, 61, 54],
-    chartType: "TABLE",
-    size: "sm",
-    priority: 5,
-    xLabel: "Product Rank",
-    yLabel: "Sales ($K)",
-    title: "Top 5 Products by Sales",
-  },
-
-  /* ===================== 6. Anomaly / Spike Detection ===================== */
-  {
-    id: "v_sales_spikes",
-    // weeks
-    x: [1, 2, 3, 4, 5, 6],
-    // deviation from moving average
-    y: [0, 5, -8, 12, 18, -4],
-    chartType: "LINE",
-    size: "sm",
-    priority: 6,
-    xLabel: "Weeks",
-    yLabel: "Deviation ($K)",
-    title: "Sales Deviation from Moving Average",
   },
 ];
 
@@ -113,53 +56,42 @@ function AppContent() {
     string[]
   >([]);
   const [textChats, setTextChats] = useState<string[]>([]);
-
-  /** 🔥 핵심: hover된 recommendation */
   const [hoveredRec, setHoveredRec] = useState<Recommendation | null>(null);
+  const [sidebarMode, setSidebarMode] = useState<"FORMAT" | "STRUCTURE">(
+    "FORMAT"
+  );
 
   const { focusScore } = useFocus();
   const voice = useVoiceInput({ lang: "en-US" });
 
   const {
     recommendations,
-
     acceptRecommendation,
     isLoading,
     triggerRecommendation,
   } = useRecommendation();
 
-  /* ================= PREVIEW DERIVATION ================= */
+  /* ================= PREVIEW ================= */
 
   const previewMap = useMemo(() => {
     if (!hoveredRec) return {};
-
     const r = hoveredRec;
     const map: Record<string, any> = {};
 
-    switch (r.type) {
-      case "MODIFY_CONTENT":
-      case "RESIZE": {
-        if (!r.payload?.id) break;
-        map[r.payload.id] = {
-          type: "MODIFY",
-          view: { ...views.find((v) => v.id === r.payload.id)!, ...r.payload },
-        };
-        break;
-      }
-
-      case "REMOVE_CONTENT": {
-        if (!r.payload?.id) break;
-        map[r.payload.id] = { type: "REMOVE" };
-        break;
-      }
+    if (r.payload?.id) {
+      map[r.payload.id] = {
+        type: r.type === "REMOVE_CONTENT" ? "REMOVE" : "MODIFY",
+        view: {
+          ...views.find((v) => v.id === r.payload.id),
+          ...r.payload,
+        },
+      };
     }
-
     return map;
   }, [hoveredRec, views]);
 
   const addPreview = useMemo(() => {
-    if (!hoveredRec) return null;
-    if (hoveredRec.type !== "NEW_CONTENT") return null;
+    if (!hoveredRec || hoveredRec.type !== "NEW_CONTENT") return null;
 
     return {
       id: hoveredRec.payload.id ?? "preview_add",
@@ -171,7 +103,7 @@ function AppContent() {
     } satisfies View;
   }, [hoveredRec, views.length]);
 
-  /* ================= APPLY (unchanged) ================= */
+  /* ================= APPLY ================= */
 
   const apply = (r: Recommendation) => {
     setAcceptedRecommendationIds((prev) => [...prev, r.id]);
@@ -244,27 +176,74 @@ function AppContent() {
       </SidebarInset>
 
       {/* ================= SIDEBAR ================= */}
-      <RecommendationSidebar
-        recs={recommendations.filter(
-          (r) => !acceptedRecommendationIds.includes(r.id)
+      <Sidebar side="right" className="border-l h-screen flex flex-col">
+        <SidebarHeader className="border-b p-3.5">
+          <ToggleGroup
+            type="single"
+            value={sidebarMode}
+            onValueChange={(v) => {
+              if (v) setSidebarMode(v as "FORMAT" | "STRUCTURE");
+            }}
+            className="w-full bg-muted p-1 rounded-lg"
+          >
+            <ToggleGroupItem
+              value="FORMAT"
+              className="
+      flex-1 flex flex-col items-center justify-center
+      gap-0.5 py-2
+      data-[state=on]:bg-background
+      data-[state=on]:shadow-sm
+    "
+            >
+              <IconSparkles className="size-4" />
+              <span className="text-[11px] leading-none text-muted-foreground">
+                Recommendations
+              </span>
+            </ToggleGroupItem>
+
+            <ToggleGroupItem
+              value="STRUCTURE"
+              className="
+      flex-1 flex flex-col items-center justify-center
+      gap-0.5 py-2
+      data-[state=on]:bg-background
+      data-[state=on]:shadow-sm
+    "
+            >
+              <Plus className="size-4" />
+              <span className="text-[11px] leading-none text-muted-foreground">
+                Add Visualization
+              </span>
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </SidebarHeader>
+
+        {sidebarMode === "FORMAT" && (
+          <RecommendationSidebar
+            recs={recommendations.filter(
+              (r) => !acceptedRecommendationIds.includes(r.id)
+            )}
+            onAccept={apply}
+            onHover={setHoveredRec}
+            onLeave={() => setHoveredRec(null)}
+            voice={voice}
+            textChats={textChats}
+            isGenerating={isLoading}
+            onSendTextChat={(msg) => {
+              setTextChats((prev) => [...prev, msg]);
+              triggerRecommendation({
+                views,
+                textChats: [...textChats, msg],
+                focusScore,
+                dataSchema: null,
+                conversation: [],
+              });
+            }}
+          />
         )}
-        onAccept={apply}
-        onHover={setHoveredRec}
-        onLeave={() => setHoveredRec(null)}
-        voice={voice}
-        textChats={textChats}
-        isGenerating={isLoading}
-        onSendTextChat={(msg) => {
-          setTextChats((prev) => [...prev, msg]);
-          triggerRecommendation({
-            views,
-            textChats: [...textChats, msg],
-            focusScore,
-            dataSchema: null,
-            conversation: [],
-          });
-        }}
-      />
+
+        {sidebarMode === "STRUCTURE" && <ChartCreatorSidebar />}
+      </Sidebar>
     </>
   );
 }

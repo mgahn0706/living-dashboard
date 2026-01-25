@@ -1,5 +1,5 @@
 // types/dashboard.ts
-export type ChartType = "BAR" | "LINE" | "TABLE";
+export type ChartType = "BAR" | "LINE" | "TABLE" | "SCATTER";
 
 export type View = {
   id: string;

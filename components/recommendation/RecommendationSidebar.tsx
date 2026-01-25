@@ -243,7 +243,8 @@ export default function RecommendationSidebar({
   }, [conversation, textChats]);
 
   return (
-    <Sidebar side="right" className="border-l h-screen flex flex-col">
+    <>
+      {" "}
       {/* Header */}
       <SidebarHeader className="border-b p-3.5">
         <SidebarMenu>
@@ -253,9 +254,6 @@ export default function RecommendationSidebar({
                 <IconSparkles className="size-5 text-primary" />
                 <div>
                   <div className="font-semibold">Recommendations</div>
-                  <div className="text-xs text-muted-foreground">
-                    AI-powered suggestions
-                  </div>
                 </div>
               </div>
 
@@ -273,7 +271,6 @@ export default function RecommendationSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-
       {/* Recommendations Scroll */}
       <SidebarContent className="flex-1 overflow-hidden">
         <ScrollArea className="h-full p-4">
@@ -307,7 +304,6 @@ export default function RecommendationSidebar({
           </div>
         </ScrollArea>
       </SidebarContent>
-
       {/* Bottom Stack */}
       <div className="sticky bottom-0 z-10">
         <LiveTranscript
@@ -331,6 +327,6 @@ export default function RecommendationSidebar({
           </div>
         </SidebarFooter>
       </div>
-    </Sidebar>
+    </>
   );
 }
