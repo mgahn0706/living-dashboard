@@ -10,10 +10,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 
-import type { ChartType } from "@/types/dashboard";
+import { useDataset } from "@/context/DatasetContext";
+import type { ChartType, View } from "@/types/dashboard";
 
 /* =====================================================
    Chart definitions
@@ -31,10 +31,30 @@ const CHART_BUTTONS: {
 ];
 
 /* =====================================================
-   Component
+   Types
 ===================================================== */
 
-export default function ChartCreatorSidebar() {
+type DraftChartConfig = {
+  chartType: ChartType;
+  title?: string;
+  size: "sm" | "md" | "lg";
+
+  // resolved values
+  x: number[];
+  y: number[];
+};
+
+/* =====================================================
+   Main Component
+===================================================== */
+
+export default function ChartCreatorSidebar({
+  onAddView,
+}: {
+  onAddView: (config: View) => void;
+}) {
+  const { attributeKeys } = useDataset();
+
   const [selectedType, setSelectedType] = useState<ChartType | null>(null);
 
   function handleToggle(type: ChartType) {
@@ -49,7 +69,7 @@ export default function ChartCreatorSidebar() {
 
       <SidebarContent className="flex flex-col gap-4 p-4 shrink-0">
         {/* =======================
-            Chart buttons
+            Chart type buttons
         ======================== */}
         <div className="flex items-center gap-1">
           {CHART_BUTTONS.map((c) => {
@@ -73,23 +93,22 @@ export default function ChartCreatorSidebar() {
           })}
         </div>
 
+        {/* =======================
+            Config panel
+        ======================== */}
         <Collapsible open={!!selectedType}>
-          <CollapsibleContent
-            className="
-      overflow-hidden
-      rounded-md
-      border
-      bg-muted/30
-      data-[state=open]:animate-collapsible-down
-      data-[state=closed]:animate-collapsible-up
-    "
-          >
+          <CollapsibleContent className="overflow-hidden rounded-md border bg-muted/30">
             {selectedType && (
               <div className="p-3 space-y-3">
                 <div className="text-xs font-semibold text-muted-foreground">
                   Chart Configuration
                 </div>
-                <ChartConfigPanel chartType={selectedType} />
+
+                <ChartConfigPanel
+                  chartType={selectedType}
+                  attributeKeys={attributeKeys}
+                  onAddView={onAddView}
+                />
               </div>
             )}
           </CollapsibleContent>
@@ -103,7 +122,24 @@ export default function ChartCreatorSidebar() {
    Config Panel
 ===================================================== */
 
-function ChartConfigPanel({ chartType }: { chartType: ChartType }) {
+function ChartConfigPanel({
+  chartType,
+  attributeKeys,
+  onAddView,
+}: {
+  chartType: ChartType;
+  attributeKeys: string[];
+  onAddView: (view: View) => void;
+}) {
+  const { resolveAttribute } = useDataset();
+
+  const [xAttr, setXAttr] = useState<string | null>(null);
+  const [yAttr, setYAttr] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const [size, setSize] = useState<"sm" | "md" | "lg">("md");
+
+  const canAdd = chartType === "TABLE" ? false : !!xAttr && !!yAttr;
+
   return (
     <div className="space-y-4 text-sm">
       <div className="font-semibold text-muted-foreground">
@@ -111,46 +147,80 @@ function ChartConfigPanel({ chartType }: { chartType: ChartType }) {
       </div>
 
       {/* Title */}
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Title</label>
-        <input
-          className="w-full rounded-md border px-2 py-1 text-sm"
-          placeholder="Chart title"
-        />
-      </div>
+      <input
+        className="w-full rounded-md border px-2 py-1 text-sm"
+        placeholder="Chart title"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
 
-      {/* Axis config */}
+      {/* Axis */}
       {chartType !== "TABLE" && (
         <>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">X Axis</label>
-            <input
-              className="w-full rounded-md border px-2 py-1 text-sm"
-              placeholder="Select field"
-            />
-          </div>
+          <select
+            className="w-full rounded-md border px-2 py-1"
+            value={xAttr ?? ""}
+            onChange={(e) => setXAttr(e.target.value || null)}
+          >
+            <option value="">Select X attribute</option>
+            {attributeKeys.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
 
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Y Axis</label>
-            <input
-              className="w-full rounded-md border px-2 py-1 text-sm"
-              placeholder="Select field"
-            />
-          </div>
+          <select
+            className="w-full rounded-md border px-2 py-1"
+            value={yAttr ?? ""}
+            onChange={(e) => setYAttr(e.target.value || null)}
+          >
+            <option value="">Select Y attribute</option>
+            {attributeKeys.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
         </>
       )}
 
       {/* Size */}
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Size</label>
-        <div className="flex gap-2">
-          {(["sm", "md", "lg"] as const).map((s) => (
-            <Button key={s} variant="outline" size="sm">
-              {s.toUpperCase()}
-            </Button>
-          ))}
-        </div>
+      <div className="flex gap-2">
+        {(["sm", "md", "lg"] as const).map((s) => (
+          <Button
+            key={s}
+            variant={size === s ? "default" : "outline"}
+            size="sm"
+            onClick={() => setSize(s)}
+          >
+            {s.toUpperCase()}
+          </Button>
+        ))}
       </div>
+
+      {/* Add */}
+      <Button
+        disabled={!canAdd}
+        onClick={() => {
+          if (!xAttr || !yAttr) return;
+
+          const x = resolveAttribute(xAttr);
+          const y = resolveAttribute(yAttr);
+
+          onAddView({
+            id: `v_${Date.now()}`,
+            chartType,
+            x,
+            y,
+            size,
+            title,
+            priority: Date.now(),
+          });
+        }}
+      >
+        Add Chart
+      </Button>
     </div>
   );
 }

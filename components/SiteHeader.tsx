@@ -1,4 +1,6 @@
-import { useRef, useState } from "react";
+"use client";
+
+import { useRef } from "react";
 import {
   IconBrandGithub,
   IconDashboard,
@@ -8,149 +10,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-
-/* =====================================================
-   Types for LLM-friendly schema
-===================================================== */
-
-type SchemaNode = {
-  type: "object" | "array" | "primitive";
-  children?: Record<string, SchemaNode>;
-};
-
-/* =====================================================
-   Recursive flat key extraction (arrays included)
-===================================================== */
-
-function extractKeysRecursive(
-  value: unknown,
-  prefix = "",
-  acc = new Set<string>()
-): Set<string> {
-  if (Array.isArray(value)) {
-    value.forEach((item) => extractKeysRecursive(item, prefix, acc));
-    return acc;
-  }
-
-  if (typeof value === "object" && value !== null) {
-    Object.entries(value).forEach(([key, val]) => {
-      const path = prefix ? `${prefix}.${key}` : key;
-      acc.add(path);
-      extractKeysRecursive(val, path, acc);
-    });
-  }
-
-  return acc;
-}
-
-/* =====================================================
-   Recursive hierarchical schema builder
-===================================================== */
-
-function buildSchema(value: unknown): SchemaNode {
-  if (Array.isArray(value)) {
-    const mergedChildren: Record<string, SchemaNode> = {};
-
-    value.forEach((item) => {
-      const childSchema = buildSchema(item);
-      if (childSchema.type === "object" && childSchema.children) {
-        Object.entries(childSchema.children).forEach(([key, node]) => {
-          if (!mergedChildren[key]) {
-            mergedChildren[key] = node;
-          }
-        });
-      }
-    });
-
-    return {
-      type: "array",
-      children: mergedChildren,
-    };
-  }
-
-  if (typeof value === "object" && value !== null) {
-    const children: Record<string, SchemaNode> = {};
-    Object.entries(value).forEach(([key, val]) => {
-      children[key] = buildSchema(val);
-    });
-
-    return {
-      type: "object",
-      children,
-    };
-  }
-
-  return { type: "primitive" };
-}
-
-/* =====================================================
-   CSV → Object[] parser (simple, intentional)
-===================================================== */
-
-function parseCSV(text: string): Record<string, any>[] {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-
-  const headers = lines[0].split(",").map((h) => h.trim());
-
-  return lines.slice(1).map((line) => {
-    const values = line.split(",").map((v) => v.trim());
-    const row: Record<string, any> = {};
-
-    headers.forEach((h, i) => {
-      row[h] = values[i];
-    });
-
-    return row;
-  });
-}
-
-/* =====================================================
-   SiteHeader
-===================================================== */
+import { useDataset } from "@/context/DatasetContext";
 
 export function SiteHeader() {
-  /** Flat attribute paths */
-  const [attributeKeys, setAttributeKeys] = useState<string[]>([]);
-
-  /** Hierarchical schema for LLM */
-  const [schema, setSchema] = useState<SchemaNode | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { attributeKeys, uploadDataset } = useDataset();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
-      const text = await file.text();
-      let data: any;
-
-      /* ---------- JSON ---------- */
-      if (file.name.endsWith(".json")) {
-        data = JSON.parse(text);
-      } else if (file.name.endsWith(".csv")) {
-
-      /* ---------- CSV ---------- */
-        data = parseCSV(text); // array of rows
-      } else {
-        throw new Error("Unsupported file type");
-      }
-
-      if (typeof data !== "object" || data === null) {
-        throw new Error("Invalid data");
-      }
-
-      const flatKeys = Array.from(extractKeysRecursive(data)).sort();
-
-      const hierarchicalSchema = buildSchema(data);
-
-      setAttributeKeys(flatKeys);
-      setSchema(hierarchicalSchema);
-
-      console.log("Flat attribute keys:", flatKeys);
-      console.log("Hierarchical schema (LLM-ready):", hierarchicalSchema);
-    } catch (err) {
+      await uploadDataset(file);
+    } catch {
       alert("Invalid JSON / CSV file");
     } finally {
       e.target.value = "";
@@ -183,7 +55,7 @@ export function SiteHeader() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".json,.csv,application/json,text/csv"
+            accept=".json,.csv"
             className="hidden"
             onChange={handleFileChange}
           />

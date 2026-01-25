@@ -18,8 +18,9 @@ import useVoiceInput from "@/hooks/useVoiceInput";
 import ChartCreatorSidebar from "@/components/chartCreator/chartCreatorSidebar";
 
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Brush, LayoutGrid, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { IconSparkles } from "@tabler/icons-react";
+import { DatasetProvider } from "@/context/DatasetContext";
 
 /* ===================== Initial Views ===================== */
 
@@ -242,7 +243,13 @@ function AppContent() {
           />
         )}
 
-        {sidebarMode === "STRUCTURE" && <ChartCreatorSidebar />}
+        {sidebarMode === "STRUCTURE" && (
+          <ChartCreatorSidebar
+            onAddView={(view) => {
+              setViews((prev) => [...prev, view]);
+            }}
+          />
+        )}
       </Sidebar>
     </>
   );
@@ -261,7 +268,9 @@ export default function Page() {
       }
     >
       <FocusProvider>
-        <AppContent />
+        <DatasetProvider>
+          <AppContent />
+        </DatasetProvider>
       </FocusProvider>
     </SidebarProvider>
   );
