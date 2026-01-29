@@ -90,18 +90,11 @@ export default function ViewCard({
           </div>
         </CardHeader>
 
-        {/* ---------- Chart ---------- */}
+        {/* ---------- Content ---------- */}
         <CardContent
           className={cn(CHART_HEIGHT[view.size], "flex p-0 overflow-hidden")}
         >
-          <ChartRenderer
-            x={view.x}
-            y={view.y}
-            type={view.chartType}
-            height="100%"
-            xLabel={view.xLabel}
-            yLabel={view.yLabel}
-          />
+          <ChartRenderer view={view} height="100%" />
         </CardContent>
       </div>
 
@@ -141,12 +134,7 @@ function ModifyOverlay({ view, size }: { view: View; size: View["size"] }) {
         <CardContent
           className={cn(CHART_HEIGHT[size], "flex p-0 overflow-hidden")}
         >
-          <ChartRenderer
-            x={view.x}
-            y={view.y}
-            type={view.chartType}
-            height="100%"
-          />
+          <ChartRenderer view={view} height="100%" />
         </CardContent>
       </div>
     </div>
@@ -189,12 +177,7 @@ function AddOverlay({ view, size }: { view: View; size: View["size"] }) {
         <CardContent
           className={cn(CHART_HEIGHT[size], "flex p-0 overflow-hidden")}
         >
-          <ChartRenderer
-            x={view.x}
-            y={view.y}
-            type={view.chartType}
-            height="100%"
-          />
+          <ChartRenderer view={view} height="100%" />
         </CardContent>
       </div>
     </div>

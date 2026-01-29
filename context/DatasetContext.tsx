@@ -1,10 +1,12 @@
 "use client";
 
-import React, { createContext, useContext, useRef, useState } from "react";
+import React, { createContext, useContext, useState } from "react";
 
 /* =====================================================
    Types
 ===================================================== */
+
+export type PrimitiveType = "string" | "number" | "date" | "unknown";
 
 export type SchemaNode = {
   type: "object" | "array" | "primitive";
@@ -14,6 +16,7 @@ export type SchemaNode = {
 type DatasetContextType = {
   rawData: any;
   attributeKeys: string[];
+  attributeTypes: Record<string, PrimitiveType>;
   schema: SchemaNode | null;
   resolveAttribute: (attr: string) => any[];
   uploadDataset: (file: File) => Promise<void>;
@@ -61,13 +64,15 @@ function extractKeysRecursive(
 function getValuesByAttribute(data: any, attr: string): any[] {
   if (!Array.isArray(data)) return [];
 
-  return data.map((row) => {
-    return attr.split(".").reduce((acc, key) => {
+  return data.map((row) =>
+    attr.split(".").reduce((acc, key) => {
       if (acc == null) return undefined;
       return acc[key];
-    }, row);
-  });
+    }, row)
+  );
 }
+
+/* ---------- schema ---------- */
 
 function buildSchema(value: unknown): SchemaNode {
   if (Array.isArray(value)) {
@@ -94,6 +99,8 @@ function buildSchema(value: unknown): SchemaNode {
   return { type: "primitive" };
 }
 
+/* ---------- csv ---------- */
+
 function parseCSV(text: string): Record<string, any>[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
@@ -108,6 +115,46 @@ function parseCSV(text: string): Record<string, any>[] {
   });
 }
 
+/* ---------- type detection ---------- */
+
+function detectPrimitiveType(values: any[]): PrimitiveType {
+  const filtered = values.filter(
+    (v) => v !== null && v !== undefined && v !== ""
+  );
+
+  if (filtered.length === 0) return "unknown";
+
+  let numberCount = 0;
+  let dateCount = 0;
+
+  filtered.forEach((v) => {
+    if (typeof v === "number") {
+      numberCount++;
+      return;
+    }
+
+    if (typeof v === "string") {
+      const n = Number(v);
+      if (!Number.isNaN(n)) {
+        numberCount++;
+        return;
+      }
+
+      const d = Date.parse(v);
+      if (!Number.isNaN(d)) {
+        dateCount++;
+        return;
+      }
+    }
+  });
+
+  const ratio = filtered.length * 0.7;
+
+  if (numberCount >= ratio) return "number";
+  if (dateCount >= ratio) return "date";
+  return "string";
+}
+
 /* =====================================================
    Provider
 ===================================================== */
@@ -115,6 +162,9 @@ function parseCSV(text: string): Record<string, any>[] {
 export function DatasetProvider({ children }: { children: React.ReactNode }) {
   const [rawData, setRawData] = useState<any>(null);
   const [attributeKeys, setAttributeKeys] = useState<string[]>([]);
+  const [attributeTypes, setAttributeTypes] = useState<
+    Record<string, PrimitiveType>
+  >({});
   const [schema, setSchema] = useState<SchemaNode | null>(null);
 
   const uploadDataset = async (file: File) => {
@@ -136,19 +186,21 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
     const flatKeys = Array.from(extractKeysRecursive(data)).sort();
     const hierarchicalSchema = buildSchema(data);
 
+    const typeMap: Record<string, PrimitiveType> = {};
+    flatKeys.forEach((key) => {
+      const values = getValuesByAttribute(data, key);
+      typeMap[key] = detectPrimitiveType(values);
+    });
+
     setRawData(data);
     setAttributeKeys(flatKeys);
+    setAttributeTypes(typeMap);
     setSchema(hierarchicalSchema);
 
     console.log("Dataset loaded");
     console.log("Attributes:", flatKeys);
+    console.log("Attribute types:", typeMap);
     console.log("Schema:", hierarchicalSchema);
-  };
-
-  const clearDataset = () => {
-    setRawData(null);
-    setAttributeKeys([]);
-    setSchema(null);
   };
 
   const resolveAttribute = (attr: string) =>
@@ -159,6 +211,7 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
       value={{
         rawData,
         attributeKeys,
+        attributeTypes,
         schema,
         resolveAttribute,
         uploadDataset,

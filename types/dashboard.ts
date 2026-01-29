@@ -1,16 +1,26 @@
 // types/dashboard.ts
 export type ChartType = "BAR" | "LINE" | "TABLE" | "SCATTER";
 
-export type View = {
+export type View = ChartView | TableView;
+
+type ChartView = {
   id: string;
   x: number[];
   y: number[];
-  chartType: ChartType;
+  chartType: "BAR" | "LINE" | "SCATTER";
   size: "sm" | "md" | "lg";
   priority: number;
   xLabel?: string;
   yLabel?: string;
-  title?: string;
+  title: string;
+};
+type TableView = {
+  id: string;
+  chartType: "TABLE";
+  columns: string[];
+  size: "sm" | "md" | "lg";
+  priority: number;
+  title: string;
 };
 
 export type Recommendation = {

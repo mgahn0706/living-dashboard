@@ -24,21 +24,16 @@ import {
   XAxis,
   YAxis,
   ResponsiveContainer,
+  ScatterChart,
+  Scatter,
 } from "recharts";
-import { ChartType } from "@/types/dashboard";
+
+import type { View } from "@/types/dashboard";
+import { useDataset } from "@/context/DatasetContext";
 
 /* =======================================================
    Types
 ======================================================= */
-
-export type ChartRendererProps = {
-  type: ChartType;
-  x: number[];
-  y: number[];
-  height?: number | "100%";
-  xLabel?: string;
-  yLabel?: string;
-};
 
 type DataPoint = {
   x: number;
@@ -58,27 +53,41 @@ function buildSeries(x: number[], y: number[]): DataPoint[] {
 }
 
 /* =======================================================
-   ChartRenderer
+   Renderer
 ======================================================= */
 
 export default function ChartRenderer({
-  type,
-  x,
-  y,
+  view,
   height = "100%",
-  xLabel = "x",
-  yLabel = "y",
-}: ChartRendererProps) {
-  const data = React.useMemo(() => buildSeries(x, y), [x, y]);
-
+}: {
+  view: View;
+  height?: number | "100%";
+}) {
   const blue = "#3b82f6";
+
+  /* =======================
+     TABLE VIEW
+  ======================== */
+
+  if (view.chartType === "TABLE") {
+    return <TableRenderer view={view} height={height} />;
+  }
+
+  /* =======================
+     CHART VIEW
+  ======================== */
+
+  const data = React.useMemo(
+    () => buildSeries(view.x, view.y),
+    [view.x, view.y]
+  );
 
   const chartConfig = React.useMemo(
     () =>
       ({
-        y: { label: yLabel },
+        y: { label: view.yLabel ?? "y" },
       } satisfies ChartConfig),
-    [yLabel]
+    [view.yLabel]
   );
 
   if (data.length === 0) {
@@ -89,38 +98,12 @@ export default function ChartRenderer({
     );
   }
 
-  /* ===================== TABLE ===================== */
-
-  if (type === "TABLE") {
-    return (
-      <div className="h-full w-full p-2" style={{ height }}>
-        <ShadTable className="text-xs">
-          <TableHeader>
-            <TableRow>
-              <TableHead>{xLabel}</TableHead>
-              <TableHead>{yLabel}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.map((row, i) => (
-              <TableRow key={i}>
-                <TableCell>{row.x}</TableCell>
-                <TableCell>{row.y}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </ShadTable>
-      </div>
-    );
-  }
-
-  /* ===================== CHART ===================== */
-
   return (
     <div className="h-full w-full" style={{ height }}>
       <ChartContainer config={chartConfig} className="h-full w-full p-0">
         <ResponsiveContainer width="100%" height="100%">
-          {type === "LINE" ? (
+          {view.chartType === "LINE" ? (
+            /* ========== LINE ========== */
             <AreaChart
               data={data}
               margin={{ top: 4, right: 6, left: -8, bottom: 10 }}
@@ -140,7 +123,7 @@ export default function ChartRenderer({
                 axisLine={false}
                 tick={{ fontSize: 11 }}
                 label={{
-                  value: xLabel,
+                  value: view.xLabel ?? "x",
                   position: "insideBottom",
                   offset: -2,
                   style: { fontSize: 10 },
@@ -151,7 +134,7 @@ export default function ChartRenderer({
                 tick={false}
                 axisLine={false}
                 label={{
-                  value: yLabel,
+                  value: view.yLabel ?? "y",
                   angle: -90,
                   position: "insideLeft",
                   offset: 0,
@@ -170,7 +153,8 @@ export default function ChartRenderer({
                 dot={false}
               />
             </AreaChart>
-          ) : (
+          ) : view.chartType === "BAR" ? (
+            /* ========== BAR ========== */
             <BarChart
               data={data}
               barCategoryGap={14}
@@ -184,7 +168,7 @@ export default function ChartRenderer({
                 axisLine={false}
                 tick={{ fontSize: 11 }}
                 label={{
-                  value: xLabel,
+                  value: view.xLabel ?? "x",
                   position: "insideBottom",
                   offset: -2,
                   style: { fontSize: 10 },
@@ -195,7 +179,7 @@ export default function ChartRenderer({
                 tick={false}
                 axisLine={false}
                 label={{
-                  value: yLabel,
+                  value: view.yLabel ?? "y",
                   angle: -90,
                   position: "insideLeft",
                   offset: 0,
@@ -207,9 +191,99 @@ export default function ChartRenderer({
 
               <Bar dataKey="y" radius={[6, 6, 4, 4]} fill={blue} />
             </BarChart>
+          ) : (
+            /* ========== SCATTER ========== */
+            <ScatterChart margin={{ top: 4, right: 6, left: -8, bottom: 10 }}>
+              <CartesianGrid vertical={false} strokeOpacity={0.15} />
+
+              <XAxis
+                type="number"
+                dataKey="x"
+                tickLine={false}
+                axisLine={false}
+                tick={{ fontSize: 11 }}
+                label={{
+                  value: view.xLabel ?? "x",
+                  position: "insideBottom",
+                  offset: -2,
+                  style: { fontSize: 10 },
+                }}
+              />
+
+              <YAxis
+                type="number"
+                dataKey="y"
+                tick={false}
+                axisLine={false}
+                label={{
+                  value: view.yLabel ?? "y",
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: 0,
+                  style: { fontSize: 10 },
+                }}
+              />
+
+              <ChartTooltip content={<ChartTooltipContent />} />
+
+              <Scatter data={data} fill={blue} />
+            </ScatterChart>
           )}
         </ResponsiveContainer>
       </ChartContainer>
+    </div>
+  );
+}
+
+/* =======================================================
+   Table Renderer
+======================================================= */
+
+function TableRenderer({
+  view,
+  height,
+}: {
+  view: Extract<View, { chartType: "TABLE" }>;
+  height: number | "100%";
+}) {
+  const { rawData } = useDataset();
+
+  if (!Array.isArray(rawData) || rawData.length === 0) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
+        No data
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full w-full p-2 overflow-auto" style={{ height }}>
+      <ShadTable className="text-xs">
+        <TableHeader>
+          <TableRow>
+            {view.columns.map((col) => (
+              <TableHead key={col}>{col}</TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
+          {rawData.map((row, i) => (
+            <TableRow key={i}>
+              {view.columns.map((col) => (
+                <TableCell key={col}>
+                  {col
+                    .split(".")
+                    .reduce<any>(
+                      (acc, k) => (acc == null ? undefined : acc[k]),
+                      row
+                    )}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </ShadTable>
     </div>
   );
 }

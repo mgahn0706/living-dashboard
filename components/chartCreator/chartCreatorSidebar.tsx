@@ -31,18 +31,23 @@ const CHART_BUTTONS: {
 ];
 
 /* =====================================================
-   Types
+   Helpers
 ===================================================== */
 
-type DraftChartConfig = {
-  chartType: ChartType;
-  title?: string;
-  size: "sm" | "md" | "lg";
-
-  // resolved values
-  x: number[];
-  y: number[];
-};
+function chartHint(chartType: ChartType) {
+  switch (chartType) {
+    case "LINE":
+      return "Best for date/number × number (trend over time).";
+    case "BAR":
+      return "Best for categorical/string × number comparisons.";
+    case "SCATTER":
+      return "Requires number × number (correlation analysis).";
+    case "TABLE":
+      return "Select multiple attributes to inspect raw values.";
+    default:
+      return null;
+  }
+}
 
 /* =====================================================
    Main Component
@@ -54,7 +59,6 @@ export default function ChartCreatorSidebar({
   onAddView: (config: View) => void;
 }) {
   const { attributeKeys } = useDataset();
-
   const [selectedType, setSelectedType] = useState<ChartType | null>(null);
 
   function handleToggle(type: ChartType) {
@@ -68,9 +72,7 @@ export default function ChartCreatorSidebar({
       </SidebarHeader>
 
       <SidebarContent className="flex flex-col gap-4 p-4 shrink-0">
-        {/* =======================
-            Chart type buttons
-        ======================== */}
+        {/* Chart type buttons */}
         <div className="flex items-center gap-1">
           {CHART_BUTTONS.map((c) => {
             const active = selectedType === c.type;
@@ -93,9 +95,7 @@ export default function ChartCreatorSidebar({
           })}
         </div>
 
-        {/* =======================
-            Config panel
-        ======================== */}
+        {/* Config panel */}
         <Collapsible open={!!selectedType}>
           <CollapsibleContent className="overflow-hidden rounded-md border bg-muted/30">
             {selectedType && (
@@ -131,19 +131,32 @@ function ChartConfigPanel({
   attributeKeys: string[];
   onAddView: (view: View) => void;
 }) {
-  const { resolveAttribute } = useDataset();
+  const { resolveAttribute, attributeTypes } = useDataset();
 
   const [xAttr, setXAttr] = useState<string | null>(null);
   const [yAttr, setYAttr] = useState<string | null>(null);
+  const [tableAttrs, setTableAttrs] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [size, setSize] = useState<"sm" | "md" | "lg">("md");
 
-  const canAdd = chartType === "TABLE" ? false : !!xAttr && !!yAttr;
+  const canAdd =
+    chartType === "TABLE" ? tableAttrs.length > 0 : !!xAttr && !!yAttr;
+
+  function toggleTableAttr(attr: string) {
+    setTableAttrs((prev) =>
+      prev.includes(attr) ? prev.filter((a) => a !== attr) : [...prev, attr]
+    );
+  }
 
   return (
     <div className="space-y-4 text-sm">
       <div className="font-semibold text-muted-foreground">
         {chartType} Settings
+      </div>
+
+      {/* Hint */}
+      <div className="text-xs text-muted-foreground">
+        {chartHint(chartType)}
       </div>
 
       {/* Title */}
@@ -154,8 +167,33 @@ function ChartConfigPanel({
         onChange={(e) => setTitle(e.target.value)}
       />
 
-      {/* Axis */}
-      {chartType !== "TABLE" && (
+      {/* Axis / Columns */}
+      {chartType === "TABLE" ? (
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">
+            Select columns
+          </div>
+
+          <div className="max-h-40 overflow-auto rounded-md border bg-background p-2 space-y-1">
+            {attributeKeys.map((k) => (
+              <label
+                key={k}
+                className="flex items-center gap-2 text-xs cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={tableAttrs.includes(k)}
+                  onChange={() => toggleTableAttr(k)}
+                />
+                <span className="flex-1">{k}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {attributeTypes[k]}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : (
         <>
           <select
             className="w-full rounded-md border px-2 py-1"
@@ -165,7 +203,7 @@ function ChartConfigPanel({
             <option value="">Select X attribute</option>
             {attributeKeys.map((k) => (
               <option key={k} value={k}>
-                {k}
+                {k} ({attributeTypes[k]})
               </option>
             ))}
           </select>
@@ -178,7 +216,7 @@ function ChartConfigPanel({
             <option value="">Select Y attribute</option>
             {attributeKeys.map((k) => (
               <option key={k} value={k}>
-                {k}
+                {k} ({attributeTypes[k]})
               </option>
             ))}
           </select>
@@ -203,16 +241,25 @@ function ChartConfigPanel({
       <Button
         disabled={!canAdd}
         onClick={() => {
-          if (!xAttr || !yAttr) return;
+          if (chartType === "TABLE") {
+            onAddView({
+              id: `v_${Date.now()}`,
+              chartType,
+              columns: tableAttrs,
+              size,
+              title,
+              priority: Date.now(),
+            });
+            return;
+          }
 
-          const x = resolveAttribute(xAttr);
-          const y = resolveAttribute(yAttr);
+          if (!xAttr || !yAttr) return;
 
           onAddView({
             id: `v_${Date.now()}`,
             chartType,
-            x,
-            y,
+            x: resolveAttribute(xAttr),
+            y: resolveAttribute(yAttr),
             size,
             title,
             priority: Date.now(),
