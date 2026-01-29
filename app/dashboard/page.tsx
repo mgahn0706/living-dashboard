@@ -72,7 +72,7 @@ export default function Page() {
       style={
         {
           "--sidebar-width": "280px", // Slimmer sidebar
-          "--header-height": "4rem",
+          "--header-height": "60px",
         } as React.CSSProperties
       }
     >

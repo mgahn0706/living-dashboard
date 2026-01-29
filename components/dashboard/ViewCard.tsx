@@ -55,21 +55,28 @@ function formatFocus(score: number) {
 
 export default function ViewCard({
   view,
+  isSelected,
   preview = null,
   focusScore,
   onMouseMove,
+  onClick,
 }: {
   view: View;
+  isSelected: boolean;
   preview?: PreviewState;
   focusScore: number;
-  onMouseMove: React.MouseEventHandler<HTMLDivElement>;
+  onMouseMove?: React.MouseEventHandler<HTMLDivElement>;
+  onClick?: () => void;
 }) {
   return (
     <Card
       onMouseMove={onMouseMove}
+      onClick={onClick}
       className={cn(
         SIZE_CLASS[view.size],
-        "relative overflow-hidden transition-all hover:ring-1 hover:ring-ring"
+        "relative overflow-hidden transition-all cursor-pointer",
+        "hover:ring-1 hover:ring-ring",
+        isSelected && "ring-2 ring-primary shadow-sm" // ★ selection UI
       )}
     >
       {/* ================= Base View ================= */}
@@ -82,7 +89,12 @@ export default function ViewCard({
         {/* ---------- Header ---------- */}
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm">{view.title || view.id}</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-1">
+              {view.title || view.id}
+              {isSelected && (
+                <span className="text-[10px] text-primary">(Selected)</span> // ★ optional label
+              )}
+            </CardTitle>
 
             <span className="text-[10px] text-muted-foreground">
               Focus: {formatFocus(focusScore)}

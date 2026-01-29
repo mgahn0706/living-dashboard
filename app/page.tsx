@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { useRecommendation } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
-import { Recommendation, View } from "@/types/dashboard";
+import type { Recommendation, View } from "@/types/dashboard";
+import type { PreviewState } from "@/components/dashboard/ViewCard";
 import RecommendationSidebar from "@/components/recommendation/RecommendationSidebar";
 import {
   Sidebar,
@@ -18,41 +19,55 @@ import useVoiceInput from "@/hooks/useVoiceInput";
 import ChartCreatorSidebar from "@/components/chartCreator/chartCreatorSidebar";
 
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Plus } from "lucide-react";
+import { Edit, Plus } from "lucide-react";
 import { IconSparkles } from "@tabler/icons-react";
 import { DatasetProvider } from "@/context/DatasetContext";
 
-/* ===================== Initial Views ===================== */
+/* =====================================================
+   View factories (chartType 리터럴 고정)
+===================================================== */
 
-const initialViews: View[] = [
-  {
-    id: "v_sales_trend",
-    x: [1, 2, 3, 4, 5, 6],
-    y: [120, 135, 128, 150, 170, 165],
-    chartType: "LINE",
-    size: "lg",
-    priority: 1,
-    xLabel: "Weeks",
-    yLabel: "Sales ($K)",
-    title: "Overall Sales Trend",
-  },
-  {
-    id: "v_sales_by_category",
-    x: [0, 1, 2, 3],
-    y: [320, 210, 180, 260],
-    chartType: "BAR",
-    size: "md",
-    priority: 2,
-    xLabel: "Categories",
-    yLabel: "Sales ($K)",
-    title: "Sales by Category",
-  },
-];
+type ChartKind = "BAR" | "LINE" | "SCATTER";
 
-/* ===================== App Content ===================== */
+function makeChartView(
+  kind: ChartKind,
+  payload: Partial<View>,
+  priority: number
+): View {
+  return {
+    id: payload.id ?? `v_${Date.now()}`,
+    chartType: kind,
+    x: (payload as any).x ?? [],
+    y: (payload as any).y ?? [],
+    size: payload.size ?? "md",
+    priority,
+    xLabel: (payload as any).xLabel,
+    yLabel: (payload as any).yLabel,
+    title: payload.title ?? "",
+  };
+}
+
+function makeTableView(payload: Partial<View>, priority: number): View {
+  return {
+    id: payload.id ?? `v_${Date.now()}`,
+    chartType: "TABLE",
+    columns: (payload as any).columns ?? [],
+    size: payload.size ?? "md",
+    priority,
+    title: payload.title ?? "",
+  };
+}
+
+/* =====================================================
+   Initial Views
+===================================================== */
+
+/* =====================================================
+   App Content
+===================================================== */
 
 function AppContent() {
-  const [views, setViews] = useState<View[]>(initialViews);
+  const [views, setViews] = useState<View[]>([]);
   const [acceptedRecommendationIds, setAcceptedRecommendationIds] = useState<
     string[]
   >([]);
@@ -61,6 +76,7 @@ function AppContent() {
   const [sidebarMode, setSidebarMode] = useState<"FORMAT" | "STRUCTURE">(
     "FORMAT"
   );
+  const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
 
   const { focusScore } = useFocus();
   const voice = useVoiceInput({ lang: "en-US" });
@@ -72,36 +88,46 @@ function AppContent() {
     triggerRecommendation,
   } = useRecommendation();
 
-  /* ================= PREVIEW ================= */
+  /* ================= PREVIEW MAP (MODIFY / REMOVE) ================= */
 
-  const previewMap = useMemo(() => {
-    if (!hoveredRec) return {};
-    const r = hoveredRec;
-    const map: Record<string, any> = {};
+  const previewMap = useMemo<Record<string, PreviewState>>(() => {
+    if (!hoveredRec || !hoveredRec.payload?.id) return {};
 
-    if (r.payload?.id) {
-      map[r.payload.id] = {
-        type: r.type === "REMOVE_CONTENT" ? "REMOVE" : "MODIFY",
-        view: {
-          ...views.find((v) => v.id === r.payload.id),
-          ...r.payload,
-        },
-      };
-    }
-    return map;
-  }, [hoveredRec, views]);
+    const base = views.find((v) => v.id === hoveredRec.payload.id);
+    if (!base) return {};
 
-  const addPreview = useMemo(() => {
-    if (!hoveredRec || hoveredRec.type !== "NEW_CONTENT") return null;
+    const previewView =
+      base.chartType === "TABLE"
+        ? makeTableView({ ...base, ...hoveredRec.payload }, base.priority)
+        : makeChartView(
+            base.chartType,
+            { ...base, ...hoveredRec.payload },
+            base.priority
+          );
 
     return {
-      id: hoveredRec.payload.id ?? "preview_add",
-      x: hoveredRec.payload.x ?? [],
-      y: hoveredRec.payload.y ?? [],
-      chartType: hoveredRec.payload.chartType ?? "BAR",
-      size: hoveredRec.payload.size ?? "md",
-      priority: views.length + 1,
-    } satisfies View;
+      [base.id]: {
+        type:
+          hoveredRec.type === "REMOVE_CONTENT"
+            ? ("REMOVE" as const)
+            : ("MODIFY" as const),
+        view: previewView,
+      },
+    };
+  }, [hoveredRec, views]);
+
+  /* ================= ADD PREVIEW (View only) ================= */
+
+  const addPreview = useMemo<View | null>(() => {
+    if (!hoveredRec || hoveredRec.type !== "NEW_CONTENT") return null;
+
+    const payload = hoveredRec.payload as Partial<View>;
+
+    if (payload.chartType === "TABLE") {
+      return makeTableView(payload, views.length + 1);
+    }
+
+    return makeChartView(payload.chartType ?? "BAR", payload, views.length + 1);
   }, [hoveredRec, views.length]);
 
   /* ================= APPLY ================= */
@@ -114,40 +140,40 @@ function AppContent() {
         case "MODIFY_CONTENT":
         case "RESIZE":
           return prev.map((v) =>
-            v.id === r.payload.id ? { ...v, ...r.payload } : v
+            v.id === r.payload.id
+              ? v.chartType === "TABLE"
+                ? makeTableView({ ...v, ...r.payload }, v.priority)
+                : makeChartView(v.chartType, { ...v, ...r.payload }, v.priority)
+              : v
           );
 
-        case "REORDER": {
+        case "REORDER":
           if (!r.payload?.id) return prev;
-
           return [...prev]
-            .map((v, i) => {
-              if (v.id !== r.payload.id) return v;
+            .map((v, i) =>
+              v.id === r.payload.id
+                ? {
+                    ...v,
+                    priority: r.payload.priority ?? v.priority ?? i,
+                  }
+                : v
+            )
+            .sort((a, b) => a.priority - b.priority);
 
-              return {
-                ...v,
-                priority: r.payload.priority ?? v.priority ?? i,
-              };
-            })
-            .sort(
-              (a, b) =>
-                (a.priority ?? Number.MAX_SAFE_INTEGER) -
-                (b.priority ?? Number.MAX_SAFE_INTEGER)
-            );
+        case "NEW_CONTENT": {
+          const payload = r.payload as Partial<View>;
+
+          return payload.chartType === "TABLE"
+            ? [...prev, makeTableView(payload, prev.length + 1)]
+            : [
+                ...prev,
+                makeChartView(
+                  payload.chartType ?? "BAR",
+                  payload,
+                  prev.length + 1
+                ),
+              ];
         }
-
-        case "NEW_CONTENT":
-          return [
-            ...prev,
-            {
-              id: r.payload.id ?? `v_${Date.now()}`,
-              x: r.payload.x ?? [],
-              y: r.payload.y ?? [],
-              chartType: r.payload.chartType ?? "BAR",
-              size: r.payload.size ?? "md",
-              priority: prev.length + 1,
-            },
-          ];
 
         case "REMOVE_CONTENT":
           return prev.filter((v) => v.id !== r.payload.id);
@@ -171,6 +197,12 @@ function AppContent() {
               views={views}
               previewMap={previewMap}
               addPreview={addPreview}
+              selectedViewId={selectedViewId}
+              onSelect={(viewId) => {
+                selectedViewId === viewId
+                  ? setSelectedViewId(null)
+                  : setSelectedViewId(viewId);
+              }}
             />
           </div>
         </div>
@@ -211,9 +243,13 @@ function AppContent() {
       data-[state=on]:shadow-sm
     "
             >
-              <Plus className="size-4" />
+              {selectedViewId ? (
+                <Edit className="size-4" />
+              ) : (
+                <Plus className="size-4" />
+              )}
               <span className="text-[11px] leading-none text-muted-foreground">
-                Add Visualization
+                {selectedViewId ? "Edit View" : "Add View"}
               </span>
             </ToggleGroupItem>
           </ToggleGroup>
@@ -245,8 +281,37 @@ function AppContent() {
 
         {sidebarMode === "STRUCTURE" && (
           <ChartCreatorSidebar
-            onAddView={(view) => {
-              setViews((prev) => [...prev, view]);
+            selectedView={views.find((v) => v.id === selectedViewId) || null}
+            onEditView={(id: string, patch: Partial<View>) => {
+              setSidebarMode("FORMAT");
+              setViews((prev) =>
+                prev.map((v) =>
+                  v.id === id
+                    ? v.chartType === "TABLE"
+                      ? makeTableView({ ...v, ...patch }, v.priority)
+                      : makeChartView(
+                          v.chartType,
+                          { ...v, ...patch },
+                          v.priority
+                        )
+                    : v
+                )
+              );
+            }}
+            onAddView={(payload) => {
+              setSidebarMode("FORMAT");
+              setViews((prev) =>
+                payload.chartType === "TABLE"
+                  ? [...prev, makeTableView(payload, prev.length + 1)]
+                  : [
+                      ...prev,
+                      makeChartView(
+                        payload.chartType,
+                        payload,
+                        prev.length + 1
+                      ),
+                    ]
+              );
             }}
           />
         )}
@@ -255,7 +320,9 @@ function AppContent() {
   );
 }
 
-/* ===================== Page Wrapper ===================== */
+/* =====================================================
+   Page Wrapper
+===================================================== */
 
 export default function Page() {
   return (
@@ -263,7 +330,7 @@ export default function Page() {
       style={
         {
           "--sidebar-width": "280px",
-          "--header-height": "4rem",
+          "--header-height": "73px",
         } as React.CSSProperties
       }
     >

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BarChart3, LineChart, Table2, ScatterChart } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,21 @@ import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 
 import { useDataset } from "@/context/DatasetContext";
 import type { ChartType, View } from "@/types/dashboard";
+
+export type NewViewPayload =
+  | {
+      chartType: "TABLE";
+      columns: string[];
+      size: "sm" | "md" | "lg";
+      title: string;
+    }
+  | {
+      chartType: "BAR" | "LINE" | "SCATTER";
+      x: number[];
+      y: number[];
+      size: "sm" | "md" | "lg";
+      title: string;
+    };
 
 /* =====================================================
    Chart definitions
@@ -54,12 +69,25 @@ function chartHint(chartType: ChartType) {
 ===================================================== */
 
 export default function ChartCreatorSidebar({
+  selectedView,
+  onEditView,
   onAddView,
 }: {
-  onAddView: (config: View) => void;
+  selectedView: View | null;
+  onEditView: (id: string, patch: Partial<View>) => void;
+  onAddView: (payload: NewViewPayload) => void; // ★ View 아님
 }) {
   const { attributeKeys } = useDataset();
+  const isEditMode = selectedView !== null;
+
   const [selectedType, setSelectedType] = useState<ChartType | null>(null);
+
+  /* ===== prefill chart type ===== */
+  useEffect(() => {
+    if (isEditMode && selectedView) {
+      setSelectedType(selectedView.chartType);
+    }
+  }, [isEditMode, selectedView]);
 
   function handleToggle(type: ChartType) {
     setSelectedType((prev) => (prev === type ? null : type));
@@ -67,49 +95,47 @@ export default function ChartCreatorSidebar({
 
   return (
     <>
-      <SidebarHeader className="shrink-0">
-        <h2 className="text-sm font-semibold">Add Visualization</h2>
+      <SidebarHeader>
+        <h2 className="text-sm font-semibold">
+          {isEditMode ? "Edit Visualization" : "Add Visualization"}
+        </h2>
       </SidebarHeader>
 
-      <SidebarContent className="flex flex-col gap-4 p-4 shrink-0">
+      <SidebarContent className="flex flex-col gap-4 p-4">
         {/* Chart type buttons */}
-        <div className="flex items-center gap-1">
-          {CHART_BUTTONS.map((c) => {
-            const active = selectedType === c.type;
-
-            return (
-              <Tooltip key={c.type}>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleToggle(c.type)}
-                    className={active ? "bg-accent text-accent-foreground" : ""}
-                  >
-                    {c.icon}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{c.label}</TooltipContent>
-              </Tooltip>
-            );
-          })}
+        <div className="flex gap-1">
+          {CHART_BUTTONS.map((c) => (
+            <Tooltip key={c.type}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleToggle(c.type)}
+                  className={
+                    selectedType === c.type
+                      ? "bg-accent text-accent-foreground"
+                      : ""
+                  }
+                >
+                  {c.icon}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{c.label}</TooltipContent>
+            </Tooltip>
+          ))}
         </div>
 
-        {/* Config panel */}
         <Collapsible open={!!selectedType}>
-          <CollapsibleContent className="overflow-hidden rounded-md border bg-muted/30">
+          <CollapsibleContent className="rounded-md border bg-muted/30">
             {selectedType && (
-              <div className="p-3 space-y-3">
-                <div className="text-xs font-semibold text-muted-foreground">
-                  Chart Configuration
-                </div>
-
-                <ChartConfigPanel
-                  chartType={selectedType}
-                  attributeKeys={attributeKeys}
-                  onAddView={onAddView}
-                />
-              </div>
+              <ChartConfigPanel
+                chartType={selectedType}
+                attributeKeys={attributeKeys}
+                isEditMode={isEditMode}
+                selectedView={selectedView}
+                onAddView={onAddView}
+                onEditView={onEditView}
+              />
             )}
           </CollapsibleContent>
         </Collapsible>
@@ -125,11 +151,17 @@ export default function ChartCreatorSidebar({
 function ChartConfigPanel({
   chartType,
   attributeKeys,
+  isEditMode,
+  selectedView,
   onAddView,
+  onEditView,
 }: {
   chartType: ChartType;
   attributeKeys: string[];
-  onAddView: (view: View) => void;
+  isEditMode: boolean;
+  selectedView: View | null;
+  onAddView: (payload: NewViewPayload) => void;
+  onEditView: (id: string, patch: Partial<View>) => void;
 }) {
   const { resolveAttribute, attributeTypes } = useDataset();
 
@@ -139,59 +171,63 @@ function ChartConfigPanel({
   const [title, setTitle] = useState("");
   const [size, setSize] = useState<"sm" | "md" | "lg">("md");
 
-  const canAdd =
+  /* ===== prefill form ===== */
+  useEffect(() => {
+    if (!isEditMode || !selectedView) return;
+
+    setTitle(selectedView.title ?? "");
+    setSize(selectedView.size ?? "md");
+
+    if (chartType === "TABLE") {
+      setTableAttrs((selectedView as any).columns ?? []);
+      return;
+    }
+
+    const inferKey = (vals: number[]) =>
+      attributeKeys.find(
+        (k) => JSON.stringify(resolveAttribute(k)) === JSON.stringify(vals)
+      ) ?? null;
+
+    setXAttr(inferKey((selectedView as any).x ?? []));
+    setYAttr(inferKey((selectedView as any).y ?? []));
+  }, [isEditMode, selectedView, chartType, attributeKeys, resolveAttribute]);
+
+  const canApply =
     chartType === "TABLE" ? tableAttrs.length > 0 : !!xAttr && !!yAttr;
 
-  function toggleTableAttr(attr: string) {
-    setTableAttrs((prev) =>
-      prev.includes(attr) ? prev.filter((a) => a !== attr) : [...prev, attr]
-    );
-  }
-
   return (
-    <div className="space-y-4 text-sm">
-      <div className="font-semibold text-muted-foreground">
-        {chartType} Settings
-      </div>
+    <div className="p-3 space-y-4 text-sm">
+      <div className="font-semibold">{chartType} Settings</div>
 
-      {/* Hint */}
       <div className="text-xs text-muted-foreground">
         {chartHint(chartType)}
       </div>
 
-      {/* Title */}
       <input
-        className="w-full rounded-md border px-2 py-1 text-sm"
+        className="w-full rounded-md border px-2 py-1"
         placeholder="Chart title"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
       />
 
-      {/* Axis / Columns */}
       {chartType === "TABLE" ? (
-        <div className="space-y-2">
-          <div className="text-xs font-medium text-muted-foreground">
-            Select columns
-          </div>
-
-          <div className="max-h-40 overflow-auto rounded-md border bg-background p-2 space-y-1">
-            {attributeKeys.map((k) => (
-              <label
-                key={k}
-                className="flex items-center gap-2 text-xs cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={tableAttrs.includes(k)}
-                  onChange={() => toggleTableAttr(k)}
-                />
-                <span className="flex-1">{k}</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {attributeTypes[k]}
-                </span>
-              </label>
-            ))}
-          </div>
+        <div className="space-y-1">
+          {attributeKeys.map((k) => (
+            <label key={k} className="flex gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={tableAttrs.includes(k)}
+                onChange={() =>
+                  setTableAttrs((prev) =>
+                    prev.includes(k)
+                      ? prev.filter((a) => a !== k)
+                      : [...prev, k]
+                  )
+                }
+              />
+              {k}
+            </label>
+          ))}
         </div>
       ) : (
         <>
@@ -200,7 +236,7 @@ function ChartConfigPanel({
             value={xAttr ?? ""}
             onChange={(e) => setXAttr(e.target.value || null)}
           >
-            <option value="">Select X attribute</option>
+            <option value="">Select X</option>
             {attributeKeys.map((k) => (
               <option key={k} value={k}>
                 {k} ({attributeTypes[k]})
@@ -213,7 +249,7 @@ function ChartConfigPanel({
             value={yAttr ?? ""}
             onChange={(e) => setYAttr(e.target.value || null)}
           >
-            <option value="">Select Y attribute</option>
+            <option value="">Select Y</option>
             {attributeKeys.map((k) => (
               <option key={k} value={k}>
                 {k} ({attributeTypes[k]})
@@ -223,13 +259,12 @@ function ChartConfigPanel({
         </>
       )}
 
-      {/* Size */}
       <div className="flex gap-2">
         {(["sm", "md", "lg"] as const).map((s) => (
           <Button
             key={s}
-            variant={size === s ? "default" : "outline"}
             size="sm"
+            variant={size === s ? "default" : "outline"}
             onClick={() => setSize(s)}
           >
             {s.toUpperCase()}
@@ -237,36 +272,47 @@ function ChartConfigPanel({
         ))}
       </div>
 
-      {/* Add */}
       <Button
-        disabled={!canAdd}
+        disabled={!canApply}
         onClick={() => {
-          if (chartType === "TABLE") {
-            onAddView({
-              id: `v_${Date.now()}`,
-              chartType,
-              columns: tableAttrs,
-              size,
-              title,
-              priority: Date.now(),
-            });
+          if (isEditMode) {
+            if (!selectedView || !selectedView.id) return;
+
+            const patch: Partial<View> =
+              chartType === "TABLE"
+                ? { chartType, columns: tableAttrs, size, title }
+                : {
+                    chartType,
+                    x: resolveAttribute(xAttr!),
+                    y: resolveAttribute(yAttr!),
+                    size,
+                    title,
+                  };
+
+            onEditView(selectedView.id, patch);
             return;
           }
 
-          if (!xAttr || !yAttr) return;
+          // ADD
+          const payload: NewViewPayload =
+            chartType === "TABLE"
+              ? { chartType, columns: tableAttrs, size, title }
+              : {
+                  chartType,
+                  x: resolveAttribute(xAttr!),
+                  y: resolveAttribute(yAttr!),
+                  size,
+                  title,
+                };
 
-          onAddView({
-            id: `v_${Date.now()}`,
-            chartType,
-            x: resolveAttribute(xAttr),
-            y: resolveAttribute(yAttr),
-            size,
-            title,
-            priority: Date.now(),
-          });
+          onAddView(payload);
+          setTitle("");
+          setXAttr(null);
+          setYAttr(null);
+          setTableAttrs([]);
         }}
       >
-        Add Chart
+        {isEditMode ? "Apply Changes" : "Add Chart"}
       </Button>
     </div>
   );

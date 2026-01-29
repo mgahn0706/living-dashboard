@@ -14,14 +14,26 @@ export default function DashboardView({
   views,
   previewMap = {},
   addPreview = null,
+  selectedViewId,
+  onSelect,
 }: {
   views: View[];
   previewMap?: Record<string, PreviewState>;
   addPreview?: View | null;
+  selectedViewId: string | null;
+  onSelect: (viewId: string) => void;
 }) {
   const { updateFocus, focusScore } = useFocus();
 
   const sortedViews = [...views].sort((a, b) => b.priority - a.priority);
+
+  if (views.length === 0) {
+    return (
+      <div className="w-full h-64 flex items-center justify-center border-2 border-dashed rounded-md text-muted-foreground">
+        No views available. Please add a view to get started.
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-wrap gap-4 items-stretch">
@@ -31,6 +43,8 @@ export default function DashboardView({
           view={view}
           focusScore={focusScore[view.id] ?? 0}
           preview={previewMap[view.id] ?? null}
+          isSelected={selectedViewId === view.id}
+          onClick={() => onSelect(view.id)}
           onMouseMove={(event) =>
             updateFocus(view.id, {
               clientX: event.clientX,
@@ -45,7 +59,7 @@ export default function DashboardView({
           view={addPreview}
           focusScore={0}
           preview={{ type: "ADD", view: addPreview }}
-          onMouseMove={() => {}}
+          isSelected={false}
         />
       )}
     </div>
