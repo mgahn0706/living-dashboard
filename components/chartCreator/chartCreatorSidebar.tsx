@@ -15,6 +15,10 @@ import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { useDataset } from "@/context/DatasetContext";
 import type { ChartType, View } from "@/types/dashboard";
 
+/* =====================================================
+   ADD payload (unchanged)
+===================================================== */
+
 export type NewViewPayload =
   | {
       chartType: "TABLE";
@@ -52,9 +56,9 @@ const CHART_BUTTONS: {
 function chartHint(chartType: ChartType) {
   switch (chartType) {
     case "LINE":
-      return "Best for date/number × number (trend over time).";
+      return "Best for number × number (trend over time).";
     case "BAR":
-      return "Best for categorical/string × number comparisons.";
+      return "Best for categorical × number comparisons.";
     case "SCATTER":
       return "Requires number × number (correlation analysis).";
     case "TABLE":
@@ -74,8 +78,8 @@ export default function ChartCreatorSidebar({
   onAddView,
 }: {
   selectedView: View | null;
-  onEditView: (id: string, patch: Partial<View>) => void;
-  onAddView: (payload: NewViewPayload) => void; // ★ View 아님
+  onEditView: (id: string, next: View) => void; // ✅ replace semantics
+  onAddView: (payload: NewViewPayload) => void;
 }) {
   const { attributeKeys } = useDataset();
   const isEditMode = selectedView !== null;
@@ -84,10 +88,14 @@ export default function ChartCreatorSidebar({
 
   /* ===== prefill chart type ===== */
   useEffect(() => {
-    if (isEditMode && selectedView) {
-      setSelectedType(selectedView.chartType);
+    if (!selectedView) {
+      setSelectedType(null);
+      return;
     }
-  }, [isEditMode, selectedView]);
+
+    // ⭐ selectedView.id 가 바뀔 때만 prefill
+    setSelectedType(selectedView.chartType);
+  }, [selectedView?.id]);
 
   function handleToggle(type: ChartType) {
     setSelectedType((prev) => (prev === type ? null : type));
@@ -161,7 +169,7 @@ function ChartConfigPanel({
   isEditMode: boolean;
   selectedView: View | null;
   onAddView: (payload: NewViewPayload) => void;
-  onEditView: (id: string, patch: Partial<View>) => void;
+  onEditView: (id: string, next: View) => void;
 }) {
   const { resolveAttribute, attributeTypes } = useDataset();
 
@@ -180,8 +188,12 @@ function ChartConfigPanel({
 
     if (chartType === "TABLE") {
       setTableAttrs((selectedView as any).columns ?? []);
+      setXAttr(null);
+      setYAttr(null);
       return;
     }
+
+    setTableAttrs([]);
 
     const inferKey = (vals: number[]) =>
       attributeKeys.find(
@@ -275,25 +287,35 @@ function ChartConfigPanel({
       <Button
         disabled={!canApply}
         onClick={() => {
+          /* ================= EDIT (REPLACE) ================= */
           if (isEditMode) {
-            if (!selectedView || !selectedView.id) return;
+            if (!selectedView?.id) return;
 
-            const patch: Partial<View> =
+            const nextView: View =
               chartType === "TABLE"
-                ? { chartType, columns: tableAttrs, size, title }
+                ? {
+                    id: selectedView.id,
+                    chartType: "TABLE",
+                    columns: tableAttrs,
+                    size,
+                    priority: selectedView.priority,
+                    title,
+                  }
                 : {
+                    id: selectedView.id,
                     chartType,
                     x: resolveAttribute(xAttr!),
                     y: resolveAttribute(yAttr!),
                     size,
+                    priority: selectedView.priority,
                     title,
                   };
 
-            onEditView(selectedView.id, patch);
+            onEditView(selectedView.id, nextView);
             return;
           }
 
-          // ADD
+          /* ================= ADD ================= */
           const payload: NewViewPayload =
             chartType === "TABLE"
               ? { chartType, columns: tableAttrs, size, title }

@@ -198,10 +198,16 @@ function AppContent() {
               previewMap={previewMap}
               addPreview={addPreview}
               selectedViewId={selectedViewId}
+              isAddMode={sidebarMode === "STRUCTURE"}
+              setSidebarMode={setSidebarMode}
               onSelect={(viewId) => {
-                selectedViewId === viewId
-                  ? setSelectedViewId(null)
-                  : setSelectedViewId(viewId);
+                if (selectedViewId === viewId) {
+                  setSelectedViewId(null);
+                  setSidebarMode("FORMAT");
+                } else {
+                  setSelectedViewId(viewId);
+                  setSidebarMode("STRUCTURE");
+                }
               }}
             />
           </div>
@@ -282,24 +288,24 @@ function AppContent() {
         {sidebarMode === "STRUCTURE" && (
           <ChartCreatorSidebar
             selectedView={views.find((v) => v.id === selectedViewId) || null}
-            onEditView={(id: string, patch: Partial<View>) => {
+            onEditView={(id: string, next: View) => {
+              setSelectedViewId(null);
               setSidebarMode("FORMAT");
+
               setViews((prev) =>
                 prev.map((v) =>
                   v.id === id
-                    ? v.chartType === "TABLE"
-                      ? makeTableView({ ...v, ...patch }, v.priority)
-                      : makeChartView(
-                          v.chartType,
-                          { ...v, ...patch },
-                          v.priority
-                        )
+                    ? next.chartType === "TABLE"
+                      ? makeTableView(next, v.priority)
+                      : makeChartView(next.chartType, next, v.priority)
                     : v
                 )
               );
             }}
             onAddView={(payload) => {
+              setSelectedViewId(null);
               setSidebarMode("FORMAT");
+
               setViews((prev) =>
                 payload.chartType === "TABLE"
                   ? [...prev, makeTableView(payload, prev.length + 1)]

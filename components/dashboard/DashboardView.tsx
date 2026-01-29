@@ -4,6 +4,7 @@
 import { View } from "@/types/dashboard";
 import { useFocus } from "@/context/FocusContext";
 import ViewCard, { PreviewState } from "./ViewCard";
+import { Button } from "../ui/button";
 
 /**
  * previewMap / addPreview 는
@@ -15,12 +16,16 @@ export default function DashboardView({
   previewMap = {},
   addPreview = null,
   selectedViewId,
+  isAddMode,
+  setSidebarMode,
   onSelect,
 }: {
   views: View[];
   previewMap?: Record<string, PreviewState>;
   addPreview?: View | null;
   selectedViewId: string | null;
+  isAddMode: boolean;
+  setSidebarMode: (mode: "FORMAT" | "STRUCTURE") => void;
   onSelect: (viewId: string) => void;
 }) {
   const { updateFocus, focusScore } = useFocus();
@@ -29,8 +34,18 @@ export default function DashboardView({
 
   if (views.length === 0) {
     return (
-      <div className="w-full h-64 flex items-center justify-center border-2 border-dashed rounded-md text-muted-foreground">
-        No views available. Please add a view to get started.
+      <div className="w-full h-64 flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-md text-muted-foreground">
+        <div>No views available. Please add a view to get started.</div>
+        {!isAddMode && (
+          <Button
+            variant="default"
+            size="sm"
+            disabled={isAddMode}
+            onClick={() => setSidebarMode("STRUCTURE")}
+          >
+            Add View
+          </Button>
+        )}
       </div>
     );
   }
@@ -44,7 +59,12 @@ export default function DashboardView({
           focusScore={focusScore[view.id] ?? 0}
           preview={previewMap[view.id] ?? null}
           isSelected={selectedViewId === view.id}
-          onClick={() => onSelect(view.id)}
+          onClick={() => {
+            if (!isAddMode) {
+              setSidebarMode("STRUCTURE");
+            }
+            onSelect(view.id);
+          }}
           onMouseMove={(event) =>
             updateFocus(view.id, {
               clientX: event.clientX,
