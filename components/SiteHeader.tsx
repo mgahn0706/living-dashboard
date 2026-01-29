@@ -10,6 +10,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useDataset } from "@/context/DatasetContext";
 
 export function SiteHeader() {
@@ -29,6 +35,8 @@ export function SiteHeader() {
     }
   };
 
+  const hasDataset = attributeKeys.length > 0;
+
   return (
     <header className="sticky top-0 z-50 flex h-(--header-height) w-full items-center border-b bg-background">
       <div className="flex w-full items-center px-4 lg:px-6">
@@ -42,15 +50,27 @@ export function SiteHeader() {
 
         {/* Right */}
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden sm:flex gap-2 text-muted-foreground"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <IconUpload className="size-4" />
-            <span>Upload JSON / CSV</span>
-          </Button>
+          <TooltipProvider>
+            <Tooltip open={!hasDataset} delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="hidden sm:flex gap-2 text-muted-foreground"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <IconUpload className="size-4" />
+                  <span>Upload JSON / CSV</span>
+                </Button>
+              </TooltipTrigger>
+
+              {!hasDataset && (
+                <TooltipContent side="bottom" align="end">
+                  <p className="text-xs">Upload a dataset to start a meeting</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
 
           <input
             ref={fileInputRef}
@@ -60,7 +80,7 @@ export function SiteHeader() {
             onChange={handleFileChange}
           />
 
-          {attributeKeys.length > 0 && (
+          {hasDataset && (
             <span className="text-xs text-muted-foreground">
               {attributeKeys.length} attributes
             </span>
