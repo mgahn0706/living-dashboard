@@ -136,7 +136,7 @@ function ModifyOverlay({ view, size }: { view: View; size: View["size"] }) {
       <div className="absolute inset-0 opacity-45 flex flex-col">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
-            {view.chartType.toUpperCase()}
+            {view.title || view.chartType.toUpperCase()}
           </CardTitle>
           <CardDescription className="text-xs truncate">
             Preview

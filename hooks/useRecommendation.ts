@@ -71,7 +71,7 @@ export function useRecommendation() {
   const [isLoading, setIsLoading] = useState(false);
 
   const lastCallRef = useRef<number>(0);
-  const COOLDOWN = 8000; // ms
+  const COOLDOWN = 0; // ms
 
   /* ===================== Trigger (mutateAsync style) ===================== */
 
@@ -110,7 +110,7 @@ export function useRecommendation() {
 
         const res = await fetch("/api/recommend", {
           method: "POST",
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, views }),
         });
 
         const data: Recommendation[] = await res.json();

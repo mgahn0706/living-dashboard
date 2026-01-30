@@ -97,13 +97,20 @@ function AppContent() {
     if (!base) return {};
 
     const previewView =
-      base.chartType === "TABLE"
+      base.chartType === "TABLE" || hoveredRec.payload.chartType === "TABLE"
         ? makeTableView({ ...base, ...hoveredRec.payload }, base.priority)
         : makeChartView(
-            base.chartType,
+            hoveredRec.payload.chartType ?? base.chartType,
             { ...base, ...hoveredRec.payload },
             base.priority
           );
+
+    console.log(
+      "Generating preview for rec:",
+      hoveredRec,
+      "on base view:",
+      base
+    );
 
     return {
       [base.id]: {
@@ -140,10 +147,14 @@ function AppContent() {
         case "MODIFY_CONTENT":
         case "RESIZE":
           return prev.map((v) =>
-            v.id === r.payload.id
-              ? v.chartType === "TABLE"
+            v.id === r.payload.id && r.payload.chartType
+              ? v.chartType === "TABLE" || r.payload.chartType === "TABLE"
                 ? makeTableView({ ...v, ...r.payload }, v.priority)
-                : makeChartView(v.chartType, { ...v, ...r.payload }, v.priority)
+                : makeChartView(
+                    r.payload.chartType,
+                    { ...v, ...r.payload },
+                    v.priority
+                  )
               : v
           );
 

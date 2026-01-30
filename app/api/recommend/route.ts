@@ -47,6 +47,13 @@ function parseIntentFromPrompt(prompt: string) {
   const text = prompt.toLowerCase();
 
   return {
+    wantsToChange: softIncludes(text, [
+      "change",
+      "different",
+      "another",
+      "modify",
+      "adjust",
+    ]),
     wantsTrend: softIncludes(text, [
       "trend",
       "over time",
@@ -58,6 +65,7 @@ function parseIntentFromPrompt(prompt: string) {
       "difference",
       "vs",
       "distribution",
+      "mislead",
     ]),
     wantsExplanation: softIncludes(text, ["why", "reason", "explain", "cause"]),
     wantsFocus: softIncludes(text, ["important", "focus", "key", "main"]),
@@ -77,6 +85,26 @@ function inferRecommendations({
   const recs: Recommendation[] = [];
 
   /* ---------- MODIFY CONTENT ---------- */
+
+  console.log(intent, views);
+
+  if (intent.wantsToChange) {
+    const target = views[0];
+    const alternativeTypes = ["LINE", "BAR", "TABLE"].filter(
+      (t) => t !== target.chartType
+    ) as View["chartType"][];
+
+    if (target && alternativeTypes.length > 0) {
+      recs.push({
+        id: `r_modify_change_${target.id}`,
+        title: "Change chart type",
+        type: "MODIFY_CONTENT",
+        payload: { id: target.id, chartType: alternativeTypes[0] },
+        reason:
+          "The discussion indicates a desire to change the current visualization, removing potential misleading aspects.",
+      });
+    }
+  }
 
   if (intent.wantsTrend) {
     const target = pickView(views, ["LINE", "BAR", "TABLE"]);
