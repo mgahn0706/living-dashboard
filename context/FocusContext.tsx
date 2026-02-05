@@ -3,44 +3,87 @@
 import { createContext, useContext, useState } from "react";
 import { useFocusPathDetector } from "@/hooks/useFocusPathDetector";
 
+/* =======================================================
+   Types
+======================================================= */
+
+type PointerEventPayload = {
+  clientX: number;
+  clientY: number;
+};
+
 type FocusContextValue = {
   focusScore: Record<string, number>;
-  updateFocus: (
+
+  /* ----- Interaction Evidence ----- */
+  reportPointerInteraction: (
     viewId: string,
-    event: { clientX: number; clientY: number }
+    event: PointerEventPayload
   ) => void;
+
+  reportClickInteraction: (viewId: string) => void;
 };
 
 const FocusContext = createContext<FocusContextValue | null>(null);
 
+/* =======================================================
+   Provider
+======================================================= */
+
 export function FocusProvider({ children }: { children: React.ReactNode }) {
   const [focusScore, setFocusScore] = useState<Record<string, number>>({});
 
-  const { handlePointerMove } = useFocusPathDetector((viewId, delta) => {
-    setFocusScore((previous) => ({
-      ...previous,
-      [viewId]: (previous[viewId] ?? 0) + delta,
-    }));
-  });
+  const { handlePointerMove, handleClick } = useFocusPathDetector(
+    (viewId, delta) => {
+      setFocusScore((previous) => ({
+        ...previous,
+        [viewId]: (previous[viewId] ?? 0) + delta,
+      }));
+    }
+  );
 
-  const updateFocus = (
+  /* -------------------------------------------------------
+     Interaction reporting (Evidence layer)
+  ------------------------------------------------------- */
+
+  const reportPointerInteraction = (
     viewId: string,
-    event: { clientX: number; clientY: number }
+    event: PointerEventPayload
   ) => {
     handlePointerMove(viewId, event);
   };
 
+  const reportClickInteraction = (viewId: string) => {
+    handleClick(viewId);
+  };
+
+  /* -------------------------------------------------------
+     Context value
+  ------------------------------------------------------- */
+
   return (
-    <FocusContext.Provider value={{ focusScore, updateFocus }}>
+    <FocusContext.Provider
+      value={{
+        focusScore,
+        reportPointerInteraction,
+        reportClickInteraction,
+      }}
+    >
       {children}
     </FocusContext.Provider>
   );
 }
 
+/* =======================================================
+   Hook
+======================================================= */
+
 export function useFocus() {
   const context = useContext(FocusContext);
+
   if (context == null) {
     throw new Error("useFocus must be used inside FocusProvider");
   }
+
   return context;
 }

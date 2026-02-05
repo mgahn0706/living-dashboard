@@ -14,6 +14,7 @@ type PointerSample = {
 };
 
 type FocusDetectorConfig = {
+  /* ===== short-term gesture window (keep small) ===== */
   analysisWindowMilliseconds: number;
   maximumStoredSamples: number;
   minimumSamplesForAnalysis: number;
@@ -33,11 +34,26 @@ type FocusDetectorConfig = {
   circlingFocusGain: number;
   passThroughPenalty: number;
 
+  /* ===== click ===== */
+  clickFocusGain: number;
+  clickDwellBonus: number;
+
   emitIntervalMilliseconds: number;
 
-  /* ===== decay ===== */
+  /* ===== decay (long-term context memory) ===== */
   decayIntervalMilliseconds: number;
-  decayLambdaPerSecond: number;
+
+  /**
+   * NEW: Half-life of focus memory in seconds.
+   * Example: 60 means focus decays to 50% in ~1 minute (without idle acceleration).
+   */
+  focusHalfLifeSeconds: number;
+
+  /**
+   * (Optional) If you explicitly set this, it overrides focusHalfLifeSeconds.
+   * Keep for backward compatibility.
+   */
+  decayLambdaPerSecond?: number;
 
   /* ===== dramatic decay ===== */
   idleDecayAcceleration: number; // >1 : longer idle → faster decay
@@ -49,6 +65,16 @@ type FocusDetectorConfig = {
 type FocusEmitter = (viewId: string, delta: number) => void;
 
 /* =======================================================
+   Helpers
+======================================================= */
+
+function lambdaFromHalfLifeSeconds(halfLifeSeconds: number) {
+  const hl = Math.max(1, halfLifeSeconds);
+  // exp(-k) form: lambda = 0.5^(1/hl)
+  return Math.pow(0.5, 1 / hl);
+}
+
+/* =======================================================
    Hook
 ======================================================= */
 
@@ -56,8 +82,9 @@ export function useFocusPathDetector(
   emitFocusDelta: FocusEmitter,
   configOverrides?: Partial<FocusDetectorConfig>
 ) {
-  const configuration: FocusDetectorConfig = useMemo(
-    () => ({
+  const configuration: FocusDetectorConfig = useMemo(() => {
+    const base: FocusDetectorConfig = {
+      /* ===== short-term gesture window ===== */
       analysisWindowMilliseconds: 1200,
       maximumStoredSamples: 120,
       minimumSamplesForAnalysis: 10,
@@ -77,20 +104,34 @@ export function useFocusPathDetector(
       circlingFocusGain: 1.2,
       passThroughPenalty: 0.6,
 
+      /* ===== click defaults ===== */
+      clickFocusGain: 2.4,
+      clickDwellBonus: 0.8,
+
       emitIntervalMilliseconds: 120,
 
-      /* ===== decay defaults ===== */
+      /* ===== decay defaults (1-minute context) ===== */
       decayIntervalMilliseconds: 200,
-      decayLambdaPerSecond: 0.6,
+      focusHalfLifeSeconds: 60, // ⭐ at least a minute
+
+      /* ===== dramatic decay ===== */
       idleDecayAcceleration: 1.6,
 
       /* ===== safety ===== */
       minimumFocusScore: 0,
+    };
 
-      ...configOverrides,
-    }),
-    [configOverrides]
-  );
+    const merged = { ...base, ...configOverrides };
+
+    // If decayLambdaPerSecond is not provided, derive from half-life.
+    if (merged.decayLambdaPerSecond == null) {
+      merged.decayLambdaPerSecond = lambdaFromHalfLifeSeconds(
+        merged.focusHalfLifeSeconds
+      );
+    }
+
+    return merged;
+  }, [configOverrides]);
 
   const pointerSamplesRef = useRef<PointerSample[]>([]);
   const lastEmitTimestampRef = useRef<number>(0);
@@ -103,7 +144,6 @@ export function useFocusPathDetector(
   const activeViewsRef = useRef<Set<string>>(new Set());
 
   /**
-   * IMPORTANT:
    * We keep a local estimate of focus per view so we can cap negative deltas
    * and guarantee the aggregated score won't go below minimumFocusScore.
    */
@@ -180,7 +220,7 @@ export function useFocusPathDetector(
         );
       }
 
-      /* ---------- sliding window ---------- */
+      /* ---------- sliding window (short-term) ---------- */
       const cutoff = now - configuration.analysisWindowMilliseconds;
       pointerSamplesRef.current = pointerSamplesRef.current.filter(
         (s) => s.timestamp >= cutoff
@@ -225,7 +265,39 @@ export function useFocusPathDetector(
   );
 
   /* =======================================================
-     Dramatic decay loop (time-accelerated)
+     Click handler (strong explicit focus signal)
+  ======================================================= */
+
+  const handleClick = useCallback(
+    (viewId: string) => {
+      const now = performance.now();
+
+      lastInteractionTimestampRef.current[viewId] = now;
+      activeViewsRef.current.add(viewId);
+
+      // Ensure estimate exists
+      if (focusEstimateRef.current[viewId] == null) {
+        focusEstimateRef.current[viewId] = configuration.minimumFocusScore;
+      }
+
+      let delta = configuration.clickFocusGain;
+
+      // Optional: amplify click if user already dwelled on the view
+      const dwell = dwellTrackerRef.current[viewId];
+      if (dwell) {
+        const dwellTime = dwell.lastMoveTimestamp - dwell.enterTimestamp;
+        if (dwellTime >= configuration.minimumDwellTimeForFocusMilliseconds) {
+          delta += configuration.clickDwellBonus;
+        }
+      }
+
+      safeEmit(viewId, delta);
+    },
+    [configuration, safeEmit]
+  );
+
+  /* =======================================================
+     Long-term decay loop (1-minute+ context memory)
   ======================================================= */
 
   useEffect(() => {
@@ -233,11 +305,17 @@ export function useFocusPathDetector(
       const now = performance.now();
       const dt = configuration.decayIntervalMilliseconds / 1000;
 
+      const baseLambdaPerSecond =
+        configuration.decayLambdaPerSecond ??
+        lambdaFromHalfLifeSeconds(configuration.focusHalfLifeSeconds);
+
       for (const viewId of activeViewsRef.current) {
         const lastTs = lastInteractionTimestampRef.current[viewId];
         if (lastTs == null) continue;
 
         const idleTimeMs = now - lastTs;
+
+        // Avoid decaying immediately after an interaction (small grace)
         if (idleTimeMs < configuration.emitIntervalMilliseconds) continue;
 
         // Ensure estimate exists
@@ -245,18 +323,23 @@ export function useFocusPathDetector(
           focusEstimateRef.current[viewId] = configuration.minimumFocusScore;
         }
 
-        let lambda = configuration.decayLambdaPerSecond;
+        // Base long-term decay (half-life ~ focusHalfLifeSeconds)
+        let lambda = baseLambdaPerSecond;
 
+        // Accelerate decay only when the user is "meaningfully idle" on this view
         if (idleTimeMs > configuration.idleMinimumDurationMilliseconds) {
           const idleFactor =
             idleTimeMs / configuration.idleMinimumDurationMilliseconds;
 
+          // Make decay faster as idle grows (dramatic decay)
           lambda = Math.pow(
             lambda,
             Math.pow(idleFactor, configuration.idleDecayAcceleration)
           );
         }
 
+        // Convert multiplicative decay to additive delta in log space
+        // (keeps stable for small dt and composes well)
         const decayDelta = Math.log(lambda) * dt; // negative
 
         safeEmit(viewId, decayDelta);
@@ -286,11 +369,11 @@ export function useFocusPathDetector(
     return () => window.clearInterval(id);
   }, [configuration.analysisWindowMilliseconds]);
 
-  return { handlePointerMove };
+  return { handlePointerMove, handleClick };
 }
 
 /* =======================================================
-   Path analysis
+   Path analysis (short-term gesture features)
 ======================================================= */
 
 function analyzePointerPath(

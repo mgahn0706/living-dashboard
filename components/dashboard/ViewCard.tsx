@@ -60,21 +60,22 @@ export default function ViewCard({
   isSelected,
   preview = null,
   focusScore,
-  onMouseMove,
-  onClick,
+  onPointerMove,
+  onCardClick,
+  onEditClick,
 }: {
   view: View;
   isSelected: boolean;
   preview?: PreviewState;
   focusScore: number;
-  onMouseMove?: React.MouseEventHandler<HTMLDivElement>;
-  onClick?: () => void;
+  onPointerMove?: React.PointerEventHandler<HTMLDivElement>;
+  onCardClick?: () => void;
+  onEditClick?: () => void;
 }) {
   const isEditing = isSelected;
 
   return (
     <>
-      {/* ✅ animation defined locally */}
       <style jsx>{`
         @keyframes editingBreath {
           0%,
@@ -90,25 +91,24 @@ export default function ViewCard({
       `}</style>
 
       <Card
-        onMouseMove={onMouseMove}
+        onPointerMove={onPointerMove}
+        onClickCapture={onCardClick} // ⭐ focus evidence only
         className={cn(
           SIZE_CLASS[view.size],
-          "relative overflow-hidden transition-all",
+          "relative overflow-hidden transition-all cursor-pointer",
           "hover:ring-1 hover:ring-ring",
-
-          /* ✅ Editing Highlight */
           isEditing &&
             "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]"
         )}
       >
-        {/* ================= Base View ================= */}
+        {/* Base View */}
         <div
           className={cn(
             "relative z-0 flex flex-col",
             preview?.type === "REMOVE" && "opacity-40"
           )}
         >
-          {/* ---------- Header ---------- */}
+          {/* Header */}
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm flex items-center gap-1">
@@ -126,13 +126,13 @@ export default function ViewCard({
                   Focus: {formatFocus(focusScore)}
                 </span>
 
-                {/* Edit Button */}
+                {/* ⭐ Edit button now fully separated */}
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={(e) => {
-                    e.stopPropagation();
-                    onClick?.();
+                    e.stopPropagation(); // prevent card click
+                    onEditClick?.();
                   }}
                 >
                   {isEditing ? (
@@ -145,7 +145,7 @@ export default function ViewCard({
             </div>
           </CardHeader>
 
-          {/* ---------- Content ---------- */}
+          {/* Content */}
           <CardContent
             className={cn(CHART_HEIGHT[view.size], "flex p-0 overflow-hidden")}
           >
@@ -153,7 +153,7 @@ export default function ViewCard({
           </CardContent>
         </div>
 
-        {/* ================= Preview Overlays ================= */}
+        {/* Preview overlays */}
         {preview?.type === "MODIFY" && (
           <ModifyOverlay view={preview.view} size={view.size} />
         )}

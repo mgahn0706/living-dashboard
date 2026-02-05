@@ -6,11 +6,6 @@ import { useFocus } from "@/context/FocusContext";
 import ViewCard, { PreviewState } from "./ViewCard";
 import { Button } from "../ui/button";
 
-/**
- * previewMap / addPreview 는
- * - recommendation hover 시 만들어진다고 가정
- * - 여기서는 구조만 보여줌
- */
 export default function DashboardView({
   views,
   previewMap = {},
@@ -28,7 +23,8 @@ export default function DashboardView({
   setSidebarMode: (mode: "FORMAT" | "STRUCTURE") => void;
   onSelect: (viewId: string) => void;
 }) {
-  const { updateFocus, focusScore } = useFocus();
+  const { focusScore, reportPointerInteraction, reportClickInteraction } =
+    useFocus();
 
   const sortedViews = [...views].sort((a, b) => b.priority - a.priority);
 
@@ -54,23 +50,18 @@ export default function DashboardView({
     <div className="flex flex-wrap gap-4 items-stretch">
       {sortedViews.map((view) => (
         <ViewCard
-          key={view.id}
           view={view}
           focusScore={focusScore[view.id] ?? 0}
-          preview={previewMap[view.id] ?? null}
           isSelected={selectedViewId === view.id}
-          onClick={() => {
-            if (!isAddMode) {
-              setSidebarMode("STRUCTURE");
-            }
-            onSelect(view.id);
-          }}
-          onMouseMove={(event) =>
-            updateFocus(view.id, {
-              clientX: event.clientX,
-              clientY: event.clientY,
+          preview={previewMap[view.id] ?? null}
+          onPointerMove={(e) =>
+            reportPointerInteraction(view.id, {
+              clientX: e.clientX,
+              clientY: e.clientY,
             })
           }
+          onCardClick={() => reportClickInteraction(view.id)}
+          onEditClick={() => onSelect(view.id)}
         />
       ))}
 
