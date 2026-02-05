@@ -21,7 +21,7 @@ import ChartCreatorSidebar from "@/components/chartCreator/chartCreatorSidebar";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Edit, Plus } from "lucide-react";
 import { IconSparkles } from "@tabler/icons-react";
-import { DatasetProvider } from "@/context/DatasetContext";
+import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 
 /* =====================================================
    View factories (chartType 리터럴 고정)
@@ -82,7 +82,19 @@ function AppContent() {
   );
 
   const { focusScore } = useFocus();
-  const voice = useVoiceInput({ lang: language });
+  const voice = useVoiceInput({
+    lang: language,
+    onFinal: (text) => {
+      triggerRecommendation({
+        views,
+        textChats: [...textChats, text],
+        focusScore,
+        dataSchema: schema,
+        conversation: voice.conversation,
+      });
+    },
+  });
+  const { schema } = useDataset();
 
   const {
     recommendations,
@@ -296,8 +308,8 @@ function AppContent() {
                 views,
                 textChats: [...textChats, msg],
                 focusScore,
-                dataSchema: null,
-                conversation: [],
+                dataSchema: schema,
+                conversation: voice.conversation,
               });
             }}
           />
