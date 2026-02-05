@@ -77,9 +77,12 @@ function AppContent() {
     "FORMAT"
   );
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
+  const [language, setLanguage] = useState<"en-US" | "ko-KR" | "ja-JP">(
+    "en-US"
+  );
 
   const { focusScore } = useFocus();
-  const voice = useVoiceInput({ lang: "en-US" });
+  const voice = useVoiceInput({ lang: language });
 
   const {
     recommendations,
@@ -274,6 +277,7 @@ function AppContent() {
 
         {sidebarMode === "FORMAT" && (
           <RecommendationSidebar
+            language={language}
             recs={recommendations.filter(
               (r) => !acceptedRecommendationIds.includes(r.id)
             )}
@@ -283,6 +287,9 @@ function AppContent() {
             voice={voice}
             textChats={textChats}
             isGenerating={isLoading}
+            onChangeLanguage={(lang: "en-US" | "ko-KR" | "ja-JP") =>
+              setLanguage(lang)
+            }
             onSendTextChat={(msg) => {
               setTextChats((prev) => [...prev, msg]);
               triggerRecommendation({

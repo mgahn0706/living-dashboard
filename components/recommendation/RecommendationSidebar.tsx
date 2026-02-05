@@ -194,8 +194,10 @@ function ChatInputBar({
 export default function RecommendationSidebar({
   recs,
   voice,
+  language,
   isGenerating = false,
   textChats = [],
+  onChangeLanguage,
   onAccept,
   onSendTextChat,
   onHover,
@@ -203,17 +205,15 @@ export default function RecommendationSidebar({
 }: {
   recs: Recommendation[];
   voice: UseVoiceInputReturn;
+  language: "en-US" | "ko-KR" | "ja-JP";
   isGenerating?: boolean;
   textChats?: string[];
   onAccept: (r: Recommendation) => void;
   onSendTextChat?: (text: string) => void;
   onHover: (r: Recommendation) => void;
   onLeave: () => void;
+  onChangeLanguage: (lang: "en-US" | "ko-KR" | "ja-JP") => void;
 }) {
-  const [language, setLanguage] = useState<"en-US" | "ko-KR" | "ja-JP">(
-    "en-US"
-  );
-
   const { isListening, partial, conversation, start, stop } = voice;
 
   const placeholder =
@@ -260,7 +260,7 @@ export default function RecommendationSidebar({
               <select
                 value={language}
                 disabled={isListening}
-                onChange={(e) => setLanguage(e.target.value as any)}
+                onChange={(e) => onChangeLanguage(e.target.value as any)}
                 className="text-xs border rounded px-2 py-1 bg-background"
               >
                 <option value="en-US">EN</option>

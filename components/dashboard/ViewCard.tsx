@@ -8,9 +8,11 @@ import {
   CardDescription,
   CardContent,
 } from "../ui/card";
+import { Button } from "../ui/button";
 import ChartRenderer from "./ChartRenderer";
 import { cn } from "@/lib/utils";
 import React from "react";
+import { IconCheck, IconPencil } from "@tabler/icons-react";
 
 /* =======================================================
    Layout constants
@@ -68,59 +70,101 @@ export default function ViewCard({
   onMouseMove?: React.MouseEventHandler<HTMLDivElement>;
   onClick?: () => void;
 }) {
+  const isEditing = isSelected;
+
   return (
-    <Card
-      onMouseMove={onMouseMove}
-      onClick={onClick}
-      className={cn(
-        SIZE_CLASS[view.size],
-        "relative overflow-hidden transition-all cursor-pointer",
-        "hover:ring-1 hover:ring-ring",
-        isSelected && "ring-2 ring-primary shadow-sm" // ★ selection UI
-      )}
-    >
-      {/* ================= Base View ================= */}
-      <div
+    <>
+      {/* ✅ animation defined locally */}
+      <style jsx>{`
+        @keyframes editingBreath {
+          0%,
+          100% {
+            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.25);
+            transform: scale(1.01);
+          }
+          50% {
+            box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+            transform: scale(1.015);
+          }
+        }
+      `}</style>
+
+      <Card
+        onMouseMove={onMouseMove}
         className={cn(
-          "relative z-0 flex flex-col",
-          preview?.type === "REMOVE" && "opacity-40"
+          SIZE_CLASS[view.size],
+          "relative overflow-hidden transition-all",
+          "hover:ring-1 hover:ring-ring",
+
+          /* ✅ Editing Highlight */
+          isEditing &&
+            "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]"
         )}
       >
-        {/* ---------- Header ---------- */}
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm flex items-center gap-1">
-              {view.title || view.id}
-              {isSelected && (
-                <span className="text-[10px] text-primary">(Selected)</span> // ★ optional label
-              )}
-            </CardTitle>
-
-            <span className="text-[10px] text-muted-foreground">
-              Focus: {formatFocus(focusScore)}
-            </span>
-          </div>
-        </CardHeader>
-
-        {/* ---------- Content ---------- */}
-        <CardContent
-          className={cn(CHART_HEIGHT[view.size], "flex p-0 overflow-hidden")}
+        {/* ================= Base View ================= */}
+        <div
+          className={cn(
+            "relative z-0 flex flex-col",
+            preview?.type === "REMOVE" && "opacity-40"
+          )}
         >
-          <ChartRenderer view={view} height="100%" />
-        </CardContent>
-      </div>
+          {/* ---------- Header ---------- */}
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm flex items-center gap-1">
+                {view.title || view.id}
 
-      {/* ================= Preview Overlays ================= */}
-      {preview?.type === "MODIFY" && (
-        <ModifyOverlay view={preview.view} size={view.size} />
-      )}
+                {isEditing && (
+                  <span className="text-[10px] text-primary font-medium">
+                    (Editing)
+                  </span>
+                )}
+              </CardTitle>
 
-      {preview?.type === "REMOVE" && <RemoveOverlay />}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-muted-foreground">
+                  Focus: {formatFocus(focusScore)}
+                </span>
 
-      {preview?.type === "ADD" && (
-        <AddOverlay view={preview.view} size={view.size} />
-      )}
-    </Card>
+                {/* Edit Button */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClick?.();
+                  }}
+                >
+                  {isEditing ? (
+                    <IconCheck size={16} />
+                  ) : (
+                    <IconPencil size={16} />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+
+          {/* ---------- Content ---------- */}
+          <CardContent
+            className={cn(CHART_HEIGHT[view.size], "flex p-0 overflow-hidden")}
+          >
+            <ChartRenderer view={view} height="100%" />
+          </CardContent>
+        </div>
+
+        {/* ================= Preview Overlays ================= */}
+        {preview?.type === "MODIFY" && (
+          <ModifyOverlay view={preview.view} size={view.size} />
+        )}
+
+        {preview?.type === "REMOVE" && <RemoveOverlay />}
+
+        {preview?.type === "ADD" && (
+          <AddOverlay view={preview.view} size={view.size} />
+        )}
+      </Card>
+    </>
   );
 }
 
