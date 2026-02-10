@@ -5,8 +5,8 @@ export type View = ChartView | TableView;
 
 type ChartView = {
   id: string;
-  x: number[];
-  y: number[];
+  xColumn: string;
+  yColumn: string;
   chartType: "BAR" | "LINE" | "SCATTER";
   size: "sm" | "md" | "lg";
   priority: number;
@@ -14,6 +14,7 @@ type ChartView = {
   yLabel?: string;
   title: string;
 };
+
 type TableView = {
   id: string;
   chartType: "TABLE";

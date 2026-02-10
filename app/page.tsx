@@ -37,8 +37,8 @@ function makeChartView(
   return {
     id: payload.id ?? `v_${Date.now()}`,
     chartType: kind,
-    x: (payload as any).x ?? [],
-    y: (payload as any).y ?? [],
+    xColumn: (payload as any).xColumn ?? "",
+    yColumn: (payload as any).yColumn ?? "",
     size: payload.size ?? "md",
     priority,
     xLabel: (payload as any).xLabel,

@@ -1,6 +1,7 @@
+// ChartCreatorSidebar.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { BarChart3, LineChart, Table2, ScatterChart } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import { useDataset } from "@/context/DatasetContext";
 import type { ChartType, View } from "@/types/dashboard";
 
 /* =====================================================
-   ADD payload (unchanged)
+   ADD payload (column-based)
 ===================================================== */
 
 export type NewViewPayload =
@@ -28,8 +29,8 @@ export type NewViewPayload =
     }
   | {
       chartType: "BAR" | "LINE" | "SCATTER";
-      x: number[];
-      y: number[];
+      xColumn: string;
+      yColumn: string;
       size: "sm" | "md" | "lg";
       title: string;
     };
@@ -78,7 +79,7 @@ export default function ChartCreatorSidebar({
   onAddView,
 }: {
   selectedView: View | null;
-  onEditView: (id: string, next: View) => void; // ✅ replace semantics
+  onEditView: (id: string, next: View) => void; // replace semantics
   onAddView: (payload: NewViewPayload) => void;
 }) {
   const { attributeKeys } = useDataset();
@@ -92,8 +93,6 @@ export default function ChartCreatorSidebar({
       setSelectedType(null);
       return;
     }
-
-    // ⭐ selectedView.id 가 바뀔 때만 prefill
     setSelectedType(selectedView.chartType);
   }, [selectedView?.id]);
 
@@ -171,7 +170,7 @@ function ChartConfigPanel({
   onAddView: (payload: NewViewPayload) => void;
   onEditView: (id: string, next: View) => void;
 }) {
-  const { resolveAttribute, attributeTypes } = useDataset();
+  const { attributeTypes } = useDataset();
 
   const [xAttr, setXAttr] = useState<string | null>(null);
   const [yAttr, setYAttr] = useState<string | null>(null);
@@ -179,7 +178,7 @@ function ChartConfigPanel({
   const [title, setTitle] = useState("");
   const [size, setSize] = useState<"sm" | "md" | "lg">("md");
 
-  /* ===== prefill form ===== */
+  /* ===== prefill form (column-based) ===== */
   useEffect(() => {
     if (!isEditMode || !selectedView) return;
 
@@ -187,7 +186,9 @@ function ChartConfigPanel({
     setSize(selectedView.size ?? "md");
 
     if (chartType === "TABLE") {
-      setTableAttrs((selectedView as any).columns ?? []);
+      setTableAttrs(
+        selectedView.chartType === "TABLE" ? selectedView.columns : []
+      );
       setXAttr(null);
       setYAttr(null);
       return;
@@ -195,14 +196,14 @@ function ChartConfigPanel({
 
     setTableAttrs([]);
 
-    const inferKey = (vals: number[]) =>
-      attributeKeys.find(
-        (k) => JSON.stringify(resolveAttribute(k)) === JSON.stringify(vals)
-      ) ?? null;
-
-    setXAttr(inferKey((selectedView as any).x ?? []));
-    setYAttr(inferKey((selectedView as any).y ?? []));
-  }, [isEditMode, selectedView, chartType, attributeKeys, resolveAttribute]);
+    if (selectedView.chartType !== "TABLE") {
+      setXAttr(selectedView.xColumn ?? null);
+      setYAttr(selectedView.yColumn ?? null);
+    } else {
+      setXAttr(null);
+      setYAttr(null);
+    }
+  }, [isEditMode, selectedView, chartType]);
 
   const canApply =
     chartType === "TABLE" ? tableAttrs.length > 0 : !!xAttr && !!yAttr;
@@ -304,8 +305,8 @@ function ChartConfigPanel({
                 : {
                     id: selectedView.id,
                     chartType,
-                    x: resolveAttribute(xAttr!),
-                    y: resolveAttribute(yAttr!),
+                    xColumn: xAttr!, // ✅ store column name
+                    yColumn: yAttr!, // ✅ store column name
                     size,
                     priority: selectedView.priority,
                     title,
@@ -321,8 +322,8 @@ function ChartConfigPanel({
               ? { chartType, columns: tableAttrs, size, title }
               : {
                   chartType,
-                  x: resolveAttribute(xAttr!),
-                  y: resolveAttribute(yAttr!),
+                  xColumn: xAttr!, // ✅ store column name
+                  yColumn: yAttr!,
                   size,
                   title,
                 };

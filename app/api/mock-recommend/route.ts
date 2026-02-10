@@ -7,8 +7,8 @@ type View = {
   chartType: "LINE" | "BAR" | "TABLE";
   size: "lg" | "md" | "sm";
   priority: number;
-  x: any;
-  y: any;
+  xColumn: string;
+  yColumn: string;
 };
 
 type Recommendation = {
@@ -162,8 +162,8 @@ function inferRecommendations({
         payload: {
           id: "v_explanation",
           chartType: "BAR",
-          x: ["A", "B", "C"],
-          y: [30, 45, 25],
+          xColumn: "Category",
+          yColumn: "Frequency",
           size: "md",
           priority: views.length + 1,
         },
