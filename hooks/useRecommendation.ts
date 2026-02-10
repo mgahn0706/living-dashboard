@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Recommendation } from "@/types/dashboard";
 import { VoiceUtterance } from "./useVoiceInput";
+import { makePrompt } from "@/lib/llm/makePrompt";
 
 /* ===================== Semantic Key ===================== */
 
@@ -11,52 +12,6 @@ function getRecommendationKey(r: Recommendation) {
     type: r.type,
     payload: r.payload,
   });
-}
-
-/* ===================== Prompt Maker ===================== */
-
-function makePrompt({
-  views,
-  focusScore,
-  conversation,
-  textChats,
-  dataSchema,
-}: {
-  views: any[];
-  focusScore: Record<string, number>;
-  conversation: VoiceUtterance[];
-  textChats: string[];
-  dataSchema?: any;
-}) {
-  return {
-    role: "system",
-    content: `
-You are an AI system that outputs dashboard adaptation commands
-in a STRICT machine-readable JSON format.
-
-[OUTPUT CONTRACT OMITTED FOR BREVITY — SAME AS YOUR VERSION]
-
-[DATA SCHEMA]
-${dataSchema ? JSON.stringify(dataSchema, null, 2) : "N/A"}
-
-[CURRENT VIEWS]
-${JSON.stringify(views, null, 2)}
-
-[FOCUS SCORE]
-${JSON.stringify(focusScore, null, 2)}
-
-[RECENT CONVERSATION]
-${conversation
-  .slice(-5)
-  .map((u) => `- ${u.text}`)
-  .join("\n")}
-
-[TEXT CHATS]
-${textChats.map((t) => `- ${t}`).join("\n")}
-
-Return JSON array only.
-    `.trim(),
-  };
 }
 
 /* ===================== Hook ===================== */
@@ -108,7 +63,7 @@ export function useRecommendation() {
 
         console.log("LLM Prompt:", prompt.content);
 
-        const res = await fetch("/api/recommend", {
+        const res = await fetch("/api/mock-recommend", {
           method: "POST",
           body: JSON.stringify({ prompt, views }),
         });

@@ -50,6 +50,7 @@ export default function DashboardView({
     <div className="flex flex-wrap gap-4 items-stretch">
       {sortedViews.map((view) => (
         <ViewCard
+          key={view.id}
           view={view}
           focusScore={focusScore[view.id] ?? 0}
           isSelected={selectedViewId === view.id}
