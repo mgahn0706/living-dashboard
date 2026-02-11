@@ -92,7 +92,7 @@ export default function ViewCard({
 
       <Card
         onPointerMove={onPointerMove}
-        onClickCapture={onCardClick} // ⭐ focus evidence only
+        onClick={onCardClick}
         className={cn(
           SIZE_CLASS[view.size],
           "relative overflow-hidden transition-all cursor-pointer",

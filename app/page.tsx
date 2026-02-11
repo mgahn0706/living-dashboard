@@ -22,6 +22,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Edit, Plus } from "lucide-react";
 import { IconSparkles } from "@tabler/icons-react";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
+import { SelectionProvider } from "@/context/SelectionContext";
 
 /* =====================================================
    View factories (chartType 리터럴 고정)
@@ -370,11 +371,13 @@ export default function Page() {
         } as React.CSSProperties
       }
     >
-      <FocusProvider>
-        <DatasetProvider>
-          <AppContent />
-        </DatasetProvider>
-      </FocusProvider>
+      <SelectionProvider>
+        <FocusProvider>
+          <DatasetProvider>
+            <AppContent />
+          </DatasetProvider>
+        </FocusProvider>
+      </SelectionProvider>
     </SidebarProvider>
   );
 }

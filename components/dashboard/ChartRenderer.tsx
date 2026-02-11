@@ -26,30 +26,89 @@ import {
   ResponsiveContainer,
   ScatterChart,
   Scatter,
+  Cell,
 } from "recharts";
 
 import type { View } from "@/types/dashboard";
 import { useDataset } from "@/context/DatasetContext";
+import { useSelection } from "@/context/SelectionContext";
 
 /* =======================================================
    Types
 ======================================================= */
 
-type DataPoint = {
-  x: number;
-  y: number;
+type GenericPoint = {
+  x: any;
+  y: any;
+  highlighted: boolean;
 };
 
 /* =======================================================
    Utils
 ======================================================= */
 
-function buildSeries(x: number[], y: number[]): DataPoint[] {
-  const n = Math.min(x.length, y.length);
-  return Array.from({ length: n }, (_, i) => ({
-    x: x[i],
-    y: y[i],
-  }));
+function getValueByPath(row: any, path: string) {
+  return path.split(".").reduce((acc, key) => {
+    if (acc == null) return undefined;
+    return acc[key];
+  }, row);
+}
+
+function detectAndParse(value: any) {
+  if (value == null) return null;
+
+  const n = Number(value);
+  if (!Number.isNaN(n) && value !== "") return n;
+
+  if (typeof value === "string") {
+    const d = Date.parse(value);
+    if (!Number.isNaN(d)) return new Date(d);
+  }
+
+  return value;
+}
+
+function rowMatchesSelection(row: any, selection: any) {
+  if (!selection || Object.keys(selection).length === 0) return true;
+
+  return Object.entries(selection).every(([col, values]: any) => {
+    if (!values || values.size === 0) return true;
+    const val = getValueByPath(row, col);
+    return values.has(val);
+  });
+}
+
+function buildSeries(
+  rawData: any[],
+  view: Extract<View, { chartType: "BAR" | "LINE" | "SCATTER" }>,
+  selection: any
+): GenericPoint[] {
+  if (!Array.isArray(rawData)) return [];
+
+  return rawData
+    .map((row) => {
+      const xRaw = getValueByPath(row, view.xColumn);
+      const yRaw = getValueByPath(row, view.yColumn);
+
+      const xParsed = detectAndParse(xRaw);
+      const yParsed = detectAndParse(yRaw);
+
+      if (view.chartType === "SCATTER") {
+        if (typeof xParsed !== "number" || typeof yParsed !== "number")
+          return null;
+      }
+
+      if (view.chartType === "LINE" || view.chartType === "BAR") {
+        if (typeof yParsed !== "number") return null;
+      }
+
+      return {
+        x: xParsed instanceof Date ? xParsed.getTime() : xParsed,
+        y: yParsed,
+        highlighted: rowMatchesSelection(row, selection),
+      };
+    })
+    .filter(Boolean) as GenericPoint[];
 }
 
 /* =======================================================
@@ -63,7 +122,11 @@ export default function ChartRenderer({
   view: View;
   height?: number | "100%";
 }) {
+  const { rawData } = useDataset();
+  const { selection, toggleSelection, hasSelection } = useSelection();
+
   const blue = "#3b82f6";
+  const faded = "#cbd5e1";
 
   /* =======================
      TABLE VIEW
@@ -77,156 +140,102 @@ export default function ChartRenderer({
      CHART VIEW
   ======================== */
 
-  const data = React.useMemo(
-    () => buildSeries(view.x, view.y),
-    [view.x, view.y]
-  );
+  const data = React.useMemo(() => {
+    return buildSeries(rawData ?? [], view, selection);
+  }, [rawData, view, selection]);
 
   const chartConfig = React.useMemo(
     () =>
       ({
-        y: { label: view.yLabel ?? "y" },
+        y: { label: view.yLabel ?? view.yColumn },
       } satisfies ChartConfig),
-    [view.yLabel]
+    [view.yLabel, view.yColumn]
   );
 
-  if (data.length === 0) {
+  if (!data.length) {
     return (
       <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
-        No data
+        No compatible data
       </div>
     );
   }
+
+  const isNumericX = typeof data[0].x === "number";
 
   return (
     <div className="h-full w-full" style={{ height }}>
       <ChartContainer config={chartConfig} className="h-full w-full p-0">
         <ResponsiveContainer width="100%" height="100%">
           {view.chartType === "LINE" ? (
-            /* ========== LINE ========== */
-            <AreaChart
-              data={data}
-              margin={{ top: 4, right: 6, left: -8, bottom: 10 }}
-            >
-              <defs>
-                <linearGradient id="fillBlue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={blue} stopOpacity={0.35} />
-                  <stop offset="95%" stopColor={blue} stopOpacity={0.06} />
-                </linearGradient>
-              </defs>
-
+            <AreaChart data={data}>
               <CartesianGrid vertical={false} strokeOpacity={0.15} />
-
-              <XAxis
-                dataKey="x"
-                tickLine={false}
-                axisLine={false}
-                tick={{ fontSize: 11 }}
-                label={{
-                  value: view.xLabel ?? "x",
-                  position: "insideBottom",
-                  offset: -2,
-                  style: { fontSize: 10 },
-                }}
-              />
-
-              <YAxis
-                tick={false}
-                axisLine={false}
-                label={{
-                  value: view.yLabel ?? "y",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: 0,
-                  style: { fontSize: 10 },
-                }}
-              />
-
+              <XAxis dataKey="x" type={isNumericX ? "number" : "category"} />
+              <YAxis type="number" />
               <ChartTooltip content={<ChartTooltipContent />} />
 
               <Area
                 type="monotone"
                 dataKey="y"
                 stroke={blue}
-                strokeWidth={2}
-                fill="url(#fillBlue)"
-                dot={false}
+                fill={blue}
+                strokeOpacity={hasSelection ? 0.5 : 1}
+                fillOpacity={hasSelection ? 0.3 : 0.8}
+                onClick={(data: any) => {
+                  const clickedX = data?.payload?.x;
+                  console.log("clickedX", clickedX);
+                  if (clickedX !== undefined) {
+                    toggleSelection(view.xColumn, clickedX);
+                  }
+                }}
               />
             </AreaChart>
           ) : view.chartType === "BAR" ? (
-            /* ========== BAR ========== */
-            <BarChart
-              data={data}
-              barCategoryGap={14}
-              margin={{ top: 4, right: 6, left: -8, bottom: 10 }}
-            >
+            <BarChart data={data}>
               <CartesianGrid vertical={false} strokeOpacity={0.15} />
-
-              <XAxis
-                dataKey="x"
-                tickLine={false}
-                axisLine={false}
-                tick={{ fontSize: 11 }}
-                label={{
-                  value: view.xLabel ?? "x",
-                  position: "insideBottom",
-                  offset: -2,
-                  style: { fontSize: 10 },
-                }}
-              />
-
-              <YAxis
-                tick={false}
-                axisLine={false}
-                label={{
-                  value: view.yLabel ?? "y",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: 0,
-                  style: { fontSize: 10 },
-                }}
-              />
-
+              <XAxis dataKey="x" type={isNumericX ? "number" : "category"} />
+              <YAxis type="number" />
               <ChartTooltip content={<ChartTooltipContent />} />
 
-              <Bar dataKey="y" radius={[6, 6, 4, 4]} fill={blue} />
+              <Bar
+                dataKey="y"
+                onClick={(data: any) => {
+                  const clickedX = data?.payload?.x;
+                  console.log("clickedX", clickedX);
+                  if (clickedX !== undefined) {
+                    toggleSelection(view.xColumn, clickedX);
+                  }
+                }}
+              >
+                {data.map((entry, index) => (
+                  <Cell
+                    key={index}
+                    fill={entry.highlighted ? blue : faded}
+                    opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                  />
+                ))}
+              </Bar>
             </BarChart>
           ) : (
-            /* ========== SCATTER ========== */
-            <ScatterChart margin={{ top: 4, right: 6, left: -8, bottom: 10 }}>
+            <ScatterChart>
               <CartesianGrid vertical={false} strokeOpacity={0.15} />
-
-              <XAxis
-                type="number"
-                dataKey="x"
-                tickLine={false}
-                axisLine={false}
-                tick={{ fontSize: 11 }}
-                label={{
-                  value: view.xLabel ?? "x",
-                  position: "insideBottom",
-                  offset: -2,
-                  style: { fontSize: 10 },
-                }}
-              />
-
-              <YAxis
-                type="number"
-                dataKey="y"
-                tick={false}
-                axisLine={false}
-                label={{
-                  value: view.yLabel ?? "y",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: 0,
-                  style: { fontSize: 10 },
-                }}
-              />
-
+              <XAxis type="number" dataKey="x" />
+              <YAxis type="number" dataKey="y" />
               <ChartTooltip content={<ChartTooltipContent />} />
 
-              <Scatter data={data} fill={blue} />
+              <Scatter
+                data={data}
+                onClick={(e) => {
+                  console.log("clickedX", e);
+                }}
+              >
+                {data.map((entry, index) => (
+                  <Cell
+                    key={index}
+                    fill={entry.highlighted ? blue : faded}
+                    opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                  />
+                ))}
+              </Scatter>
             </ScatterChart>
           )}
         </ResponsiveContainer>
@@ -247,18 +256,15 @@ function TableRenderer({
   height: number | "100%";
 }) {
   const { rawData } = useDataset();
+  const { selection, hasSelection } = useSelection();
 
   if (!Array.isArray(rawData) || rawData.length === 0) {
-    return (
-      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
-        No data
-      </div>
-    );
+    return <div>No data</div>;
   }
 
   return (
-    <div className="h-full w-full p-2 overflow-auto" style={{ height }}>
-      <ShadTable className="text-xs">
+    <div style={{ height }} className="overflow-auto">
+      <ShadTable>
         <TableHeader>
           <TableRow>
             {view.columns.map((col) => (
@@ -266,22 +272,21 @@ function TableRenderer({
             ))}
           </TableRow>
         </TableHeader>
-
         <TableBody>
-          {rawData.map((row, i) => (
-            <TableRow key={i}>
-              {view.columns.map((col) => (
-                <TableCell key={col}>
-                  {col
-                    .split(".")
-                    .reduce<any>(
-                      (acc, k) => (acc == null ? undefined : acc[k]),
-                      row
-                    )}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
+          {rawData.map((row, i) => {
+            const highlighted = rowMatchesSelection(row, selection);
+
+            return (
+              <TableRow
+                key={i}
+                className={hasSelection && !highlighted ? "opacity-40" : ""}
+              >
+                {view.columns.map((col) => (
+                  <TableCell key={col}>{getValueByPath(row, col)}</TableCell>
+                ))}
+              </TableRow>
+            );
+          })}
         </TableBody>
       </ShadTable>
     </div>
