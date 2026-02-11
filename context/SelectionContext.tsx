@@ -19,14 +19,11 @@ export type SelectionState = {
 type SelectionContextType = {
   selection: SelectionState;
 
-  /** toggle a single value for a column */
-  toggleSelection: (column: string, value: any) => void;
+  /** replace selection (single active dimension model) */
+  replaceSelection: (column: string, value: any) => void;
 
   /** completely clear all selections */
   clearSelection: () => void;
-
-  /** clear selection for a specific column */
-  clearColumn: (column: string) => void;
 
   /** check if specific value is selected */
   isSelected: (column: string, value: any) => boolean;
@@ -45,23 +42,23 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
   const [selection, setSelection] = useState<SelectionState>({});
 
   /* ===============================
-     Toggle Selection
+     Replace Selection
+     - Always keep only ONE column
+     - If same value clicked again -> clear
   =============================== */
 
-  const toggleSelection = useCallback((column: string, value: any) => {
-    console.log("toggleSelection", column, value);
+  const replaceSelection = useCallback((column: string, value: any) => {
     setSelection((prev) => {
-      const currentSet = new Set(prev[column] ?? []);
+      const currentSet = prev[column];
 
-      if (currentSet.has(value)) {
-        currentSet.delete(value);
-      } else {
-        currentSet.add(value);
+      // if same column & same value already selected -> clear
+      if (currentSet?.has(value) && Object.keys(prev).length === 1) {
+        return {};
       }
 
+      // replace entire selection with new column/value
       return {
-        ...prev,
-        [column]: currentSet,
+        [column]: new Set([value]),
       };
     });
   }, []);
@@ -72,18 +69,6 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
 
   const clearSelection = useCallback(() => {
     setSelection({});
-  }, []);
-
-  /* ===============================
-     Clear Single Column
-  =============================== */
-
-  const clearColumn = useCallback((column: string) => {
-    setSelection((prev) => {
-      const next = { ...prev };
-      delete next[column];
-      return next;
-    });
   }, []);
 
   /* ===============================
@@ -112,20 +97,12 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       selection,
-      toggleSelection,
+      replaceSelection,
       clearSelection,
-      clearColumn,
       isSelected,
       hasSelection,
     }),
-    [
-      selection,
-      toggleSelection,
-      clearSelection,
-      clearColumn,
-      isSelected,
-      hasSelection,
-    ]
+    [selection, replaceSelection, clearSelection, isSelected, hasSelection]
   );
 
   return (

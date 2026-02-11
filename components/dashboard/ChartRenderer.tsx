@@ -123,22 +123,20 @@ export default function ChartRenderer({
   height?: number | "100%";
 }) {
   const { rawData } = useDataset();
-  const { selection, toggleSelection, hasSelection } = useSelection();
+  const { selection, replaceSelection, hasSelection } = useSelection();
 
   const blue = "#3b82f6";
   const faded = "#cbd5e1";
 
-  /* =======================
-     TABLE VIEW
-  ======================== */
-
   if (view.chartType === "TABLE") {
-    return <TableRenderer view={view} height={height} />;
+    return (
+      <TableRenderer
+        view={view}
+        height={height}
+        replaceSelection={replaceSelection}
+      />
+    );
   }
-
-  /* =======================
-     CHART VIEW
-  ======================== */
 
   const data = React.useMemo(() => {
     return buildSeries(rawData ?? [], view, selection);
@@ -173,21 +171,49 @@ export default function ChartRenderer({
               <YAxis type="number" />
               <ChartTooltip content={<ChartTooltipContent />} />
 
+              {/* Base Line */}
               <Area
                 type="monotone"
                 dataKey="y"
                 stroke={blue}
                 fill={blue}
-                strokeOpacity={hasSelection ? 0.5 : 1}
-                fillOpacity={hasSelection ? 0.3 : 0.8}
-                onClick={(data: any) => {
-                  const clickedX = data?.payload?.x;
-                  console.log("clickedX", clickedX);
-                  if (clickedX !== undefined) {
-                    toggleSelection(view.xColumn, clickedX);
-                  }
+                strokeOpacity={hasSelection ? 0.25 : 1}
+                fillOpacity={hasSelection ? 0.05 : 0.15}
+                isAnimationActive={false}
+                dot={(props: any) => {
+                  const { cx, cy, payload } = props;
+                  const highlighted = payload.highlighted;
+
+                  return (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={4}
+                      fill={highlighted ? blue : faded}
+                      opacity={!hasSelection || highlighted ? 1 : 0.3}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => replaceSelection(view.xColumn, payload.x)}
+                    />
+                  );
                 }}
               />
+
+              {/* Highlight Overlay */}
+              {hasSelection && (
+                <Area
+                  type="monotone"
+                  dataKey="y"
+                  stroke={blue}
+                  fill={blue}
+                  strokeWidth={3}
+                  strokeOpacity={1}
+                  fillOpacity={0.2}
+                  isAnimationActive={false}
+                  data={data.map((d) =>
+                    d.highlighted ? d : { ...d, y: null }
+                  )}
+                />
+              )}
             </AreaChart>
           ) : view.chartType === "BAR" ? (
             <BarChart data={data}>
@@ -200,9 +226,8 @@ export default function ChartRenderer({
                 dataKey="y"
                 onClick={(data: any) => {
                   const clickedX = data?.payload?.x;
-                  console.log("clickedX", clickedX);
                   if (clickedX !== undefined) {
-                    toggleSelection(view.xColumn, clickedX);
+                    replaceSelection(view.xColumn, clickedX);
                   }
                 }}
               >
@@ -224,8 +249,11 @@ export default function ChartRenderer({
 
               <Scatter
                 data={data}
-                onClick={(e) => {
-                  console.log("clickedX", e);
+                onClick={(e: any) => {
+                  const clickedX = e?.payload?.x;
+                  if (clickedX !== undefined) {
+                    replaceSelection(view.xColumn, clickedX);
+                  }
                 }}
               >
                 {data.map((entry, index) => (
@@ -251,9 +279,11 @@ export default function ChartRenderer({
 function TableRenderer({
   view,
   height,
+  replaceSelection,
 }: {
   view: Extract<View, { chartType: "TABLE" }>;
   height: number | "100%";
+  replaceSelection: (column: string, value: any) => void;
 }) {
   const { rawData } = useDataset();
   const { selection, hasSelection } = useSelection();
@@ -279,7 +309,15 @@ function TableRenderer({
             return (
               <TableRow
                 key={i}
-                className={hasSelection && !highlighted ? "opacity-40" : ""}
+                className={`cursor-pointer ${
+                  hasSelection && !highlighted ? "opacity-40" : ""
+                }`}
+                onClick={() => {
+                  const value = getValueByPath(row, view.columns[0]);
+                  if (value !== undefined) {
+                    replaceSelection(view.columns[0], value);
+                  }
+                }}
               >
                 {view.columns.map((col) => (
                   <TableCell key={col}>{getValueByPath(row, col)}</TableCell>
