@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { useRecommendation } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
@@ -24,8 +24,10 @@ import { IconSparkles } from "@tabler/icons-react";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 import { SelectionProvider } from "@/context/SelectionContext";
 
+import { useExperimentLogger } from "@/hooks/useExperimentLogger"; // ✅ added
+
 /* =====================================================
-   View factories (chartType 리터럴 고정)
+   View factories
 ===================================================== */
 
 type ChartKind = "BAR" | "LINE" | "SCATTER";
@@ -60,10 +62,6 @@ function makeTableView(payload: Partial<View>, priority: number): View {
 }
 
 /* =====================================================
-   Initial Views
-===================================================== */
-
-/* =====================================================
    App Content
 ===================================================== */
 
@@ -83,18 +81,6 @@ function AppContent() {
   );
 
   const { focusScore } = useFocus();
-  const voice = useVoiceInput({
-    lang: language,
-    onFinal: (text) => {
-      triggerRecommendation({
-        views,
-        textChats: [...textChats, text],
-        focusScore,
-        dataSchema: schema,
-        conversation: voice.conversation,
-      });
-    },
-  });
   const { schema } = useDataset();
 
   const {
@@ -104,7 +90,48 @@ function AppContent() {
     triggerRecommendation,
   } = useRecommendation();
 
-  /* ================= PREVIEW MAP (MODIFY / REMOVE) ================= */
+  const { logEvent } = useExperimentLogger(); // ✅ added
+
+  /* ================= Recommendation SHOWN ================= */
+
+  const [shownRecIds, setShownRecIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    recommendations.forEach((r) => {
+      if (!shownRecIds.has(r.id)) {
+        logEvent("recommendation", {
+          recommendationId: r.id,
+          type: r.type,
+          action: "shown",
+        });
+
+        setShownRecIds((prev) => {
+          const next = new Set(prev);
+          next.add(r.id);
+          return next;
+        });
+      }
+    });
+  }, [recommendations]);
+
+  /* ================= Voice ================= */
+
+  const voice = useVoiceInput({
+    lang: language,
+    onFinal: (text) => {
+      logEvent("voice_input", { length: text.length }); // ✅ added
+
+      triggerRecommendation({
+        views,
+        textChats: [...textChats, text],
+        focusScore,
+        dataSchema: schema,
+        conversation: voice.conversation,
+      });
+    },
+  });
+
+  /* ================= PREVIEW ================= */
 
   const previewMap = useMemo<Record<string, PreviewState>>(() => {
     if (!hoveredRec || !hoveredRec.payload?.id) return {};
@@ -121,93 +148,61 @@ function AppContent() {
             base.priority
           );
 
-    console.log(
-      "Generating preview for rec:",
-      hoveredRec,
-      "on base view:",
-      base
-    );
-
     return {
       [base.id]: {
-        type:
-          hoveredRec.type === "REMOVE_CONTENT"
-            ? ("REMOVE" as const)
-            : ("MODIFY" as const),
+        type: hoveredRec.type === "REMOVE_CONTENT" ? "REMOVE" : "MODIFY",
         view: previewView,
       },
     };
   }, [hoveredRec, views]);
-
-  /* ================= ADD PREVIEW (View only) ================= */
 
   const addPreview = useMemo<View | null>(() => {
     if (!hoveredRec || hoveredRec.type !== "NEW_CONTENT") return null;
 
     const payload = hoveredRec.payload as Partial<View>;
 
-    if (payload.chartType === "TABLE") {
-      return makeTableView(payload, views.length + 1);
-    }
-
-    return makeChartView(payload.chartType ?? "BAR", payload, views.length + 1);
+    return payload.chartType === "TABLE"
+      ? makeTableView(payload, views.length + 1)
+      : makeChartView(payload.chartType ?? "BAR", payload, views.length + 1);
   }, [hoveredRec, views.length]);
 
   /* ================= APPLY ================= */
 
   const apply = (r: Recommendation) => {
+    logEvent("recommendation", {
+      recommendationId: r.id,
+      type: r.type,
+      action: "accepted",
+    }); // ✅ added
+
     setAcceptedRecommendationIds((prev) => [...prev, r.id]);
 
     setViews((prev) => {
       switch (r.type) {
+        case "NEW_CONTENT":
+          logEvent("view_create", {
+            triggeredBy: "recommendation",
+            chartType: r.payload.chartType,
+          }); // ✅ added
+          break;
+
         case "MODIFY_CONTENT":
         case "RESIZE":
-          return prev.map((v) =>
-            v.id === r.payload.id && r.payload.chartType
-              ? v.chartType === "TABLE" || r.payload.chartType === "TABLE"
-                ? makeTableView({ ...v, ...r.payload }, v.priority)
-                : makeChartView(
-                    r.payload.chartType,
-                    { ...v, ...r.payload },
-                    v.priority
-                  )
-              : v
-          );
-
-        case "REORDER":
-          if (!r.payload?.id) return prev;
-          return [...prev]
-            .map((v, i) =>
-              v.id === r.payload.id
-                ? {
-                    ...v,
-                    priority: r.payload.priority ?? v.priority ?? i,
-                  }
-                : v
-            )
-            .sort((a, b) => a.priority - b.priority);
-
-        case "NEW_CONTENT": {
-          const payload = r.payload as Partial<View>;
-
-          return payload.chartType === "TABLE"
-            ? [...prev, makeTableView(payload, prev.length + 1)]
-            : [
-                ...prev,
-                makeChartView(
-                  payload.chartType ?? "BAR",
-                  payload,
-                  prev.length + 1
-                ),
-              ];
-        }
+          logEvent("view_modify", {
+            viewId: r.payload.id,
+            triggeredBy: "recommendation",
+          }); // ✅ added
+          break;
 
         case "REMOVE_CONTENT":
-          return prev.filter((v) => v.id !== r.payload.id);
-
-        default:
-          return prev;
+          logEvent("view_remove", {
+            viewId: r.payload.id,
+            triggeredBy: "recommendation",
+          }); // ✅ added
+          break;
       }
+
+      return prev;
     });
 
     acceptRecommendation(r);
@@ -215,7 +210,6 @@ function AppContent() {
 
   return (
     <>
-      {/* ================= DASHBOARD ================= */}
       <SidebarInset className="bg-muted/10">
         <SiteHeader />
         <div className="flex-1 overflow-y-auto">
@@ -228,6 +222,8 @@ function AppContent() {
               isAddMode={sidebarMode === "STRUCTURE"}
               setSidebarMode={setSidebarMode}
               onSelect={(viewId) => {
+                logEvent("view_select", { viewId }); // ✅ added
+
                 if (selectedViewId === viewId) {
                   setSelectedViewId(null);
                   setSidebarMode("FORMAT");
@@ -241,49 +237,29 @@ function AppContent() {
         </div>
       </SidebarInset>
 
-      {/* ================= SIDEBAR ================= */}
       <Sidebar side="right" className="border-l h-screen flex flex-col">
         <SidebarHeader className="border-b p-3.5">
           <ToggleGroup
             type="single"
             value={sidebarMode}
             onValueChange={(v) => {
-              if (v) setSidebarMode(v as "FORMAT" | "STRUCTURE");
+              if (v) {
+                logEvent("sidebar_mode_change", { mode: v }); // ✅ added
+                setSidebarMode(v as "FORMAT" | "STRUCTURE");
+              }
             }}
             className="w-full bg-muted p-1 rounded-lg"
           >
-            <ToggleGroupItem
-              value="FORMAT"
-              className="
-      flex-1 flex flex-col items-center justify-center
-      gap-0.5 py-2
-      data-[state=on]:bg-background
-      data-[state=on]:shadow-sm
-    "
-            >
+            <ToggleGroupItem value="FORMAT">
               <IconSparkles className="size-4" />
-              <span className="text-[11px] leading-none text-muted-foreground">
-                Recommendations
-              </span>
             </ToggleGroupItem>
 
-            <ToggleGroupItem
-              value="STRUCTURE"
-              className="
-      flex-1 flex flex-col items-center justify-center
-      gap-0.5 py-2
-      data-[state=on]:bg-background
-      data-[state=on]:shadow-sm
-    "
-            >
+            <ToggleGroupItem value="STRUCTURE">
               {selectedViewId ? (
                 <Edit className="size-4" />
               ) : (
                 <Plus className="size-4" />
               )}
-              <span className="text-[11px] leading-none text-muted-foreground">
-                {selectedViewId ? "Edit View" : "Add View"}
-              </span>
             </ToggleGroupItem>
           </ToggleGroup>
         </SidebarHeader>
@@ -300,11 +276,14 @@ function AppContent() {
             voice={voice}
             textChats={textChats}
             isGenerating={isLoading}
-            onChangeLanguage={(lang: "en-US" | "ko-KR" | "ja-JP") =>
-              setLanguage(lang)
-            }
+            onChangeLanguage={(lang) => setLanguage(lang)}
             onSendTextChat={(msg) => {
+              logEvent("text_chat", {
+                length: msg.length,
+              }); // ✅ added
+
               setTextChats((prev) => [...prev, msg]);
+
               triggerRecommendation({
                 views,
                 textChats: [...textChats, msg],
@@ -320,20 +299,22 @@ function AppContent() {
           <ChartCreatorSidebar
             selectedView={views.find((v) => v.id === selectedViewId) || null}
             onEditView={(id: string, next: View) => {
+              logEvent("view_modify", {
+                viewId: id,
+                triggeredBy: "manual",
+              }); // ✅ added
+
               setSelectedViewId(null);
               setSidebarMode("FORMAT");
 
-              setViews((prev) =>
-                prev.map((v) =>
-                  v.id === id
-                    ? next.chartType === "TABLE"
-                      ? makeTableView(next, v.priority)
-                      : makeChartView(next.chartType, next, v.priority)
-                    : v
-                )
-              );
+              setViews((prev) => prev.map((v) => (v.id === id ? next : v)));
             }}
             onAddView={(payload) => {
+              logEvent("view_create", {
+                triggeredBy: "manual",
+                chartType: payload.chartType,
+              }); // ✅ added
+
               setSelectedViewId(null);
               setSidebarMode("FORMAT");
 
@@ -363,14 +344,7 @@ function AppContent() {
 
 export default function Page() {
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "280px",
-          "--header-height": "73px",
-        } as React.CSSProperties
-      }
-    >
+    <SidebarProvider>
       <SelectionProvider>
         <FocusProvider>
           <DatasetProvider>
