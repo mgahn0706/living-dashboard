@@ -12,7 +12,7 @@ import { Button } from "../ui/button";
 import ChartRenderer from "./ChartRenderer";
 import { cn } from "@/lib/utils";
 import React from "react";
-import { IconCheck, IconPencil } from "@tabler/icons-react";
+import { IconCheck, IconPencil, IconTrash } from "@tabler/icons-react";
 
 /* =======================================================
    Layout constants
@@ -63,6 +63,7 @@ export default function ViewCard({
   onPointerMove,
   onCardClick,
   onEditClick,
+  onDeleteClick,
 }: {
   view: View;
   isSelected: boolean;
@@ -71,6 +72,7 @@ export default function ViewCard({
   onPointerMove?: React.PointerEventHandler<HTMLDivElement>;
   onCardClick?: () => void;
   onEditClick?: () => void;
+  onDeleteClick?: (id: string) => void;
 }) {
   const isEditing = isSelected;
 
@@ -126,12 +128,12 @@ export default function ViewCard({
                   Focus: {formatFocus(focusScore)}
                 </span>
 
-                {/* ⭐ Edit button now fully separated */}
+                {/* Edit Button */}
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={(e) => {
-                    e.stopPropagation(); // prevent card click
+                    e.stopPropagation();
                     onEditClick?.();
                   }}
                 >
@@ -140,6 +142,18 @@ export default function ViewCard({
                   ) : (
                     <IconPencil size={16} />
                   )}
+                </Button>
+
+                {/* Delete Button */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteClick?.(view.id);
+                  }}
+                >
+                  <IconTrash size={16} className="text-destructive" />
                 </Button>
               </div>
             </div>

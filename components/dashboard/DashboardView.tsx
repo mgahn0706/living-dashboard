@@ -1,4 +1,3 @@
-// components/DashboardView.tsx
 "use client";
 
 import { View } from "@/types/dashboard";
@@ -14,6 +13,7 @@ export default function DashboardView({
   isAddMode,
   setSidebarMode,
   onSelect,
+  onDelete,
 }: {
   views: View[];
   previewMap?: Record<string, PreviewState>;
@@ -22,21 +22,26 @@ export default function DashboardView({
   isAddMode: boolean;
   setSidebarMode: (mode: "FORMAT" | "STRUCTURE") => void;
   onSelect: (viewId: string) => void;
+  onDelete: (viewId: string) => void; // ✅ added
 }) {
   const { focusScore, reportPointerInteraction, reportClickInteraction } =
     useFocus();
 
   const sortedViews = [...views].sort((a, b) => b.priority - a.priority);
 
+  /* =======================================================
+     Empty State
+  ======================================================= */
+
   if (views.length === 0) {
     return (
       <div className="w-full h-64 flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-md text-muted-foreground">
         <div>No views available. Please add a view to get started.</div>
+
         {!isAddMode && (
           <Button
             variant="default"
             size="sm"
-            disabled={isAddMode}
             onClick={() => setSidebarMode("STRUCTURE")}
           >
             Add View
@@ -45,6 +50,10 @@ export default function DashboardView({
       </div>
     );
   }
+
+  /* =======================================================
+     Render
+  ======================================================= */
 
   return (
     <div className="flex flex-wrap gap-4 items-stretch">
@@ -61,11 +70,16 @@ export default function DashboardView({
               clientY: e.clientY,
             })
           }
-          onCardClick={() => reportClickInteraction(view.id)}
+          onCardClick={() => {
+            reportClickInteraction(view.id);
+            onSelect(view.id);
+          }}
           onEditClick={() => onSelect(view.id)}
+          onDeleteClick={(id) => onDelete(id)}
         />
       ))}
 
+      {/* Add Preview */}
       {addPreview && (
         <ViewCard
           view={addPreview}

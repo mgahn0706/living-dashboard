@@ -179,27 +179,53 @@ function AppContent() {
 
     setViews((prev) => {
       switch (r.type) {
-        case "NEW_CONTENT":
-          logEvent("view_create", {
-            triggeredBy: "recommendation",
-            chartType: r.payload.chartType,
-          }); // ✅ added
-          break;
-
         case "MODIFY_CONTENT":
         case "RESIZE":
-          logEvent("view_modify", {
-            viewId: r.payload.id,
-            triggeredBy: "recommendation",
-          }); // ✅ added
-          break;
+          return prev.map((v) =>
+            v.id === r.payload.id && r.payload.chartType
+              ? v.chartType === "TABLE" || r.payload.chartType === "TABLE"
+                ? makeTableView({ ...v, ...r.payload }, v.priority)
+                : makeChartView(
+                    r.payload.chartType,
+                    { ...v, ...r.payload },
+                    v.priority
+                  )
+              : v
+          );
+
+        case "REORDER":
+          if (!r.payload?.id) return prev;
+          return [...prev]
+            .map((v, i) =>
+              v.id === r.payload.id
+                ? {
+                    ...v,
+                    priority: r.payload.priority ?? v.priority ?? i,
+                  }
+                : v
+            )
+            .sort((a, b) => a.priority - b.priority);
+
+        case "NEW_CONTENT": {
+          const payload = r.payload as Partial<View>;
+
+          return payload.chartType === "TABLE"
+            ? [...prev, makeTableView(payload, prev.length + 1)]
+            : [
+                ...prev,
+                makeChartView(
+                  payload.chartType ?? "BAR",
+                  payload,
+                  prev.length + 1
+                ),
+              ];
+        }
 
         case "REMOVE_CONTENT":
-          logEvent("view_remove", {
-            viewId: r.payload.id,
-            triggeredBy: "recommendation",
-          }); // ✅ added
-          break;
+          return prev.filter((v) => v.id !== r.payload.id);
+
+        default:
+          return prev;
       }
 
       return prev;
@@ -232,6 +258,11 @@ function AppContent() {
                   setSidebarMode("STRUCTURE");
                 }
               }}
+              onDelete={(viewId) => {
+                logEvent("view_delete", { viewId }); // ✅ added
+
+                setViews((prev) => prev.filter((v) => v.id !== viewId));
+              }}
             />
           </div>
         </div>
@@ -252,13 +283,26 @@ function AppContent() {
           >
             <ToggleGroupItem value="FORMAT">
               <IconSparkles className="size-4" />
+              <span className="text-[11px] leading-none text-muted-foreground">
+                Recommendations
+              </span>
             </ToggleGroupItem>
 
             <ToggleGroupItem value="STRUCTURE">
               {selectedViewId ? (
-                <Edit className="size-4" />
+                <>
+                  <Edit className="size-4" />
+                  <span className="text-[11px] leading-none text-muted-foreground">
+                    Edit View
+                  </span>
+                </>
               ) : (
-                <Plus className="size-4" />
+                <>
+                  <Plus className="size-4" />
+                  <span className="text-[11px] leading-none text-muted-foreground">
+                    Add View
+                  </span>
+                </>
               )}
             </ToggleGroupItem>
           </ToggleGroup>
@@ -344,7 +388,14 @@ function AppContent() {
 
 export default function Page() {
   return (
-    <SidebarProvider>
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "280px",
+          "--header-height": "73px",
+        } as React.CSSProperties
+      }
+    >
       <SelectionProvider>
         <FocusProvider>
           <DatasetProvider>
