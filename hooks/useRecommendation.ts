@@ -63,7 +63,7 @@ export function useRecommendation() {
 
         console.log("LLM Prompt:", prompt.content);
 
-        const res = await fetch("/api/mock-recommend", {
+        const res = await fetch("/api/recommend", {
           method: "POST",
           body: JSON.stringify({ prompt, views }),
         });

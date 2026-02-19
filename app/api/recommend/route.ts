@@ -10,7 +10,7 @@ export async function POST(req: Request) {
     const { prompt } = await req.json();
 
     const response = await client.responses.create({
-      model: "chatgpt-4o-latest",
+      model: "gpt-4.1-mini",
       input: [
         {
           role: "system",
@@ -21,7 +21,11 @@ export async function POST(req: Request) {
       max_output_tokens: 1000,
     });
 
+    console.log("INPUT PROMPT:", prompt.content);
+
     const text = response.output_text?.trim() ?? "";
+
+    console.log("LLM Response:", response.output_text);
 
     // --- Strict JSON guard ---
     let parsed;
