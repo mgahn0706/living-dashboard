@@ -77,7 +77,6 @@ function rowMatchesSelection(row: any, selection: any) {
     return values.has(val);
   });
 }
-
 function buildSeries(
   rawData: any[],
   view: Extract<View, { chartType: "BAR" | "LINE" | "SCATTER" }>,
@@ -85,7 +84,7 @@ function buildSeries(
 ): GenericPoint[] {
   if (!Array.isArray(rawData)) return [];
 
-  return rawData
+  const mapped = rawData
     .map((row) => {
       const xRaw = getValueByPath(row, view.xColumn);
       const yRaw = getValueByPath(row, view.yColumn);
@@ -109,6 +108,25 @@ function buildSeries(
       };
     })
     .filter(Boolean) as GenericPoint[];
+
+  // 🔥 Only aggregate for LINE and BAR
+  if (view.chartType === "LINE" || view.chartType === "BAR") {
+    const grouped = new Map<any, GenericPoint>();
+
+    for (const point of mapped) {
+      if (!grouped.has(point.x)) {
+        grouped.set(point.x, { ...point });
+      } else {
+        const existing = grouped.get(point.x)!;
+        existing.y += point.y; // sum aggregation
+        existing.highlighted = existing.highlighted || point.highlighted; // preserve highlight
+      }
+    }
+
+    return Array.from(grouped.values());
+  }
+
+  return mapped;
 }
 
 /* =======================================================

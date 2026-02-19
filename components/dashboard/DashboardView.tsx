@@ -77,7 +77,6 @@ export default function DashboardView({
           }
           onCardClick={() => {
             reportClickInteraction(view.id);
-            onSelect(view.id);
           }}
           onEditClick={() => onSelect(view.id)}
           onDeleteClick={(id) => onDelete(id)}

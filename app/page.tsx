@@ -90,7 +90,7 @@ function AppContent() {
     triggerRecommendation,
   } = useRecommendation();
 
-  const { logEvent } = useExperimentLogger(); // ✅ added
+  const { logEvent } = useExperimentLogger();
 
   /* ================= Recommendation SHOWN ================= */
 
@@ -227,8 +227,6 @@ function AppContent() {
         default:
           return prev;
       }
-
-      return prev;
     });
 
     acceptRecommendation(r);
