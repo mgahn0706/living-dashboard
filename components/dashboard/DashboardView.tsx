@@ -4,6 +4,7 @@ import { View } from "@/types/dashboard";
 import { useFocus } from "@/context/FocusContext";
 import ViewCard, { PreviewState } from "./ViewCard";
 import { Button } from "../ui/button";
+import { ArrowRight } from "lucide-react";
 
 export default function DashboardView({
   views,
@@ -22,7 +23,7 @@ export default function DashboardView({
   isAddMode: boolean;
   setSidebarMode: (mode: "FORMAT" | "STRUCTURE") => void;
   onSelect: (viewId: string) => void;
-  onDelete: (viewId: string) => void; // ✅ added
+  onDelete: (viewId: string) => void;
 }) {
   const { focusScore, reportPointerInteraction, reportClickInteraction } =
     useFocus();
@@ -35,7 +36,7 @@ export default function DashboardView({
 
   if (views.length === 0) {
     return (
-      <div className="w-full h-64 flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-md text-muted-foreground">
+      <div className="w-full h-64 flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-md text-muted-foreground relative">
         <div>No views available. Please add a view to get started.</div>
 
         {!isAddMode && (
@@ -46,6 +47,10 @@ export default function DashboardView({
           >
             Add View
           </Button>
+        )}
+
+        {isAddMode && (
+          <ArrowRight className="w-8 h-8 text-primary animate-wiggle-x animate-pulse" />
         )}
       </div>
     );
@@ -79,7 +84,6 @@ export default function DashboardView({
         />
       ))}
 
-      {/* Add Preview */}
       {addPreview && (
         <ViewCard
           view={addPreview}
