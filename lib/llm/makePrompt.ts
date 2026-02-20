@@ -59,6 +59,11 @@ export function makePrompt({
   - DO NOT include explanations outside "reason"
   - DO NOT include fields not listed above
   - "payload" must contain only valid View fields
+  - "id" is the recommendation identifier. It MUST be unique and MUST NOT equal any existing view id.
+  - If the recommendation applies to an existing view, you MUST include "targetViewId" to specify which view is affected.
+  - Never use recommendation "id" as a view id.
+  - Never omit "targetViewId" when modifying an existing view.
+
   
   ━━━━━━━━━━━━━━━━━━━━━━━━
   📐 ADAPTATION POLICY

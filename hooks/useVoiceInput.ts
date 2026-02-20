@@ -12,13 +12,8 @@ export type VoiceUtterance = {
 export type UseVoiceInputReturn = {
   isSupported: boolean;
   isListening: boolean;
-
-  // 실시간 중간 발화
   partial: string;
-
-  // 누적 대화 로그
   conversation: VoiceUtterance[];
-
   start: () => void;
   stop: () => void;
   clearConversation: () => void;
@@ -37,17 +32,19 @@ export default function useVoiceInput({
 
   const recognitionRef = useRef<any>(null);
 
-  // 사용자가 "계속 듣고 싶다"는 의도
-  const shouldListenRef = useRef(false);
+  // 🔥 onFinal을 ref로 관리 (루프 방지 핵심)
+  const onFinalRef = useRef<typeof onFinal>(onFinal);
+  useEffect(() => {
+    onFinalRef.current = onFinal;
+  }, [onFinal]);
 
-  // 🔑 실제 SpeechRecognition 실행 상태 (React state ❌)
+  const shouldListenRef = useRef(false);
   const recognitionActiveRef = useRef(false);
 
   /* ---------- states ---------- */
 
   const [isSupported, setIsSupported] = useState(true);
   const [isListening, setIsListening] = useState(false);
-
   const [partial, setPartial] = useState("");
   const [conversation, setConversation] = useState<VoiceUtterance[]>([]);
 
@@ -68,8 +65,6 @@ export default function useVoiceInput({
     recognition.interimResults = true;
     recognition.continuous = true;
 
-    /* ---------- lifecycle ---------- */
-
     recognition.onstart = () => {
       recognitionActiveRef.current = true;
       setIsListening(true);
@@ -79,14 +74,11 @@ export default function useVoiceInput({
       recognitionActiveRef.current = false;
 
       if (shouldListenRef.current) {
-        // ⚠️ Chrome 안정화: 한 tick 늦춰 재시작
         setTimeout(() => {
           if (shouldListenRef.current && !recognitionActiveRef.current) {
             try {
               recognition.start();
-            } catch {
-              // ignore InvalidStateError
-            }
+            } catch {}
           }
         }, 200);
       } else {
@@ -96,9 +88,7 @@ export default function useVoiceInput({
     };
 
     recognition.onerror = () => {
-      // ❌ 여기서 start() 호출 금지
       recognitionActiveRef.current = false;
-      // onend가 알아서 처리
     };
 
     recognition.onresult = (event: any) => {
@@ -132,7 +122,9 @@ export default function useVoiceInput({
         ]);
 
         setPartial("");
-        onFinal?.(cleaned);
+
+        // 🔥 ref 사용 (dependency loop 차단)
+        onFinalRef.current?.(cleaned);
       }
     };
 
@@ -147,7 +139,7 @@ export default function useVoiceInput({
         } catch {}
       }
     };
-  }, [lang, onFinal]);
+  }, [lang]); // 🔥 onFinal 제거
 
   /* ===================== Controls ===================== */
 
@@ -158,9 +150,7 @@ export default function useVoiceInput({
 
     try {
       recognitionRef.current.start();
-    } catch {
-      // ignore InvalidStateError
-    }
+    } catch {}
   };
 
   const stop = () => {

@@ -3,7 +3,15 @@ export type ChartType = "BAR" | "LINE" | "TABLE" | "SCATTER";
 
 export type View = ChartView | TableView;
 
-type ChartView = {
+type ChartPayload = {
+  chartType: "BAR" | "LINE" | "SCATTER";
+} & Partial<Omit<ChartView, "chartType">>;
+
+type TablePayload = {
+  chartType: "TABLE";
+} & Partial<Omit<TableView, "chartType">>;
+
+export type ChartView = {
   id: string;
   xColumn: string;
   yColumn: string;
@@ -15,7 +23,7 @@ type ChartView = {
   title: string;
 };
 
-type TableView = {
+export type TableView = {
   id: string;
   chartType: "TABLE";
   columns: string[];
@@ -27,12 +35,13 @@ type TableView = {
 export type Recommendation = {
   id: string;
   title: string;
+  targetViewId: string;
   type:
     | "REORDER"
     | "RESIZE"
     | "NEW_CONTENT"
     | "MODIFY_CONTENT"
     | "REMOVE_CONTENT";
-  payload: Partial<View>;
+  payload: ChartPayload | TablePayload;
   reason: string;
 };

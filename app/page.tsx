@@ -1,10 +1,16 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { useRecommendation } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
-import type { Recommendation, View } from "@/types/dashboard";
+import type {
+  ChartType,
+  ChartView,
+  Recommendation,
+  TableView,
+  View,
+} from "@/types/dashboard";
 import type { PreviewState } from "@/components/dashboard/ViewCard";
 import RecommendationSidebar from "@/components/recommendation/RecommendationSidebar";
 import {
@@ -24,41 +30,205 @@ import { IconSparkles } from "@tabler/icons-react";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 import { SelectionProvider } from "@/context/SelectionContext";
 
-import { useExperimentLogger } from "@/hooks/useExperimentLogger"; // ✅ added
+import { useExperimentLogger } from "@/hooks/useExperimentLogger";
 
 /* =====================================================
-   View factories
+   Types / guards
 ===================================================== */
 
-type ChartKind = "BAR" | "LINE" | "SCATTER";
+type ChartKind = Exclude<ChartType, "TABLE">;
+
+function isTableView(v: View): v is TableView {
+  return v.chartType === "TABLE";
+}
+
+function isChartView(v: View): v is ChartView {
+  return v.chartType !== "TABLE";
+}
+
+/**
+ * NOTE:
+ * Your Recommendation type says `payload: Partial<View>`.
+ * That is still ambiguous for TS. We treat it as `any` at the boundary,
+ * then normalize into a concrete View *safely* via chartType-based logic.
+ */
+type AnyPayload = any;
+
+/* =====================================================
+   View factories (type-safe)
+===================================================== */
 
 function makeChartView(
   kind: ChartKind,
-  payload: Partial<View>,
+  payload: Partial<ChartView>,
   priority: number
-): View {
+): ChartView {
   return {
     id: payload.id ?? `v_${Date.now()}`,
     chartType: kind,
-    xColumn: (payload as any).xColumn ?? "",
-    yColumn: (payload as any).yColumn ?? "",
+    xColumn: payload.xColumn ?? "",
+    yColumn: payload.yColumn ?? "",
     size: payload.size ?? "md",
     priority,
-    xLabel: (payload as any).xLabel,
-    yLabel: (payload as any).yLabel,
+    xLabel: payload.xLabel,
+    yLabel: payload.yLabel,
     title: payload.title ?? "",
   };
 }
 
-function makeTableView(payload: Partial<View>, priority: number): View {
+function makeTableView(
+  payload: Partial<TableView>,
+  priority: number
+): TableView {
   return {
     id: payload.id ?? `v_${Date.now()}`,
     chartType: "TABLE",
-    columns: (payload as any).columns ?? [],
+    columns: payload.columns ?? [],
     size: payload.size ?? "md",
     priority,
     title: payload.title ?? "",
   };
+}
+
+/* =====================================================
+   Converters: solve TABLE <-> CHART mapping here
+===================================================== */
+
+function deriveChartColumnsFromTable(
+  table: TableView,
+  incoming?: { xColumn?: string; yColumn?: string }
+) {
+  const x = incoming?.xColumn ?? table.columns?.[0] ?? "";
+  const y = incoming?.yColumn ?? table.columns?.[1] ?? "";
+  return { xColumn: x, yColumn: y };
+}
+
+function deriveTableColumnsFromChart(
+  chart: ChartView,
+  incoming?: { columns?: string[] }
+) {
+  const cols = incoming?.columns;
+  if (Array.isArray(cols) && cols.length > 0) return { columns: cols };
+  return { columns: [chart.xColumn, chart.yColumn].filter(Boolean) };
+}
+
+/**
+ * Normalize a (base view + partial payload) into a concrete View with nextType.
+ * This is the ONLY place where we interpret ambiguous payload shapes.
+ */
+function normalizeViewUpdate(
+  base: View,
+  payload: AnyPayload,
+  nextType: ChartType
+): View {
+  // Common fields we allow to flow through for both kinds
+  const common = {
+    id: payload?.id ?? base.id,
+    size: payload?.size ?? base.size,
+    title: payload?.title ?? base.title,
+    // keep priority stable unless explicitly overwritten elsewhere (e.g., REORDER)
+  };
+
+  if (nextType === "TABLE") {
+    if (isTableView(base)) {
+      // TABLE -> TABLE
+      return makeTableView(
+        {
+          ...base,
+          ...common,
+          columns: Array.isArray(payload?.columns)
+            ? payload.columns
+            : base.columns,
+        },
+        base.priority
+      );
+    }
+
+    // CHART -> TABLE
+    const chart = base as ChartView;
+    const cols = deriveTableColumnsFromChart(chart, payload);
+    return makeTableView(
+      {
+        ...common,
+        chartType: "TABLE",
+        columns: cols.columns,
+      },
+      base.priority
+    );
+  }
+
+  // nextType is chart kind
+  const kind = nextType as ChartKind;
+
+  if (isChartView(base)) {
+    // CHART -> CHART (maybe kind changes)
+    return makeChartView(
+      kind,
+      {
+        ...base,
+        ...common,
+        chartType: kind,
+        xColumn: payload?.xColumn ?? base.xColumn,
+        yColumn: payload?.yColumn ?? base.yColumn,
+        xLabel: payload?.xLabel ?? base.xLabel,
+        yLabel: payload?.yLabel ?? base.yLabel,
+      },
+      base.priority
+    );
+  }
+
+  // TABLE -> CHART
+  const table = base as TableView;
+  const cols = deriveChartColumnsFromTable(table, payload);
+  return makeChartView(
+    kind,
+    {
+      ...common,
+      chartType: kind,
+      xColumn: cols.xColumn,
+      yColumn: cols.yColumn,
+      xLabel: payload?.xLabel,
+      yLabel: payload?.yLabel,
+    },
+    base.priority
+  );
+}
+
+/**
+ * Build a NEW view from a recommendation payload (NEW_CONTENT / addPreview).
+ * Uses chartType in payload (defaults provided by caller).
+ */
+function buildNewViewFromPayload(payload: AnyPayload, priority: number): View {
+  const t: ChartType = payload?.chartType ?? "BAR";
+
+  if (t === "TABLE") {
+    return makeTableView(
+      {
+        id: payload?.id,
+        chartType: "TABLE",
+        columns: Array.isArray(payload?.columns) ? payload.columns : [],
+        size: payload?.size,
+        title: payload?.title,
+      },
+      priority
+    );
+  }
+
+  const kind = t as ChartKind;
+  return makeChartView(
+    kind,
+    {
+      id: payload?.id,
+      chartType: kind,
+      xColumn: payload?.xColumn ?? "",
+      yColumn: payload?.yColumn ?? "",
+      size: payload?.size,
+      xLabel: payload?.xLabel,
+      yLabel: payload?.yLabel,
+      title: payload?.title,
+    },
+    priority
+  );
 }
 
 /* =====================================================
@@ -97,29 +267,32 @@ function AppContent() {
   const [shownRecIds, setShownRecIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    recommendations.forEach((r) => {
-      if (!shownRecIds.has(r.id)) {
-        logEvent("recommendation", {
-          recommendationId: r.id,
-          type: r.type,
-          action: "shown",
-        });
+    setShownRecIds((prev) => {
+      const next = new Set(prev);
+      let changed = false;
 
-        setShownRecIds((prev) => {
-          const next = new Set(prev);
+      recommendations.forEach((r) => {
+        if (!next.has(r.id)) {
+          logEvent("recommendation", {
+            recommendationId: r.id,
+            type: r.type,
+            action: "shown",
+          });
           next.add(r.id);
-          return next;
-        });
-      }
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
     });
-  }, [recommendations]);
+  }, [recommendations, logEvent]);
 
   /* ================= Voice ================= */
 
   const voice = useVoiceInput({
     lang: language,
     onFinal: (text) => {
-      logEvent("voice_input", { length: text.length }); // ✅ added
+      logEvent("voice_input", { length: text.length });
 
       triggerRecommendation({
         views,
@@ -134,19 +307,18 @@ function AppContent() {
   /* ================= PREVIEW ================= */
 
   const previewMap = useMemo<Record<string, PreviewState>>(() => {
-    if (!hoveredRec || !hoveredRec.payload?.id) return {};
+    if (!hoveredRec || !hoveredRec.targetViewId) return {};
 
-    const base = views.find((v) => v.id === hoveredRec.payload.id);
+    const base = views.find((v) => v.id === hoveredRec.targetViewId);
     if (!base) return {};
 
+    const payload = hoveredRec.payload as AnyPayload;
+    const nextType: ChartType = payload?.chartType ?? base.chartType;
+
     const previewView =
-      base.chartType === "TABLE" || hoveredRec.payload.chartType === "TABLE"
-        ? makeTableView({ ...base, ...hoveredRec.payload }, base.priority)
-        : makeChartView(
-            hoveredRec.payload.chartType ?? base.chartType,
-            { ...base, ...hoveredRec.payload },
-            base.priority
-          );
+      hoveredRec.type === "REMOVE_CONTENT"
+        ? base
+        : normalizeViewUpdate(base, payload, nextType);
 
     return {
       [base.id]: {
@@ -158,12 +330,8 @@ function AppContent() {
 
   const addPreview = useMemo<View | null>(() => {
     if (!hoveredRec || hoveredRec.type !== "NEW_CONTENT") return null;
-
-    const payload = hoveredRec.payload as Partial<View>;
-
-    return payload.chartType === "TABLE"
-      ? makeTableView(payload, views.length + 1)
-      : makeChartView(payload.chartType ?? "BAR", payload, views.length + 1);
+    const payload = hoveredRec.payload as AnyPayload;
+    return buildNewViewFromPayload(payload, views.length + 1);
   }, [hoveredRec, views.length]);
 
   /* ================= APPLY ================= */
@@ -173,56 +341,50 @@ function AppContent() {
       recommendationId: r.id,
       type: r.type,
       action: "accepted",
-    }); // ✅ added
+    });
 
     setAcceptedRecommendationIds((prev) => [...prev, r.id]);
 
     setViews((prev) => {
+      const payload = r.payload as AnyPayload;
+
       switch (r.type) {
         case "MODIFY_CONTENT":
-        case "RESIZE":
-          return prev.map((v) =>
-            v.id === r.payload.id && r.payload.chartType
-              ? v.chartType === "TABLE" || r.payload.chartType === "TABLE"
-                ? makeTableView({ ...v, ...r.payload }, v.priority)
-                : makeChartView(
-                    r.payload.chartType,
-                    { ...v, ...r.payload },
-                    v.priority
-                  )
-              : v
-          );
+        case "RESIZE": {
+          return prev.map((v) => {
+            if (v.id !== payload?.id) return v;
 
-        case "REORDER":
-          if (!r.payload?.id) return prev;
+            const nextType: ChartType = payload?.chartType ?? v.chartType;
+            return normalizeViewUpdate(v, payload, nextType);
+          });
+        }
+
+        case "REORDER": {
+          const id: string | undefined = payload?.id;
+          if (!id) return prev;
+
+          const nextPriority: number | undefined = payload?.priority;
+          if (typeof nextPriority !== "number") return prev;
+
           return [...prev]
             .map((v, i) =>
-              v.id === r.payload.id
-                ? {
-                    ...v,
-                    priority: r.payload.priority ?? v.priority ?? i,
-                  }
+              v.id === id
+                ? { ...v, priority: nextPriority ?? v.priority ?? i }
                 : v
             )
             .sort((a, b) => a.priority - b.priority);
-
-        case "NEW_CONTENT": {
-          const payload = r.payload as Partial<View>;
-
-          return payload.chartType === "TABLE"
-            ? [...prev, makeTableView(payload, prev.length + 1)]
-            : [
-                ...prev,
-                makeChartView(
-                  payload.chartType ?? "BAR",
-                  payload,
-                  prev.length + 1
-                ),
-              ];
         }
 
-        case "REMOVE_CONTENT":
-          return prev.filter((v) => v.id !== r.payload.id);
+        case "NEW_CONTENT": {
+          const next = buildNewViewFromPayload(payload, prev.length + 1);
+          return [...prev, next];
+        }
+
+        case "REMOVE_CONTENT": {
+          const id: string | undefined = payload?.id;
+          if (!id) return prev;
+          return prev.filter((v) => v.id !== id);
+        }
 
         default:
           return prev;
@@ -246,7 +408,7 @@ function AppContent() {
               isAddMode={sidebarMode === "STRUCTURE"}
               setSidebarMode={setSidebarMode}
               onSelect={(viewId) => {
-                logEvent("view_select", { viewId }); // ✅ added
+                logEvent("view_select", { viewId });
 
                 if (selectedViewId === viewId) {
                   setSelectedViewId(null);
@@ -257,8 +419,7 @@ function AppContent() {
                 }
               }}
               onDelete={(viewId) => {
-                logEvent("view_delete", { viewId }); // ✅ added
-
+                logEvent("view_delete", { viewId });
                 setViews((prev) => prev.filter((v) => v.id !== viewId));
               }}
             />
@@ -273,7 +434,7 @@ function AppContent() {
             value={sidebarMode}
             onValueChange={(v) => {
               if (v) {
-                logEvent("sidebar_mode_change", { mode: v }); // ✅ added
+                logEvent("sidebar_mode_change", { mode: v });
                 setSidebarMode(v as "FORMAT" | "STRUCTURE");
               }
             }}
@@ -320,9 +481,7 @@ function AppContent() {
             isGenerating={isLoading}
             onChangeLanguage={(lang) => setLanguage(lang)}
             onSendTextChat={(msg) => {
-              logEvent("text_chat", {
-                length: msg.length,
-              }); // ✅ added
+              logEvent("text_chat", { length: msg.length });
 
               setTextChats((prev) => [...prev, msg]);
 
@@ -344,7 +503,7 @@ function AppContent() {
               logEvent("view_modify", {
                 viewId: id,
                 triggeredBy: "manual",
-              }); // ✅ added
+              });
 
               setSelectedViewId(null);
               setSidebarMode("FORMAT");
@@ -355,23 +514,15 @@ function AppContent() {
               logEvent("view_create", {
                 triggeredBy: "manual",
                 chartType: payload.chartType,
-              }); // ✅ added
+              });
 
               setSelectedViewId(null);
               setSidebarMode("FORMAT");
 
-              setViews((prev) =>
-                payload.chartType === "TABLE"
-                  ? [...prev, makeTableView(payload, prev.length + 1)]
-                  : [
-                      ...prev,
-                      makeChartView(
-                        payload.chartType,
-                        payload,
-                        prev.length + 1
-                      ),
-                    ]
-              );
+              setViews((prev) => [
+                ...prev,
+                buildNewViewFromPayload(payload, prev.length + 1),
+              ]);
             }}
           />
         )}
