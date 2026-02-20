@@ -352,7 +352,7 @@ function AppContent() {
         case "MODIFY_CONTENT":
         case "RESIZE": {
           return prev.map((v) => {
-            if (v.id !== payload?.id) return v;
+            if (v.id !== r.targetViewId) return v;
 
             const nextType: ChartType = payload?.chartType ?? v.chartType;
             return normalizeViewUpdate(v, payload, nextType);
