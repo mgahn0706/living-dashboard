@@ -22,6 +22,13 @@ import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
 
 import { useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import {
+  IconArrowsDownUp,
+  IconResize,
+  IconPlus,
+  IconPencil,
+  IconTrash,
+} from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -271,7 +278,7 @@ export default function RecommendationSidebar({
       {/* Recommendations Scroll */}
       <SidebarContent className="flex-1 overflow-hidden">
         <ScrollArea className="h-full p-4">
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 pr-1">
             {isGenerating && !isListening && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <IconSparkles className="size-4 animate-pulse text-primary" />
@@ -285,36 +292,57 @@ export default function RecommendationSidebar({
               </div>
             )}
 
+            {history.length > 0 && onUndoLatest && (
+              <button
+                onClick={onUndoLatest}
+                className="w-full rounded-md border bg-background/70 px-3 py-2 text-xs font-semibold text-primary hover:bg-muted"
+              >
+                Undo last change
+              </button>
+            )}
+
             <AnimatePresence>
-              {history.map((r, index) => (
-                <motion.div
-                  key={r.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                >
-                  <div className="rounded-md border bg-background/60 px-2.5 py-2 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="truncate font-medium">{r.title}</div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
-                          {r.type.replace("_", " ")}
-                        </span>
-                        {index === 0 && onUndoLatest && (
-                          <button
-                            onClick={onUndoLatest}
-                            className="text-[10px] font-medium text-primary hover:underline"
-                          >
-                            Undo
-                          </button>
-                        )}
+              {history.map((r) => {
+                const icon =
+                  r.type === "REORDER" ? (
+                    <IconArrowsDownUp className="size-4" />
+                  ) : r.type === "RESIZE" ? (
+                    <IconResize className="size-4" />
+                  ) : r.type === "NEW_CONTENT" ? (
+                    <IconPlus className="size-4" />
+                  ) : r.type === "MODIFY_CONTENT" ? (
+                    <IconPencil className="size-4" />
+                  ) : (
+                    <IconTrash className="size-4" />
+                  );
+
+                return (
+                  <motion.div
+                    key={r.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    <div className="flex items-start gap-2 rounded-md border bg-background/60 px-2.5 py-2 text-xs">
+                      <div className="mt-0.5 inline-flex size-7 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                        {icon}
                       </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="truncate font-medium">{r.title}</div>
+                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                            {r.type.replace("_", " ")}
+                          </span>
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
+                          {r.reason}
+                        </div>
+                      </div>
+
                     </div>
-                    <div className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
-                      {r.reason}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                );
+              })}
             </AnimatePresence>
           </div>
         </ScrollArea>
