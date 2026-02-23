@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState } from "react";
+import * as XLSX from "xlsx";
 
 /* =====================================================
    Types
@@ -115,6 +116,16 @@ function parseCSV(text: string): Record<string, any>[] {
   });
 }
 
+/* ---------- xlsx ---------- */
+
+function parseXLSX(buffer: ArrayBuffer): Record<string, any>[] {
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) return [];
+  const worksheet = workbook.Sheets[firstSheetName];
+  return XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+}
+
 /* ---------- type detection ---------- */
 
 function detectPrimitiveType(values: any[]): PrimitiveType {
@@ -175,6 +186,9 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
       data = JSON.parse(text);
     } else if (file.name.endsWith(".csv")) {
       data = parseCSV(text);
+    } else if (file.name.endsWith(".xlsx")) {
+      const buffer = await file.arrayBuffer();
+      data = parseXLSX(buffer);
     } else {
       throw new Error("Unsupported file type");
     }

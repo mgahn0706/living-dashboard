@@ -29,7 +29,7 @@ export function SiteHeader() {
     try {
       await uploadDataset(file);
     } catch {
-      alert("Invalid JSON / CSV file");
+      alert("Invalid JSON / CSV / XLSX file");
     } finally {
       e.target.value = "";
     }
@@ -60,7 +60,7 @@ export function SiteHeader() {
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <IconUpload className="size-4" />
-                  <span>Upload JSON / CSV</span>
+                  <span>Upload JSON / CSV / XLSX</span>
                 </Button>
               </TooltipTrigger>
 
@@ -75,7 +75,7 @@ export function SiteHeader() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".json,.csv"
+            accept=".json,.csv,.xlsx"
             className="hidden"
             onChange={handleFileChange}
           />
