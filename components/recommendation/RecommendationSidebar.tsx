@@ -15,6 +15,7 @@ import {
   IconMicrophone,
   IconPlayerStop,
   IconMessageDots,
+  IconChevronDown,
 } from "@tabler/icons-react";
 
 import RecommendationItem from "./RecommendationItem";
@@ -23,6 +24,11 @@ import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
 import { useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 /* =======================================================
    Types
@@ -75,11 +81,7 @@ function ConversationTimeline({ messages }: { messages: UnifiedMessage[] }) {
   );
 
   return (
-    <div className="border-t bg-background/95 backdrop-blur px-3 py-2 max-h-40 overflow-y-auto">
-      <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-        Conversation
-      </div>
-
+    <div className="bg-background/95 backdrop-blur px-3 py-2 max-h-40 overflow-y-auto">
       <div className="flex flex-col gap-1">
         {sorted.length === 0 && (
           <div className="text-[10px] text-muted-foreground/60">
@@ -312,7 +314,18 @@ export default function RecommendationSidebar({
           placeholder={placeholder}
         />
 
-        <ConversationTimeline messages={unifiedMessages} />
+        <Collapsible defaultOpen>
+          <div className="border-t bg-background/95 backdrop-blur px-3 py-2">
+            <CollapsibleTrigger className="group flex w-full items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span>Chat log</span>
+              <IconChevronDown className="size-3 transition-transform group-data-[state=open]:rotate-180" />
+            </CollapsibleTrigger>
+          </div>
+
+          <CollapsibleContent>
+            <ConversationTimeline messages={unifiedMessages} />
+          </CollapsibleContent>
+        </Collapsible>
 
         <SidebarFooter className="border-t p-3 space-y-2 bg-background/95 backdrop-blur">
           <ChatInputBar
