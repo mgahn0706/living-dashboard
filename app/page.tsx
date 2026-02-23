@@ -240,6 +240,9 @@ function AppContent() {
   const [acceptedRecommendationIds, setAcceptedRecommendationIds] = useState<
     string[]
   >([]);
+  const [appliedRecommendations, setAppliedRecommendations] = useState<
+    (Recommendation & { _prevViews: View[] })[]
+  >([]);
   const [textChats, setTextChats] = useState<string[]>([]);
   const [hoveredRec, setHoveredRec] = useState<Recommendation | null>(null);
   const [sidebarMode, setSidebarMode] = useState<"FORMAT" | "STRUCTURE">(
@@ -330,7 +333,8 @@ function AppContent() {
   }, [hoveredRec, views]);
 
   const activeRecommendations = useMemo(
-    () => recommendations.filter((r) => !acceptedRecommendationIds.includes(r.id)),
+    () =>
+      recommendations.filter((r) => !acceptedRecommendationIds.includes(r.id)),
     [recommendations, acceptedRecommendationIds]
   );
 
@@ -352,8 +356,10 @@ function AppContent() {
   const addPreview = useMemo<View | null>(() => {
     if (!newContentRecommendation) return null;
     const payload = newContentRecommendation.payload as AnyPayload;
-    return buildNewViewFromPayload(payload, views.length + 1);
-  }, [newContentRecommendation, views.length]);
+    const minPriority =
+      views.length > 0 ? Math.min(...views.map((v) => v.priority ?? 0)) : 0;
+    return buildNewViewFromPayload(payload, minPriority - 1);
+  }, [newContentRecommendation, views]);
 
   /* ================= APPLY ================= */
 
@@ -368,6 +374,23 @@ function AppContent() {
     setAcceptedRecommendationIds((prev) => [...prev, r.id]);
 
     setViews((prev) => {
+      setAppliedRecommendations((prevHistory) => {
+        const key = JSON.stringify({
+          type: r.type,
+          targetViewId: r.targetViewId ?? null,
+          payload: r.payload,
+        });
+        const exists = prevHistory.some(
+          (h) =>
+            JSON.stringify({
+              type: h.type,
+              targetViewId: h.targetViewId ?? null,
+              payload: h.payload,
+            }) === key
+        );
+        if (exists) return prevHistory;
+        return [{ ...r, _prevViews: prev }, ...prevHistory];
+      });
       const payload = r.payload as AnyPayload;
 
       switch (r.type) {
@@ -398,7 +421,9 @@ function AppContent() {
         }
 
         case "NEW_CONTENT": {
-          const next = buildNewViewFromPayload(payload, prev.length + 1);
+          const minPriority =
+            prev.length > 0 ? Math.min(...prev.map((v) => v.priority ?? 0)) : 0;
+          const next = buildNewViewFromPayload(payload, minPriority - 1);
           return [...prev, next];
         }
 
@@ -414,6 +439,15 @@ function AppContent() {
     });
 
     acceptRecommendation(r);
+  };
+
+  const undoLatestRecommendation = () => {
+    setAppliedRecommendations((prev) => {
+      const latest = prev[0];
+      if (!latest) return prev;
+      setViews(latest._prevViews);
+      return prev.slice(1);
+    });
   };
 
   const decline = (r: Recommendation) => {
@@ -476,7 +510,9 @@ function AppContent() {
               onAcceptRecommendation={apply}
               onDeclineRecommendation={decline}
               onInitializeDashboard={initializeDashboard}
-              canInitializeDashboard={Boolean(rawData) && attributeKeys.length > 0}
+              canInitializeDashboard={
+                Boolean(rawData) && attributeKeys.length > 0
+              }
               isInitializingDashboard={isInitializing}
               onSelect={(viewId) => {
                 logEvent("view_select", { viewId });
@@ -514,7 +550,7 @@ function AppContent() {
             <ToggleGroupItem value="FORMAT">
               <IconSparkles className="size-4" />
               <span className="text-[11px] leading-none text-muted-foreground">
-                Recommendations
+                AI history
               </span>
             </ToggleGroupItem>
 
@@ -541,10 +577,8 @@ function AppContent() {
         {sidebarMode === "FORMAT" && (
           <RecommendationSidebar
             language={language}
-            recs={[]}
-            onAccept={apply}
-            onHover={setHoveredRec}
-            onLeave={() => setHoveredRec(null)}
+            history={appliedRecommendations}
+            onUndoLatest={undoLatestRecommendation}
             voice={voice}
             textChats={textChats}
             isGenerating={isLoading}

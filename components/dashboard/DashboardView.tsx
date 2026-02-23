@@ -7,7 +7,7 @@ import { Button } from "../ui/button";
 import { ArrowRight } from "lucide-react";
 
 export default function DashboardView({
-  views,
+  views = [],
   previewMap = {},
   addPreview = null,
   recommendationsByViewId = {},

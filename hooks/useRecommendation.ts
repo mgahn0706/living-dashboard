@@ -8,10 +8,7 @@ import { makePrompt } from "@/lib/llm/makePrompt";
 /* ===================== Semantic Key ===================== */
 
 function getRecommendationKey(r: Recommendation) {
-  return JSON.stringify({
-    type: r.type,
-    payload: r.payload,
-  });
+  return r.id;
 }
 
 /* ===================== Hook ===================== */

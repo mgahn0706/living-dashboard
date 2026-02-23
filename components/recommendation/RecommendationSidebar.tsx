@@ -18,7 +18,6 @@ import {
   IconChevronDown,
 } from "@tabler/icons-react";
 
-import RecommendationItem from "./RecommendationItem";
 import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
 
 import { useState, useMemo } from "react";
@@ -194,26 +193,22 @@ function ChatInputBar({
 /* ===================== Sidebar ===================== */
 
 export default function RecommendationSidebar({
-  recs,
+  history = [],
   voice,
   language,
   isGenerating = false,
   textChats = [],
   onChangeLanguage,
-  onAccept,
+  onUndoLatest,
   onSendTextChat,
-  onHover,
-  onLeave,
 }: {
-  recs: Recommendation[];
+  history?: Recommendation[];
   voice: UseVoiceInputReturn;
   language: "en-US" | "ko-KR" | "ja-JP";
   isGenerating?: boolean;
   textChats?: string[];
-  onAccept: (r: Recommendation) => void;
+  onUndoLatest?: () => void;
   onSendTextChat?: (text: string) => void;
-  onHover: (r: Recommendation) => void;
-  onLeave: () => void;
   onChangeLanguage: (lang: "en-US" | "ko-KR" | "ja-JP") => void;
 }) {
   const { isListening, partial, conversation, start, stop } = voice;
@@ -255,7 +250,7 @@ export default function RecommendationSidebar({
               <div className="flex items-center gap-2">
                 <IconSparkles className="size-5 text-primary" />
                 <div>
-                  <div className="font-semibold">Recommendations</div>
+                  <div className="font-semibold">AI History</div>
                 </div>
               </div>
 
@@ -284,22 +279,40 @@ export default function RecommendationSidebar({
               </div>
             )}
 
+            {history.length === 0 && !isGenerating && (
+              <div className="text-xs text-muted-foreground">
+                No applied recommendations yet.
+              </div>
+            )}
+
             <AnimatePresence>
-              {recs.map((r) => (
+              {history.map((r, index) => (
                 <motion.div
                   key={r.id}
-                  onMouseEnter={() => onHover(r)}
-                  onMouseLeave={onLeave}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                 >
-                  <RecommendationItem
-                    recommendation={r}
-                    onAccept={() => {
-                      onAccept(r);
-                      onLeave();
-                    }}
-                  />
+                  <div className="rounded-md border bg-background/60 px-2.5 py-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="truncate font-medium">{r.title}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                          {r.type.replace("_", " ")}
+                        </span>
+                        {index === 0 && onUndoLatest && (
+                          <button
+                            onClick={onUndoLatest}
+                            className="text-[10px] font-medium text-primary hover:underline"
+                          >
+                            Undo
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
+                      {r.reason}
+                    </div>
+                  </div>
                 </motion.div>
               ))}
             </AnimatePresence>
