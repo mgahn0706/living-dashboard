@@ -251,7 +251,7 @@ function AppContent() {
   );
 
   const { focusScore } = useFocus();
-  const { schema } = useDataset();
+  const { schema, attributeKeys, attributeTypes, rawData } = useDataset();
 
   const {
     recommendations,
@@ -363,6 +363,7 @@ function AppContent() {
       action: "accepted",
     });
 
+    setHoveredRec(null);
     setAcceptedRecommendationIds((prev) => [...prev, r.id]);
 
     setViews((prev) => {
@@ -425,6 +426,32 @@ function AppContent() {
     acceptRecommendation(r);
   };
 
+  const initializeDashboard = async () => {
+    try {
+      if (!rawData || attributeKeys.length === 0) return;
+      const res = await fetch("/api/initial-build", {
+        method: "POST",
+        body: JSON.stringify({
+          attributeKeys,
+          attributeTypes,
+          dataSchema: schema,
+        }),
+      });
+
+      const data = (await res.json()) as AnyPayload[];
+      if (!Array.isArray(data) || data.length === 0) return;
+
+      const nextViews = data.map((payload, i) =>
+        buildNewViewFromPayload(payload, data.length - i)
+      );
+
+      setViews(nextViews);
+      setSidebarMode("FORMAT");
+    } catch (err) {
+      console.error("Failed to initialize dashboard:", err);
+    }
+  };
+
   return (
     <>
       <SidebarInset className="bg-muted/10">
@@ -444,6 +471,8 @@ function AppContent() {
               onRecommendationLeave={() => setHoveredRec(null)}
               onAcceptRecommendation={apply}
               onDeclineRecommendation={decline}
+              onInitializeDashboard={initializeDashboard}
+              canInitializeDashboard={Boolean(rawData) && attributeKeys.length > 0}
               onSelect={(viewId) => {
                 logEvent("view_select", { viewId });
 

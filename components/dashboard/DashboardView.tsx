@@ -16,6 +16,8 @@ export default function DashboardView({
   onRecommendationLeave,
   onAcceptRecommendation,
   onDeclineRecommendation,
+  onInitializeDashboard,
+  canInitializeDashboard = true,
   selectedViewId,
   isAddMode,
   setSidebarMode,
@@ -31,6 +33,8 @@ export default function DashboardView({
   onRecommendationLeave?: () => void;
   onAcceptRecommendation?: (rec: Recommendation) => void;
   onDeclineRecommendation?: (rec: Recommendation) => void;
+  onInitializeDashboard?: () => void;
+  canInitializeDashboard?: boolean;
   selectedViewId: string | null;
   isAddMode: boolean;
   setSidebarMode: (mode: "FORMAT" | "STRUCTURE") => void;
@@ -52,13 +56,23 @@ export default function DashboardView({
         <div>No views available. Please add a view to get started.</div>
 
         {!isAddMode && (
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => setSidebarMode("STRUCTURE")}
-          >
-            Add View
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setSidebarMode("STRUCTURE")}
+            >
+              Add View
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onInitializeDashboard}
+              disabled={!canInitializeDashboard}
+            >
+              Initialize dashboard with LLM
+            </Button>
+          </div>
         )}
 
         {isAddMode && (
