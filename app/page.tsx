@@ -328,11 +328,31 @@ function AppContent() {
     };
   }, [hoveredRec, views]);
 
+  const activeRecommendations = useMemo(
+    () => recommendations.filter((r) => !acceptedRecommendationIds.includes(r.id)),
+    [recommendations, acceptedRecommendationIds]
+  );
+
+  const modifyRecommendationsByViewId = useMemo(() => {
+    const map: Record<string, Recommendation> = {};
+    activeRecommendations.forEach((r) => {
+      if (r.type !== "MODIFY_CONTENT") return;
+      if (!r.targetViewId) return;
+      if (!map[r.targetViewId]) map[r.targetViewId] = r;
+    });
+    return map;
+  }, [activeRecommendations]);
+
+  const newContentRecommendation = useMemo(
+    () => activeRecommendations.find((r) => r.type === "NEW_CONTENT") ?? null,
+    [activeRecommendations]
+  );
+
   const addPreview = useMemo<View | null>(() => {
-    if (!hoveredRec || hoveredRec.type !== "NEW_CONTENT") return null;
-    const payload = hoveredRec.payload as AnyPayload;
+    if (!newContentRecommendation) return null;
+    const payload = newContentRecommendation.payload as AnyPayload;
     return buildNewViewFromPayload(payload, views.length + 1);
-  }, [hoveredRec, views.length]);
+  }, [newContentRecommendation, views.length]);
 
   /* ================= APPLY ================= */
 
@@ -394,6 +414,17 @@ function AppContent() {
     acceptRecommendation(r);
   };
 
+  const decline = (r: Recommendation) => {
+    logEvent("recommendation", {
+      recommendationId: r.id,
+      type: r.type,
+      action: "declined",
+    });
+
+    setHoveredRec(null);
+    acceptRecommendation(r);
+  };
+
   return (
     <>
       <SidebarInset className="bg-muted/10">
@@ -407,6 +438,12 @@ function AppContent() {
               selectedViewId={selectedViewId}
               isAddMode={sidebarMode === "STRUCTURE"}
               setSidebarMode={setSidebarMode}
+              recommendationsByViewId={modifyRecommendationsByViewId}
+              newContentRecommendation={newContentRecommendation}
+              onRecommendationHover={(r) => setHoveredRec(r)}
+              onRecommendationLeave={() => setHoveredRec(null)}
+              onAcceptRecommendation={apply}
+              onDeclineRecommendation={decline}
               onSelect={(viewId) => {
                 logEvent("view_select", { viewId });
 
@@ -470,9 +507,7 @@ function AppContent() {
         {sidebarMode === "FORMAT" && (
           <RecommendationSidebar
             language={language}
-            recs={recommendations.filter(
-              (r) => !acceptedRecommendationIds.includes(r.id)
-            )}
+            recs={[]}
             onAccept={apply}
             onHover={setHoveredRec}
             onLeave={() => setHoveredRec(null)}

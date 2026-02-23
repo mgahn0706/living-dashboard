@@ -1,6 +1,6 @@
 "use client";
 
-import { View } from "@/types/dashboard";
+import { Recommendation, View } from "@/types/dashboard";
 import { useFocus } from "@/context/FocusContext";
 import ViewCard, { PreviewState } from "./ViewCard";
 import { Button } from "../ui/button";
@@ -10,6 +10,12 @@ export default function DashboardView({
   views,
   previewMap = {},
   addPreview = null,
+  recommendationsByViewId = {},
+  newContentRecommendation = null,
+  onRecommendationHover,
+  onRecommendationLeave,
+  onAcceptRecommendation,
+  onDeclineRecommendation,
   selectedViewId,
   isAddMode,
   setSidebarMode,
@@ -19,6 +25,12 @@ export default function DashboardView({
   views: View[];
   previewMap?: Record<string, PreviewState>;
   addPreview?: View | null;
+  recommendationsByViewId?: Record<string, Recommendation>;
+  newContentRecommendation?: Recommendation | null;
+  onRecommendationHover?: (rec: Recommendation) => void;
+  onRecommendationLeave?: () => void;
+  onAcceptRecommendation?: (rec: Recommendation) => void;
+  onDeclineRecommendation?: (rec: Recommendation) => void;
   selectedViewId: string | null;
   isAddMode: boolean;
   setSidebarMode: (mode: "FORMAT" | "STRUCTURE") => void;
@@ -69,6 +81,11 @@ export default function DashboardView({
           focusScore={focusScore[view.id] ?? 0}
           isSelected={selectedViewId === view.id}
           preview={previewMap[view.id] ?? null}
+          recommendation={recommendationsByViewId[view.id] ?? null}
+          onRecommendationHover={onRecommendationHover}
+          onRecommendationLeave={onRecommendationLeave}
+          onAcceptRecommendation={onAcceptRecommendation}
+          onDeclineRecommendation={onDeclineRecommendation}
           onPointerMove={(e) =>
             reportPointerInteraction(view.id, {
               clientX: e.clientX,
@@ -89,6 +106,11 @@ export default function DashboardView({
           focusScore={0}
           preview={{ type: "ADD", view: addPreview }}
           isSelected={false}
+          recommendation={newContentRecommendation}
+          onRecommendationHover={onRecommendationHover}
+          onRecommendationLeave={onRecommendationLeave}
+          onAcceptRecommendation={onAcceptRecommendation}
+          onDeclineRecommendation={onDeclineRecommendation}
         />
       )}
     </div>
