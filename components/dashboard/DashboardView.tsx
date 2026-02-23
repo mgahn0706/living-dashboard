@@ -18,6 +18,7 @@ export default function DashboardView({
   onDeclineRecommendation,
   onInitializeDashboard,
   canInitializeDashboard = true,
+  isInitializingDashboard = false,
   selectedViewId,
   isAddMode,
   setSidebarMode,
@@ -35,6 +36,7 @@ export default function DashboardView({
   onDeclineRecommendation?: (rec: Recommendation) => void;
   onInitializeDashboard?: () => void;
   canInitializeDashboard?: boolean;
+  isInitializingDashboard?: boolean;
   selectedViewId: string | null;
   isAddMode: boolean;
   setSidebarMode: (mode: "FORMAT" | "STRUCTURE") => void;
@@ -68,9 +70,11 @@ export default function DashboardView({
               variant="secondary"
               size="sm"
               onClick={onInitializeDashboard}
-              disabled={!canInitializeDashboard}
+              disabled={!canInitializeDashboard || isInitializingDashboard}
             >
-              Initialize dashboard with LLM
+              {isInitializingDashboard
+                ? "Initializing..."
+                : "Initialize dashboard with LLM"}
             </Button>
           </div>
         )}

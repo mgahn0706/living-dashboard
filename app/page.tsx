@@ -249,6 +249,7 @@ function AppContent() {
   const [language, setLanguage] = useState<"en-US" | "ko-KR" | "ja-JP">(
     "en-US"
   );
+  const [isInitializing, setIsInitializing] = useState(false);
 
   const { focusScore } = useFocus();
   const { schema, attributeKeys, attributeTypes, rawData } = useDataset();
@@ -336,7 +337,7 @@ function AppContent() {
   const modifyRecommendationsByViewId = useMemo(() => {
     const map: Record<string, Recommendation> = {};
     activeRecommendations.forEach((r) => {
-      if (r.type !== "MODIFY_CONTENT") return;
+      if (r.type !== "MODIFY_CONTENT" && r.type !== "REMOVE_CONTENT") return;
       if (!r.targetViewId) return;
       if (!map[r.targetViewId]) map[r.targetViewId] = r;
     });
@@ -402,7 +403,7 @@ function AppContent() {
         }
 
         case "REMOVE_CONTENT": {
-          const id: string | undefined = payload?.id;
+          const id: string | undefined = r.targetViewId ?? payload?.id;
           if (!id) return prev;
           return prev.filter((v) => v.id !== id);
         }
@@ -429,6 +430,7 @@ function AppContent() {
   const initializeDashboard = async () => {
     try {
       if (!rawData || attributeKeys.length === 0) return;
+      setIsInitializing(true);
       const res = await fetch("/api/initial-build", {
         method: "POST",
         body: JSON.stringify({
@@ -449,6 +451,8 @@ function AppContent() {
       setSidebarMode("FORMAT");
     } catch (err) {
       console.error("Failed to initialize dashboard:", err);
+    } finally {
+      setIsInitializing(false);
     }
   };
 
@@ -473,6 +477,7 @@ function AppContent() {
               onDeclineRecommendation={decline}
               onInitializeDashboard={initializeDashboard}
               canInitializeDashboard={Boolean(rawData) && attributeKeys.length > 0}
+              isInitializingDashboard={isInitializing}
               onSelect={(viewId) => {
                 logEvent("view_select", { viewId });
 
