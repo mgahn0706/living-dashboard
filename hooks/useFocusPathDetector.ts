@@ -110,12 +110,12 @@ export function useFocusPathDetector(
 
       emitIntervalMilliseconds: 120,
 
-      /* ===== decay defaults (1-minute context) ===== */
+      /* ===== decay defaults (longer context memory) ===== */
       decayIntervalMilliseconds: 200,
-      focusHalfLifeSeconds: 60, // ⭐ at least a minute
+      focusHalfLifeSeconds: 180, // ~3 minutes half-life for longer context
 
       /* ===== dramatic decay ===== */
-      idleDecayAcceleration: 1.6,
+      idleDecayAcceleration: 1.2,
 
       /* ===== safety ===== */
       minimumFocusScore: 0,
