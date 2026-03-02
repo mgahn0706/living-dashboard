@@ -38,9 +38,11 @@ import { useSelection } from "@/context/SelectionContext";
 ======================================================= */
 
 type GenericPoint = {
-  x: any;
-  y: any;
+  x: number | string;
+  y: number;
   highlighted: boolean;
+  xRaw: any;
+  xType: "number" | "date" | "category";
 };
 
 /* =======================================================
@@ -68,6 +70,130 @@ function detectAndParse(value: any) {
   return value;
 }
 
+function parseXValue(
+  value: any,
+  hint?: "string" | "number" | "date" | "unknown"
+): {
+  x: number | string | null;
+  xRaw: any;
+  xType: "number" | "date" | "category";
+} {
+  if (value == null) {
+    return { x: null, xRaw: value, xType: "category" };
+  }
+
+  if (value instanceof Date) {
+    return { x: value.getTime(), xRaw: value, xType: "date" };
+  }
+
+  const n = Number(value);
+  if (!Number.isNaN(n) && value !== "") {
+    // If the column is known as date, treat numeric epochs as date.
+    if (hint === "date") {
+      const ms =
+        Math.abs(n) < 3e10 // ~year 2960 in seconds
+          ? n * 1000
+          : n;
+      return { x: ms, xRaw: value, xType: "date" };
+    }
+
+    // Heuristic: treat large epoch-like numbers as dates.
+    const abs = Math.abs(n);
+    const looksLikeSeconds = abs >= 1e9 && abs < 5e10;
+    const looksLikeMs = abs >= 1e11 && abs < 5e13;
+    if (looksLikeSeconds || looksLikeMs) {
+      const ms = looksLikeSeconds ? n * 1000 : n;
+      return { x: ms, xRaw: value, xType: "date" };
+    }
+
+    return { x: n, xRaw: value, xType: "number" };
+  }
+
+  if (typeof value === "string") {
+    if (hint === "date") {
+      const d = Date.parse(value);
+      if (!Number.isNaN(d)) {
+        return { x: d, xRaw: value, xType: "date" };
+      }
+    }
+
+    const d = Date.parse(value);
+    if (!Number.isNaN(d)) {
+      return { x: d, xRaw: value, xType: "date" };
+    }
+  }
+
+  return { x: value, xRaw: value, xType: "category" };
+}
+
+function inferXTypeFromColumn(
+  values: any[],
+  hint?: "string" | "number" | "date" | "unknown"
+): "number" | "date" | "category" {
+  if (hint === "date") return "date";
+
+  const filtered = values.filter((v) => v !== null && v !== undefined && v !== "");
+  if (filtered.length === 0) return "category";
+
+  let numberCount = 0;
+  let dateStringCount = 0;
+  const numericValues: number[] = [];
+
+  for (const v of filtered) {
+    if (v instanceof Date) {
+      dateStringCount++;
+      continue;
+    }
+    if (typeof v === "string") {
+      const d = Date.parse(v);
+      if (!Number.isNaN(d)) {
+        dateStringCount++;
+        continue;
+      }
+    }
+    const n = Number(v);
+    if (!Number.isNaN(n) && v !== "") {
+      numberCount++;
+      numericValues.push(n);
+    }
+  }
+
+  const ratio = filtered.length * 0.6;
+  if (dateStringCount >= ratio) return "date";
+
+  if (numberCount >= ratio && numericValues.length) {
+    const sorted = [...numericValues].map((v) => Math.abs(v)).sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const looksLikeSeconds = median >= 1e9 && median < 5e10;
+    const looksLikeMs = median >= 1e11 && median < 5e13;
+    if (looksLikeSeconds || looksLikeMs) return "date";
+    return "number";
+  }
+
+  return "category";
+}
+
+function resolveXType(points: GenericPoint[]) {
+  if (!points.length) return "category" as const;
+  const allDate = points.every((p) => p.xType === "date");
+  if (allDate) return "date" as const;
+  const allNumber = points.every((p) => p.xType === "number");
+  if (allNumber) return "number" as const;
+  return "category" as const;
+}
+
+function formatDateTick(value: number | string) {
+  const n = typeof value === "number" ? value : Number(value);
+  if (Number.isNaN(n)) return String(value);
+  const d = new Date(n);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString(undefined, {
+    year: "2-digit",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function rowMatchesSelection(row: any, selection: any) {
   if (!selection || Object.keys(selection).length === 0) return true;
 
@@ -80,20 +206,29 @@ function rowMatchesSelection(row: any, selection: any) {
 function buildSeries(
   rawData: any[],
   view: Extract<View, { chartType: "BAR" | "LINE" | "SCATTER" }>,
-  selection: any
-): GenericPoint[] {
-  if (!Array.isArray(rawData)) return [];
+  selection: any,
+  attributeTypes: Record<string, "string" | "number" | "date" | "unknown">
+): { data: GenericPoint[]; xType: "number" | "date" | "category" } {
+  if (!Array.isArray(rawData)) {
+    return { data: [], xType: "category" };
+  }
+
+  const xTypeHint = attributeTypes?.[view.xColumn];
+  const inferredXType = inferXTypeFromColumn(
+    rawData.map((row) => getValueByPath(row, view.xColumn)),
+    xTypeHint
+  );
 
   const mapped = rawData
     .map((row) => {
       const xRaw = getValueByPath(row, view.xColumn);
       const yRaw = getValueByPath(row, view.yColumn);
 
-      const xParsed = detectAndParse(xRaw);
+      const xParsed = parseXValue(xRaw, inferredXType);
       const yParsed = detectAndParse(yRaw);
 
       if (view.chartType === "SCATTER") {
-        if (typeof xParsed !== "number" || typeof yParsed !== "number")
+        if (xParsed.xType !== "number" || typeof yParsed !== "number")
           return null;
       }
 
@@ -102,12 +237,16 @@ function buildSeries(
       }
 
       return {
-        x: xParsed instanceof Date ? xParsed.getTime() : xParsed,
+        x: xParsed.x as number | string,
         y: yParsed,
         highlighted: rowMatchesSelection(row, selection),
+        xRaw: xParsed.xRaw,
+        xType: xParsed.xType,
       };
     })
     .filter(Boolean) as GenericPoint[];
+
+  const xType = inferredXType;
 
   // 🔥 Only aggregate for LINE and BAR
   if (view.chartType === "LINE" || view.chartType === "BAR") {
@@ -123,10 +262,15 @@ function buildSeries(
       }
     }
 
-    return Array.from(grouped.values());
+    const aggregated = Array.from(grouped.values());
+    if (xType === "date" || xType === "number") {
+      aggregated.sort((a, b) => Number(a.x) - Number(b.x));
+    }
+
+    return { data: aggregated, xType };
   }
 
-  return mapped;
+  return { data: mapped, xType };
 }
 
 /* =======================================================
@@ -140,7 +284,7 @@ export default function ChartRenderer({
   view: View;
   height?: number | "100%";
 }) {
-  const { rawData } = useDataset();
+  const { rawData, attributeTypes } = useDataset();
   const { selection, replaceSelection, hasSelection } = useSelection();
 
   const blue = "#3b82f6";
@@ -156,9 +300,9 @@ export default function ChartRenderer({
     );
   }
 
-  const data = React.useMemo(() => {
-    return buildSeries(rawData ?? [], view, selection);
-  }, [rawData, view, selection]);
+  const { data, xType } = React.useMemo(() => {
+    return buildSeries(rawData ?? [], view, selection, attributeTypes);
+  }, [rawData, view, selection, attributeTypes]);
 
   const chartConfig = React.useMemo(
     () =>
@@ -176,7 +320,7 @@ export default function ChartRenderer({
     );
   }
 
-  const isNumericX = typeof data[0].x === "number";
+  const isNumericX = xType === "number" || xType === "date";
 
   return (
     <div className="h-full w-full" style={{ height }}>
@@ -185,9 +329,23 @@ export default function ChartRenderer({
           {view.chartType === "LINE" ? (
             <AreaChart data={data}>
               <CartesianGrid vertical={false} strokeOpacity={0.15} />
-              <XAxis dataKey="x" type={isNumericX ? "number" : "category"} />
+              <XAxis
+                dataKey="x"
+                type={isNumericX ? "number" : "category"}
+                scale={xType === "date" ? "time" : undefined}
+                domain={xType === "date" ? ["auto", "auto"] : undefined}
+                tickFormatter={xType === "date" ? formatDateTick : undefined}
+              />
               <YAxis type="number" />
-              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartTooltip
+                content={<ChartTooltipContent />}
+                labelFormatter={
+                  xType === "date"
+                    ? (_label: any, payload: any) =>
+                        formatDateTick(payload?.[0]?.payload?.x)
+                    : undefined
+                }
+              />
 
               {/* Base Line */}
               <Area
@@ -210,7 +368,9 @@ export default function ChartRenderer({
                       fill={highlighted ? blue : faded}
                       opacity={!hasSelection || highlighted ? 1 : 0.3}
                       style={{ cursor: "pointer" }}
-                      onClick={() => replaceSelection(view.xColumn, payload.x)}
+                      onClick={() =>
+                        replaceSelection(view.xColumn, payload.xRaw ?? payload.x)
+                      }
                     />
                   );
                 }}
@@ -236,14 +396,28 @@ export default function ChartRenderer({
           ) : view.chartType === "BAR" ? (
             <BarChart data={data}>
               <CartesianGrid vertical={false} strokeOpacity={0.15} />
-              <XAxis dataKey="x" type={isNumericX ? "number" : "category"} />
+              <XAxis
+                dataKey="x"
+                type={isNumericX ? "number" : "category"}
+                scale={xType === "date" ? "time" : undefined}
+                domain={xType === "date" ? ["auto", "auto"] : undefined}
+                tickFormatter={xType === "date" ? formatDateTick : undefined}
+              />
               <YAxis type="number" />
-              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartTooltip
+                content={<ChartTooltipContent />}
+                labelFormatter={
+                  xType === "date"
+                    ? (_label: any, payload: any) =>
+                        formatDateTick(payload?.[0]?.payload?.x)
+                    : undefined
+                }
+              />
 
               <Bar
                 dataKey="y"
                 onClick={(data: any) => {
-                  const clickedX = data?.payload?.x;
+                  const clickedX = data?.payload?.xRaw ?? data?.payload?.x;
                   if (clickedX !== undefined) {
                     replaceSelection(view.xColumn, clickedX);
                   }
@@ -268,7 +442,7 @@ export default function ChartRenderer({
               <Scatter
                 data={data}
                 onClick={(e: any) => {
-                  const clickedX = e?.payload?.x;
+                  const clickedX = e?.payload?.xRaw ?? e?.payload?.x;
                   if (clickedX !== undefined) {
                     replaceSelection(view.xColumn, clickedX);
                   }
