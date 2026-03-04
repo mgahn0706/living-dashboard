@@ -1,5 +1,5 @@
 // types/dashboard.ts
-export type ChartType = "BAR" | "LINE" | "TABLE" | "SCATTER";
+export type ChartType = "BAR" | "LINE" | "TABLE" | "SCATTER" | "PIE";
 
 export type View = ChartView | TableView;
 
@@ -14,7 +14,7 @@ export type ViewFilter = {
 };
 
 type ChartPayload = {
-  chartType: "BAR" | "LINE" | "SCATTER";
+  chartType: "BAR" | "LINE" | "SCATTER" | "PIE";
 } & Partial<Omit<ChartView, "chartType">> & {
     filter?: ViewFilter | null;
   };
@@ -29,7 +29,7 @@ export type ChartView = {
   id: string;
   xColumn: string;
   yColumn: string;
-  chartType: "BAR" | "LINE" | "SCATTER";
+  chartType: "BAR" | "LINE" | "SCATTER" | "PIE";
   size: "sm" | "md" | "lg";
   priority: number;
   xLabel?: string;

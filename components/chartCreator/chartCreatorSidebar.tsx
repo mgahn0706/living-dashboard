@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { BarChart3, LineChart, Table2, ScatterChart } from "lucide-react";
+import { BarChart3, LineChart, Table2, ScatterChart, PieChart } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { SidebarContent, SidebarHeader } from "@/components/ui/sidebar";
@@ -28,7 +28,7 @@ export type NewViewPayload =
       title: string;
     }
   | {
-      chartType: "BAR" | "LINE" | "SCATTER";
+      chartType: "BAR" | "LINE" | "SCATTER" | "PIE";
       xColumn: string;
       yColumn: string;
       size: "sm" | "md" | "lg";
@@ -46,6 +46,7 @@ const CHART_BUTTONS: {
 }[] = [
   { type: "BAR", icon: <BarChart3 />, label: "Bar Chart" },
   { type: "LINE", icon: <LineChart />, label: "Line Chart" },
+  { type: "PIE", icon: <PieChart />, label: "Pie Chart" },
   { type: "TABLE", icon: <Table2 />, label: "Table" },
   { type: "SCATTER", icon: <ScatterChart />, label: "Scatter Plot" },
 ];
@@ -62,6 +63,8 @@ function chartHint(chartType: ChartType) {
       return "Best for categorical × number comparisons.";
     case "SCATTER":
       return "Requires number × number (correlation analysis).";
+    case "PIE":
+      return "Best for part-to-whole by category.";
     case "TABLE":
       return "Select multiple attributes to inspect raw values.";
     default:
@@ -213,6 +216,9 @@ function ChartConfigPanel({
   const canApply =
     chartType === "TABLE" ? tableAttrs.length > 0 : !!xAttr && !!yAttr;
 
+  const xLabel = chartType === "PIE" ? "Category" : "Select X";
+  const yLabel = chartType === "PIE" ? "Value" : "Select Y";
+
   return (
     <div className="p-3 space-y-4 text-sm">
       <div className="font-semibold">{chartType} Settings</div>
@@ -254,7 +260,7 @@ function ChartConfigPanel({
             value={xAttr ?? ""}
             onChange={(e) => setXAttr(e.target.value || null)}
           >
-            <option value="">Select X</option>
+            <option value="">{xLabel}</option>
             {attributeKeys.map((k) => (
               <option key={k} value={k}>
                 {k} ({attributeTypes[k]})
@@ -267,13 +273,20 @@ function ChartConfigPanel({
             value={yAttr ?? ""}
             onChange={(e) => setYAttr(e.target.value || null)}
           >
-            <option value="">Select Y</option>
+            <option value="">{yLabel}</option>
             {attributeKeys.map((k) => (
               <option key={k} value={k}>
                 {k} ({attributeTypes[k]})
               </option>
             ))}
           </select>
+
+          {chartType === "PIE" && (
+            <div className="text-[11px] text-muted-foreground">
+              Pick a categorical column for Category and a numeric column for
+              Value.
+            </div>
+          )}
         </>
       )}
 

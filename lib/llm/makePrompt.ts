@@ -75,7 +75,7 @@ export function makePrompt({
   - If the recommendation applies to an existing view, you MUST include "targetViewId" to specify which view is affected.
   - Never use recommendation "id" as a view id.
   - Never omit "targetViewId" when modifying an existing view.
-  - The only valid chartType values are: "BAR", "LINE", "SCATTER", "TABLE".
+  - The only valid chartType values are: "BAR", "LINE", "SCATTER", "PIE", "TABLE".
   - "Column Chart" (or "Column") is NOT a valid chartType. Use "BAR" instead.
 
   

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 type View = {
   id: string;
-  chartType: "LINE" | "BAR" | "TABLE";
+  chartType: "LINE" | "BAR" | "TABLE" | "PIE";
   size: "lg" | "md" | "sm";
   priority: number;
   xColumn: string;
@@ -110,7 +110,7 @@ function inferRecommendations({
 
   if (intent.wantsToChange) {
     const target = views[0];
-    const alternativeTypes = ["LINE", "BAR", "TABLE"].filter(
+    const alternativeTypes = ["LINE", "BAR", "TABLE", "PIE"].filter(
       (t) => t !== target.chartType
     ) as View["chartType"][];
 
@@ -128,7 +128,7 @@ function inferRecommendations({
   }
 
   if (intent.wantsTrend) {
-    const target = pickView(views, ["LINE", "BAR", "TABLE"]);
+    const target = pickView(views, ["LINE", "BAR", "PIE", "TABLE"]);
     if (target && target.chartType !== "LINE") {
       recs.push({
         id: `r_modify_line_${target.id}`,
@@ -143,7 +143,7 @@ function inferRecommendations({
   }
 
   if (intent.wantsComparison) {
-    const target = pickView(views, ["BAR", "LINE", "TABLE"]);
+    const target = pickView(views, ["BAR", "PIE", "LINE", "TABLE"]);
     if (target && target.chartType !== "BAR") {
       recs.push({
         id: `r_modify_bar_${target.id}`,

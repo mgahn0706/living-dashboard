@@ -19,7 +19,7 @@ Each View object MUST follow one of these shapes:
 Chart View:
 {
   "id": string,
-  "chartType": "BAR" | "LINE" | "SCATTER",
+  "chartType": "BAR" | "LINE" | "SCATTER" | "PIE",
   "xColumn": string,
   "yColumn": string,
   "size": "sm" | "md" | "lg",
@@ -40,7 +40,7 @@ Table View:
 Rules:
 - Output 3 to 5 views.
 - "id" must be unique strings.
-- Use ONLY chartType values: "BAR", "LINE", "SCATTER", "TABLE".
+- Use ONLY chartType values: "BAR", "LINE", "SCATTER", "PIE", "TABLE".
 - "Column Chart" is NOT valid. Use "BAR".
 - Use only columns from the provided keys.
 - Choose sensible titles, short and descriptive.

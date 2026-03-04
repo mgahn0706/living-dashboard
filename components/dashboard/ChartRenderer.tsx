@@ -20,6 +20,8 @@ import {
   Area,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
   CartesianGrid,
   XAxis,
   YAxis,
@@ -332,7 +334,7 @@ function applyTableViewFilter(
 
 function buildSeries(
   rawData: any[],
-  view: Extract<View, { chartType: "BAR" | "LINE" | "SCATTER" }>,
+  view: Extract<View, { chartType: "BAR" | "LINE" | "SCATTER" | "PIE" }>,
   selection: any,
   attributeTypes: Record<string, "string" | "number" | "date" | "unknown">,
   filter?: ChartRendererFilter
@@ -364,7 +366,11 @@ function buildSeries(
           return null;
       }
 
-      if (view.chartType === "LINE" || view.chartType === "BAR") {
+      if (
+        view.chartType === "LINE" ||
+        view.chartType === "BAR" ||
+        view.chartType === "PIE"
+      ) {
         if (typeof yParsed !== "number") return null;
       }
 
@@ -380,8 +386,12 @@ function buildSeries(
 
   const xType = inferredXType;
 
-  // 🔥 Only aggregate for LINE and BAR
-  if (view.chartType === "LINE" || view.chartType === "BAR") {
+  // 🔥 Aggregate for LINE, BAR and PIE
+  if (
+    view.chartType === "LINE" ||
+    view.chartType === "BAR" ||
+    view.chartType === "PIE"
+  ) {
     const grouped = new Map<any, GenericPoint>();
 
     for (const point of mapped) {
@@ -571,6 +581,29 @@ export default function ChartRenderer({
                 ))}
               </Bar>
             </BarChart>
+          ) : view.chartType === "PIE" ? (
+            <PieChart>
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Pie
+                data={visibleData}
+                dataKey="y"
+                nameKey="x"
+                onClick={(data: any) => {
+                  const clickedX = data?.xRaw ?? data?.x;
+                  if (clickedX !== undefined) {
+                    replaceSelection(view.xColumn, clickedX);
+                  }
+                }}
+              >
+                {visibleData.map((entry, index) => (
+                  <Cell
+                    key={index}
+                    fill={entry.highlighted ? blue : faded}
+                    opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                  />
+                ))}
+              </Pie>
+            </PieChart>
           ) : (
             <ScatterChart>
               <CartesianGrid vertical={false} strokeOpacity={0.15} />
