@@ -1,6 +1,6 @@
 "use client";
 
-import { Recommendation, View } from "@/types/dashboard";
+import { Recommendation, View, ViewFilter } from "@/types/dashboard";
 import {
   Card,
   CardHeader,
@@ -12,8 +12,11 @@ import { Button } from "../ui/button";
 import ChartRenderer from "./ChartRenderer";
 import { cn } from "@/lib/utils";
 import React from "react";
+import { useDataset } from "@/context/DatasetContext";
+import * as Popover from "@radix-ui/react-popover";
 import {
   IconCheck,
+  IconFilter,
   IconPencil,
   IconSparkles,
   IconX,
@@ -61,6 +64,49 @@ function formatFocus(score: number) {
   return `Low (${pct}%)`;
 }
 
+function parseList(input: string) {
+  return input
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function buildFilterFromDraft(draft: {
+  top: string;
+  includeXValues: string;
+  includeColumns: string[];
+  byColumn: string;
+  byValues: string;
+}): ViewFilter | undefined {
+  const next: ViewFilter = {};
+
+  const top = Number(draft.top);
+  if (!Number.isNaN(top) && top > 0) {
+    next.top = Math.floor(top);
+  }
+
+  const includeXValues = parseList(draft.includeXValues);
+  if (includeXValues.length > 0) {
+    next.includeXValues = includeXValues;
+  }
+
+  const includeColumns = draft.includeColumns
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (includeColumns.length > 0) {
+    next.includeColumns = includeColumns;
+  }
+
+  const byColumn = draft.byColumn.trim();
+  const byValues = parseList(draft.byValues);
+  if (byColumn && byValues.length > 0) {
+    next.includeByColumn = [{ column: byColumn, includeValues: byValues }];
+  }
+
+  if (Object.keys(next).length === 0) return undefined;
+  return next;
+}
+
 /* =======================================================
    ViewCard
 ======================================================= */
@@ -78,6 +124,7 @@ export default function ViewCard({
   onPointerMove,
   onCardClick,
   onEditClick,
+  onApplyFilter,
 }: {
   view: View;
   isSelected: boolean;
@@ -91,8 +138,31 @@ export default function ViewCard({
   onPointerMove?: React.PointerEventHandler<HTMLDivElement>;
   onCardClick?: () => void;
   onEditClick?: () => void;
+  onApplyFilter?: (viewId: string, filter: ViewFilter | undefined) => void;
 }) {
   const isEditing = isSelected;
+  const { attributeKeys } = useDataset();
+  const [isFilterOpen, setIsFilterOpen] = React.useState(false);
+  const [draft, setDraft] = React.useState({
+    top: "",
+    includeXValues: "",
+    includeColumns: [] as string[],
+    byColumn: "",
+    byValues: "",
+  });
+
+  React.useEffect(() => {
+    const by = view.filter?.includeByColumn?.[0];
+    setDraft({
+      top: view.filter?.top != null ? String(view.filter.top) : "",
+      includeXValues: view.filter?.includeXValues?.join(", ") ?? "",
+      includeColumns: view.filter?.includeColumns ?? [],
+      byColumn: by?.column ?? "",
+      byValues: by?.includeValues?.map((v) => String(v)).join(", ") ?? "",
+    });
+  }, [view.id, view.filter]);
+
+  const canManualFilter = Boolean(onApplyFilter) && preview == null;
 
   return (
     <>
@@ -116,6 +186,7 @@ export default function ViewCard({
         className={cn(
           SIZE_CLASS[view.size],
           "relative overflow-hidden transition-all cursor-pointer",
+          isFilterOpen && "z-50",
           "hover:ring-1 hover:ring-ring",
           isEditing &&
             "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]"
@@ -152,6 +223,161 @@ export default function ViewCard({
               </CardTitle>
 
               <div className="flex items-center gap-1">
+                {canManualFilter && (
+                  <Popover.Root
+                    open={isFilterOpen}
+                    onOpenChange={(open) => setIsFilterOpen(open)}
+                  >
+                    <Popover.Trigger asChild>
+                      <Button
+                        variant={view.filter ? "secondary" : "ghost"}
+                        size="icon"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label="Edit filter"
+                      >
+                        <IconFilter size={16} />
+                      </Button>
+                    </Popover.Trigger>
+                    <Popover.Portal>
+                      <Popover.Content
+                        side="bottom"
+                        align="end"
+                        sideOffset={8}
+                        className="z-[200] w-64 rounded-md border bg-background p-2 shadow-md"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="mb-2 text-[11px] font-medium">View Filter</div>
+
+                        <div className="space-y-2 text-[11px]">
+                          <label className="block">
+                            <span className="mb-1 block text-muted-foreground">Top N</span>
+                            <input
+                              className="w-full rounded border px-2 py-1 text-xs"
+                              placeholder="e.g. 5"
+                              value={draft.top}
+                              onChange={(e) =>
+                                setDraft((prev) => ({ ...prev, top: e.target.value }))
+                              }
+                            />
+                          </label>
+
+                          <label className="block">
+                            <span className="mb-1 block text-muted-foreground">
+                              X Values (comma separated)
+                            </span>
+                            <input
+                              className="w-full rounded border px-2 py-1 text-xs"
+                              placeholder="e.g. US, KR"
+                              value={draft.includeXValues}
+                              onChange={(e) =>
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  includeXValues: e.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+
+                          {view.chartType === "TABLE" && (
+                            <label className="block">
+                              <span className="mb-1 block text-muted-foreground">
+                                Columns
+                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {view.columns.map((col) => {
+                                  const selected = draft.includeColumns.includes(col);
+                                  return (
+                                    <button
+                                      key={col}
+                                      type="button"
+                                      className={cn(
+                                        "rounded-full border px-2 py-1 text-[11px] transition",
+                                        selected
+                                          ? "border-primary bg-primary/10 text-primary"
+                                          : "border-border bg-background text-muted-foreground"
+                                      )}
+                                      onClick={() =>
+                                        setDraft((prev) => ({
+                                          ...prev,
+                                          includeColumns: prev.includeColumns.includes(col)
+                                            ? prev.includeColumns.filter((c) => c !== col)
+                                            : [...prev.includeColumns, col],
+                                        }))
+                                      }
+                                    >
+                                      {col}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </label>
+                          )}
+
+                          <label className="block">
+                            <span className="mb-1 block text-muted-foreground">
+                              Attribute Column
+                            </span>
+                            <select
+                              className="w-full rounded border px-2 py-1 text-xs"
+                              value={draft.byColumn}
+                              onChange={(e) =>
+                                setDraft((prev) => ({ ...prev, byColumn: e.target.value }))
+                              }
+                            >
+                              <option value="">Select attribute</option>
+                              {attributeKeys.map((k) => (
+                                <option key={k} value={k}>
+                                  {k}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="block">
+                            <span className="mb-1 block text-muted-foreground">
+                              Attribute Values (comma separated)
+                            </span>
+                            <input
+                              className="w-full rounded border px-2 py-1 text-xs"
+                              placeholder="e.g. WON"
+                              value={draft.byValues}
+                              onChange={(e) =>
+                                setDraft((prev) => ({ ...prev, byValues: e.target.value }))
+                              }
+                            />
+                          </label>
+                        </div>
+
+                        <div className="mt-2 flex items-center justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              onApplyFilter?.(view.id, undefined);
+                              setIsFilterOpen(false);
+                            }}
+                          >
+                            Clear
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              const next = buildFilterFromDraft(draft);
+                              onApplyFilter?.(view.id, next);
+                              setIsFilterOpen(false);
+                            }}
+                          >
+                            Apply
+                          </Button>
+                        </div>
+                      </Popover.Content>
+                    </Popover.Portal>
+                  </Popover.Root>
+                )}
+
                 {/* Edit Button */}
                 <Button
                   variant="ghost"
@@ -167,7 +393,6 @@ export default function ViewCard({
                     <IconPencil size={16} />
                   )}
                 </Button>
-
               </div>
             </div>
           </CardHeader>

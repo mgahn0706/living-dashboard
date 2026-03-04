@@ -23,6 +23,7 @@ export default function DashboardView({
   isAddMode,
   setSidebarMode,
   onSelect,
+  onApplyFilter,
 }: {
   views: View[];
   previewMap?: Record<string, PreviewState>;
@@ -40,6 +41,7 @@ export default function DashboardView({
   isAddMode: boolean;
   setSidebarMode: (mode: "FORMAT" | "STRUCTURE") => void;
   onSelect: (viewId: string) => void;
+  onApplyFilter?: (viewId: string, filter: View["filter"] | undefined) => void;
 }) {
   const { focusScore, reportPointerInteraction, reportClickInteraction } =
     useFocus();
@@ -112,6 +114,7 @@ export default function DashboardView({
             reportClickInteraction(view.id);
           }}
           onEditClick={() => onSelect(view.id)}
+          onApplyFilter={onApplyFilter}
         />
       ))}
 

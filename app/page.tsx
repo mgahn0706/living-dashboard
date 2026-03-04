@@ -594,6 +594,15 @@ function AppContent() {
                   setSidebarMode("STRUCTURE");
                 }
               }}
+              onApplyFilter={(viewId, filter) => {
+                logEvent("view_modify", {
+                  viewId,
+                  triggeredBy: "manual_filter",
+                });
+                setViews((prev) =>
+                  prev.map((v) => (v.id === viewId ? { ...v, filter } : v))
+                );
+              }}
             />
           </div>
         </div>
