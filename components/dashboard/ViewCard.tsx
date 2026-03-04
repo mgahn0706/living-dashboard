@@ -16,7 +16,6 @@ import {
   IconCheck,
   IconPencil,
   IconSparkles,
-  IconTrash,
   IconX,
 } from "@tabler/icons-react";
 import {
@@ -36,9 +35,9 @@ const SIZE_CLASS: Record<View["size"], string> = {
 };
 
 const CHART_HEIGHT: Record<View["size"], string> = {
-  lg: "h-[320px]",
-  md: "h-[260px]",
-  sm: "h-[200px]",
+  lg: "h-[260px]",
+  md: "h-[210px]",
+  sm: "h-[170px]",
 };
 
 /* =======================================================
@@ -79,7 +78,6 @@ export default function ViewCard({
   onPointerMove,
   onCardClick,
   onEditClick,
-  onDeleteClick,
 }: {
   view: View;
   isSelected: boolean;
@@ -93,7 +91,6 @@ export default function ViewCard({
   onPointerMove?: React.PointerEventHandler<HTMLDivElement>;
   onCardClick?: () => void;
   onEditClick?: () => void;
-  onDeleteClick?: (id: string) => void;
 }) {
   const isEditing = isSelected;
 
@@ -155,10 +152,6 @@ export default function ViewCard({
               </CardTitle>
 
               <div className="flex items-center gap-1">
-                <span className="text-[10px] text-muted-foreground">
-                  Focus: {formatFocus(focusScore)}
-                </span>
-
                 {/* Edit Button */}
                 <Button
                   variant="ghost"
@@ -175,17 +168,6 @@ export default function ViewCard({
                   )}
                 </Button>
 
-                {/* Delete Button */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteClick?.(view.id);
-                  }}
-                >
-                  <IconTrash size={16} className="text-destructive" />
-                </Button>
               </div>
             </div>
           </CardHeader>
@@ -196,6 +178,10 @@ export default function ViewCard({
           >
             <ChartRenderer view={view} filter={view.filter} height="100%" />
           </CardContent>
+
+          <div className="px-3 pb-2 pt-1 text-right text-[10px] text-muted-foreground/60">
+            Focus {formatFocus(focusScore)}
+          </div>
         </div>
 
         {/* Preview overlays */}

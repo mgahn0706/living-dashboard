@@ -250,6 +250,36 @@ function buildNewViewFromPayload(payload: AnyPayload, priority: number): View {
   );
 }
 
+function sanitizeInitialGeneratedView(
+  view: View,
+  attributeKeys: string[],
+  attributeTypes: Record<string, "string" | "number" | "date" | "unknown">
+): View | null {
+  if (view.chartType === "TABLE") {
+    const columns = view.columns.filter((col) => attributeKeys.includes(col));
+    if (columns.length === 0) return null;
+    return { ...view, columns };
+  }
+
+  if (
+    !attributeKeys.includes(view.xColumn) ||
+    !attributeKeys.includes(view.yColumn)
+  ) {
+    return null;
+  }
+
+  const xType = attributeTypes[view.xColumn];
+  const yType = attributeTypes[view.yColumn];
+
+  if (view.chartType === "SCATTER") {
+    if (xType !== "number" || yType !== "number") return null;
+  } else {
+    if (yType !== "number") return null;
+  }
+
+  return view;
+}
+
 /* =====================================================
    App Content
 ===================================================== */
@@ -508,9 +538,17 @@ function AppContent() {
       const data = (await res.json()) as AnyPayload[];
       if (!Array.isArray(data) || data.length === 0) return;
 
-      const nextViews = data.map((payload, i) =>
-        buildNewViewFromPayload(payload, data.length - i)
-      );
+      const nextViews = data
+        .map((payload, i) => buildNewViewFromPayload(payload, data.length - i))
+        .map((v) =>
+          sanitizeInitialGeneratedView(v, attributeKeys, attributeTypes)
+        )
+        .filter(Boolean) as View[];
+
+      if (nextViews.length === 0) {
+        console.warn("No compatible views from initial generation.");
+        return;
+      }
 
       setViews(nextViews);
       setSidebarMode("FORMAT");
@@ -555,10 +593,6 @@ function AppContent() {
                   setSelectedViewId(viewId);
                   setSidebarMode("STRUCTURE");
                 }
-              }}
-              onDelete={(viewId) => {
-                logEvent("view_delete", { viewId });
-                setViews((prev) => prev.filter((v) => v.id !== viewId));
               }}
             />
           </div>
@@ -657,6 +691,10 @@ function AppContent() {
                 ...prev,
                 buildNewViewFromPayload(payload, prev.length + 1),
               ]);
+            }}
+            onDeleteView={(viewId) => {
+              logEvent("view_delete", { viewId });
+              setViews((prev) => prev.filter((v) => v.id !== viewId));
             }}
           />
         )}

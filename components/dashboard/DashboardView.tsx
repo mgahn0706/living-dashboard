@@ -23,7 +23,6 @@ export default function DashboardView({
   isAddMode,
   setSidebarMode,
   onSelect,
-  onDelete,
 }: {
   views: View[];
   previewMap?: Record<string, PreviewState>;
@@ -41,7 +40,6 @@ export default function DashboardView({
   isAddMode: boolean;
   setSidebarMode: (mode: "FORMAT" | "STRUCTURE") => void;
   onSelect: (viewId: string) => void;
-  onDelete: (viewId: string) => void;
 }) {
   const { focusScore, reportPointerInteraction, reportClickInteraction } =
     useFocus();
@@ -114,7 +112,6 @@ export default function DashboardView({
             reportClickInteraction(view.id);
           }}
           onEditClick={() => onSelect(view.id)}
-          onDeleteClick={(id) => onDelete(id)}
         />
       ))}
 

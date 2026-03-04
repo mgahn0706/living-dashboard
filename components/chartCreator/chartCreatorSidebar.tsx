@@ -77,10 +77,12 @@ export default function ChartCreatorSidebar({
   selectedView,
   onEditView,
   onAddView,
+  onDeleteView,
 }: {
   selectedView: View | null;
   onEditView: (id: string, next: View) => void; // replace semantics
   onAddView: (payload: NewViewPayload) => void;
+  onDeleteView: (id: string) => void;
 }) {
   const { attributeKeys } = useDataset();
   const isEditMode = selectedView !== null;
@@ -142,6 +144,7 @@ export default function ChartCreatorSidebar({
                 selectedView={selectedView}
                 onAddView={onAddView}
                 onEditView={onEditView}
+                onDeleteView={onDeleteView}
               />
             )}
           </CollapsibleContent>
@@ -162,6 +165,7 @@ function ChartConfigPanel({
   selectedView,
   onAddView,
   onEditView,
+  onDeleteView,
 }: {
   chartType: ChartType;
   attributeKeys: string[];
@@ -169,6 +173,7 @@ function ChartConfigPanel({
   selectedView: View | null;
   onAddView: (payload: NewViewPayload) => void;
   onEditView: (id: string, next: View) => void;
+  onDeleteView: (id: string) => void;
 }) {
   const { attributeTypes } = useDataset();
 
@@ -337,6 +342,16 @@ function ChartConfigPanel({
       >
         {isEditMode ? "Apply Changes" : "Add Chart"}
       </Button>
+
+      {isEditMode && selectedView?.id && (
+        <Button
+          variant="outline"
+          className="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
+          onClick={() => onDeleteView(selectedView.id)}
+        >
+          Delete View
+        </Button>
+      )}
     </div>
   );
 }
