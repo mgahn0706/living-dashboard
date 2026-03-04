@@ -29,7 +29,7 @@ import {
   Cell,
 } from "recharts";
 
-import type { View } from "@/types/dashboard";
+import type { View, ViewFilter } from "@/types/dashboard";
 import { useDataset } from "@/context/DatasetContext";
 import { useSelection } from "@/context/SelectionContext";
 
@@ -45,6 +45,8 @@ type GenericPoint = {
   xType: "number" | "date" | "category";
 };
 
+export type ChartRendererFilter = ViewFilter;
+
 /* =======================================================
    Utils
 ======================================================= */
@@ -52,7 +54,16 @@ type GenericPoint = {
 function getValueByPath(row: any, path: string) {
   return path.split(".").reduce((acc, key) => {
     if (acc == null) return undefined;
-    return acc[key];
+    if (typeof acc !== "object") return undefined;
+
+    if (key in acc) return acc[key];
+
+    // Tolerate minor key mismatches from LLM (case/whitespace differences).
+    const desired = key.trim().toLowerCase();
+    const matchedKey = Object.keys(acc).find(
+      (k) => k.trim().toLowerCase() === desired
+    );
+    return matchedKey ? acc[matchedKey] : undefined;
   }, row);
 }
 
@@ -72,7 +83,7 @@ function detectAndParse(value: any) {
 
 function parseXValue(
   value: any,
-  hint?: "string" | "number" | "date" | "unknown"
+  hint?: "string" | "number" | "date" | "category" | "unknown"
 ): {
   x: number | string | null;
   xRaw: any;
@@ -128,7 +139,7 @@ function parseXValue(
 
 function inferXTypeFromColumn(
   values: any[],
-  hint?: "string" | "number" | "date" | "unknown"
+  hint?: "string" | "number" | "date" | "category" | "unknown"
 ): "number" | "date" | "category" {
   if (hint === "date") return "date";
 
@@ -203,23 +214,144 @@ function rowMatchesSelection(row: any, selection: any) {
     return values.has(val);
   });
 }
+
+function valueMatches(target: any, candidate: any) {
+  if (target === candidate) return true;
+  if (target instanceof Date && candidate instanceof Date) {
+    return target.getTime() === candidate.getTime();
+  }
+  if (typeof target === "string" || typeof candidate === "string") {
+    const t = String(target ?? "")
+      .trim()
+      .toLowerCase();
+    const c = String(candidate ?? "")
+      .trim()
+      .toLowerCase();
+    if (t === c) return true;
+  }
+
+  const targetNum = Number(target);
+  const candidateNum = Number(candidate);
+  if (!Number.isNaN(targetNum) && !Number.isNaN(candidateNum)) {
+    return targetNum === candidateNum;
+  }
+
+  if (typeof target === "boolean" || typeof candidate === "boolean") {
+    const t = String(target).trim().toLowerCase();
+    const c = String(candidate).trim().toLowerCase();
+    return t === c;
+  }
+
+  return false;
+}
+
+function rowMatchesAttributeFilter(
+  row: any,
+  filters?: Array<{
+    column: string;
+    includeValues: Array<string | number | boolean>;
+  }>
+) {
+  if (!Array.isArray(filters) || filters.length === 0) return true;
+
+  return filters.every((f) => {
+    if (!f?.column || !Array.isArray(f.includeValues) || f.includeValues.length === 0) {
+      return true;
+    }
+    const rowValue = getValueByPath(row, f.column);
+    return f.includeValues.some((v) => valueMatches(rowValue, v));
+  });
+}
+
+function applyChartViewFilter(
+  data: GenericPoint[],
+  filter?: ChartRendererFilter
+) {
+  if (!filter) return data;
+
+  let filtered = data;
+
+  if (Array.isArray(filter.includeXValues) && filter.includeXValues.length > 0) {
+    filtered = filtered.filter((point) =>
+      filter.includeXValues!.some(
+        (candidate) =>
+          valueMatches(point.xRaw, candidate) || valueMatches(point.x, candidate)
+      )
+    );
+  }
+
+  if (typeof filter.top === "number" && filter.top > 0) {
+    const topRefs = new Set(
+      [...filtered]
+        .sort((a, b) => b.y - a.y)
+        .slice(0, filter.top)
+    );
+    filtered = filtered.filter((point) => topRefs.has(point));
+  }
+
+  return filtered;
+}
+
+function applyTableViewFilter(
+  rows: any[],
+  view: Extract<View, { chartType: "TABLE" }>,
+  filter?: ChartRendererFilter
+) {
+  let filteredRows = rows;
+  let columns = view.columns;
+
+  filteredRows = filteredRows.filter((row) =>
+    rowMatchesAttributeFilter(row, filter?.includeByColumn)
+  );
+
+  if (Array.isArray(filter?.includeColumns) && filter.includeColumns.length > 0) {
+    const valid = new Set(view.columns);
+    const selectedColumns = filter.includeColumns.filter((col) => valid.has(col));
+    if (selectedColumns.length > 0) {
+      columns = selectedColumns;
+    }
+  }
+
+  if (Array.isArray(filter?.includeXValues) && filter.includeXValues.length > 0) {
+    const keyColumn = columns[0];
+    if (keyColumn) {
+      filteredRows = filteredRows.filter((row) =>
+        filter.includeXValues!.some((candidate) =>
+          valueMatches(getValueByPath(row, keyColumn), candidate)
+        )
+      );
+    }
+  }
+
+  if (typeof filter?.top === "number" && filter.top > 0) {
+    filteredRows = filteredRows.slice(0, filter.top);
+  }
+
+  return { rows: filteredRows, columns };
+}
+
 function buildSeries(
   rawData: any[],
   view: Extract<View, { chartType: "BAR" | "LINE" | "SCATTER" }>,
   selection: any,
-  attributeTypes: Record<string, "string" | "number" | "date" | "unknown">
+  attributeTypes: Record<string, "string" | "number" | "date" | "unknown">,
+  filter?: ChartRendererFilter
 ): { data: GenericPoint[]; xType: "number" | "date" | "category" } {
   if (!Array.isArray(rawData)) {
     return { data: [], xType: "category" };
   }
 
+  const filteredRawData = rawData.filter((row) =>
+    rowMatchesAttributeFilter(row, filter?.includeByColumn)
+  );
+
   const xTypeHint = attributeTypes?.[view.xColumn];
   const inferredXType = inferXTypeFromColumn(
-    rawData.map((row) => getValueByPath(row, view.xColumn)),
+    filteredRawData.map((row) => getValueByPath(row, view.xColumn)),
     xTypeHint
   );
 
-  const mapped = rawData
+  const mapped = filteredRawData
     .map((row) => {
       const xRaw = getValueByPath(row, view.xColumn);
       const yRaw = getValueByPath(row, view.yColumn);
@@ -280,9 +412,11 @@ function buildSeries(
 export default function ChartRenderer({
   view,
   height = "100%",
+  filter,
 }: {
   view: View;
   height?: number | "100%";
+  filter?: ChartRendererFilter;
 }) {
   const { rawData, attributeTypes } = useDataset();
   const { selection, replaceSelection, hasSelection } = useSelection();
@@ -295,14 +429,19 @@ export default function ChartRenderer({
       <TableRenderer
         view={view}
         height={height}
+        filter={filter}
         replaceSelection={replaceSelection}
       />
     );
   }
 
   const { data, xType } = React.useMemo(() => {
-    return buildSeries(rawData ?? [], view, selection, attributeTypes);
-  }, [rawData, view, selection, attributeTypes]);
+    return buildSeries(rawData ?? [], view, selection, attributeTypes, filter);
+  }, [rawData, view, selection, attributeTypes, filter]);
+  const visibleData = React.useMemo(
+    () => applyChartViewFilter(data, filter),
+    [data, filter]
+  );
 
   const chartConfig = React.useMemo(
     () =>
@@ -312,7 +451,7 @@ export default function ChartRenderer({
     [view.yLabel, view.yColumn]
   );
 
-  if (!data.length) {
+  if (!visibleData.length) {
     return (
       <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
         No compatible data
@@ -327,7 +466,7 @@ export default function ChartRenderer({
       <ChartContainer config={chartConfig} className="h-full w-full p-0">
         <ResponsiveContainer width="100%" height="100%">
           {view.chartType === "LINE" ? (
-            <AreaChart data={data}>
+            <AreaChart data={visibleData}>
               <CartesianGrid vertical={false} strokeOpacity={0.15} />
               <XAxis
                 dataKey="x"
@@ -387,14 +526,14 @@ export default function ChartRenderer({
                   strokeOpacity={1}
                   fillOpacity={0.2}
                   isAnimationActive={false}
-                  data={data.map((d) =>
+                  data={visibleData.map((d) =>
                     d.highlighted ? d : { ...d, y: null }
                   )}
                 />
               )}
             </AreaChart>
           ) : view.chartType === "BAR" ? (
-            <BarChart data={data}>
+            <BarChart data={visibleData}>
               <CartesianGrid vertical={false} strokeOpacity={0.15} />
               <XAxis
                 dataKey="x"
@@ -423,7 +562,7 @@ export default function ChartRenderer({
                   }
                 }}
               >
-                {data.map((entry, index) => (
+                {visibleData.map((entry, index) => (
                   <Cell
                     key={index}
                     fill={entry.highlighted ? blue : faded}
@@ -440,7 +579,7 @@ export default function ChartRenderer({
               <ChartTooltip content={<ChartTooltipContent />} />
 
               <Scatter
-                data={data}
+                data={visibleData}
                 onClick={(e: any) => {
                   const clickedX = e?.payload?.xRaw ?? e?.payload?.x;
                   if (clickedX !== undefined) {
@@ -448,7 +587,7 @@ export default function ChartRenderer({
                   }
                 }}
               >
-                {data.map((entry, index) => (
+                {visibleData.map((entry, index) => (
                   <Cell
                     key={index}
                     fill={entry.highlighted ? blue : faded}
@@ -471,10 +610,12 @@ export default function ChartRenderer({
 function TableRenderer({
   view,
   height,
+  filter,
   replaceSelection,
 }: {
   view: Extract<View, { chartType: "TABLE" }>;
   height: number | "100%";
+  filter?: ChartRendererFilter;
   replaceSelection: (column: string, value: any) => void;
 }) {
   const { rawData } = useDataset();
@@ -484,18 +625,31 @@ function TableRenderer({
     return <div>No data</div>;
   }
 
+  const { rows, columns } = React.useMemo(
+    () => applyTableViewFilter(rawData, view, filter),
+    [rawData, view, filter]
+  );
+
+  if (rows.length === 0 || columns.length === 0) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
+        No compatible data
+      </div>
+    );
+  }
+
   return (
     <div style={{ height }} className="overflow-auto">
       <ShadTable>
         <TableHeader>
           <TableRow>
-            {view.columns.map((col) => (
+            {columns.map((col) => (
               <TableHead key={col}>{col}</TableHead>
             ))}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rawData.map((row, i) => {
+          {rows.map((row, i) => {
             const highlighted = rowMatchesSelection(row, selection);
 
             return (
@@ -505,13 +659,13 @@ function TableRenderer({
                   hasSelection && !highlighted ? "opacity-40" : ""
                 }`}
                 onClick={() => {
-                  const value = getValueByPath(row, view.columns[0]);
+                  const value = getValueByPath(row, columns[0]);
                   if (value !== undefined) {
-                    replaceSelection(view.columns[0], value);
+                    replaceSelection(columns[0], value);
                   }
                 }}
               >
-                {view.columns.map((col) => (
+                {columns.map((col) => (
                   <TableCell key={col}>{getValueByPath(row, col)}</TableCell>
                 ))}
               </TableRow>

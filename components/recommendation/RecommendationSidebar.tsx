@@ -27,6 +27,7 @@ import {
   IconResize,
   IconPlus,
   IconPencil,
+  IconFilter,
   IconTrash,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
@@ -310,6 +311,8 @@ export default function RecommendationSidebar({
                     <IconResize className="size-4" />
                   ) : r.type === "NEW_CONTENT" ? (
                     <IconPlus className="size-4" />
+                  ) : r.type === "MODIFY_FILTER" ? (
+                    <IconFilter className="size-4" />
                   ) : r.type === "MODIFY_CONTENT" ? (
                     <IconPencil className="size-4" />
                   ) : (
@@ -322,23 +325,24 @@ export default function RecommendationSidebar({
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                   >
-                    <div className="flex items-start gap-2 rounded-md border bg-background/60 px-2.5 py-2 text-xs">
+                    <div className="w-full min-w-0 flex items-start gap-2 rounded-md border bg-background/60 px-2.5 py-2 text-xs">
                       <div className="mt-0.5 inline-flex size-7 items-center justify-center rounded-md bg-muted text-muted-foreground">
                         {icon}
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="truncate font-medium">{r.title}</div>
-                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 break-words font-medium leading-snug">
+                            {r.title}
+                          </div>
+                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/60">
                             {r.type.replace("_", " ")}
                           </span>
                         </div>
-                        <div className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
+                        <div className="mt-1 break-words text-[11px] text-muted-foreground">
                           {r.reason}
                         </div>
                       </div>
-
                     </div>
                   </motion.div>
                 );

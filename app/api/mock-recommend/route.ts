@@ -9,16 +9,27 @@ type View = {
   priority: number;
   xColumn: string;
   yColumn: string;
+  filter?: {
+    top?: number;
+    includeXValues?: Array<string | number>;
+    includeColumns?: string[];
+    includeByColumn?: Array<{
+      column: string;
+      includeValues: Array<string | number | boolean>;
+    }>;
+  };
 };
 
 type Recommendation = {
   id: string;
   title: string;
+  targetViewId?: string;
   type:
     | "REORDER"
     | "RESIZE"
     | "NEW_CONTENT"
     | "MODIFY_CONTENT"
+    | "MODIFY_FILTER"
     | "REMOVE_CONTENT";
   payload: Partial<View> & { id?: string };
   reason: string;
@@ -67,6 +78,15 @@ function parseIntentFromPrompt(prompt: string) {
       "distribution",
       "mislead",
     ]),
+    wantsFilter: softIncludes(text, [
+      "filter",
+      "top",
+      "top 5",
+      "top five",
+      "only",
+      "show only",
+      "subset",
+    ]),
     wantsExplanation: softIncludes(text, ["why", "reason", "explain", "cause"]),
     wantsFocus: softIncludes(text, ["important", "focus", "key", "main"]),
     wantsCleanup: softIncludes(text, ["ignore", "not relevant", "remove"]),
@@ -98,6 +118,7 @@ function inferRecommendations({
       recs.push({
         id: `r_modify_change_${target.id}`,
         title: "Change chart type",
+        targetViewId: target.id,
         type: "MODIFY_CONTENT",
         payload: { id: target.id, chartType: alternativeTypes[0] },
         reason:
@@ -112,6 +133,7 @@ function inferRecommendations({
       recs.push({
         id: `r_modify_line_${target.id}`,
         title: "Emphasize trends with a line chart",
+        targetViewId: target.id,
         type: "MODIFY_CONTENT",
         payload: { id: target.id, chartType: "LINE" },
         reason:
@@ -126,9 +148,25 @@ function inferRecommendations({
       recs.push({
         id: `r_modify_bar_${target.id}`,
         title: "Use bar chart for comparison",
+        targetViewId: target.id,
         type: "MODIFY_CONTENT",
         payload: { id: target.id, chartType: "BAR" },
         reason: "The conversation suggests comparing values across categories.",
+      });
+    }
+  }
+
+  if (intent.wantsFilter) {
+    const target = views[0];
+    if (target) {
+      recs.push({
+        id: `r_filter_top5_${target.id}`,
+        title: "Apply top-5 view filter",
+        targetViewId: target.id,
+        type: "MODIFY_FILTER",
+        payload: { id: target.id, filter: { top: 5 } },
+        reason:
+          "The discussion indicates narrowing the visible scope without changing the underlying data.",
       });
     }
   }
@@ -142,6 +180,7 @@ function inferRecommendations({
       recs.push({
         id: `r_resize_focus_${target.id}`,
         title: "Highlight a key view",
+        targetViewId: target.id,
         type: "RESIZE",
         payload: { id: target.id, size: "lg" },
         reason: "Participants appear to be focusing on a particular metric.",
@@ -180,6 +219,7 @@ function inferRecommendations({
     recs.push({
       id: `r_remove_${target.id}`,
       title: "Remove less relevant view",
+      targetViewId: target.id,
       type: "REMOVE_CONTENT",
       payload: { id: target.id },
       reason: "Some views appear to be no longer relevant to the discussion.",

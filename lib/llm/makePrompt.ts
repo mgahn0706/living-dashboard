@@ -47,7 +47,8 @@ export function makePrompt({
   {
     "id": string,
     "title": string,
-    "type": "REORDER" | "RESIZE" | "NEW_CONTENT" | "MODIFY_CONTENT" | "REMOVE_CONTENT",
+    "type": "REORDER" | "RESIZE" | "NEW_CONTENT" | "MODIFY_CONTENT" | "MODIFY_FILTER" | "REMOVE_CONTENT",
+    "targetViewId"?: string,
     "payload": Partial<View>,
     "reason": string
   }
@@ -59,6 +60,17 @@ export function makePrompt({
   - DO NOT include explanations outside "reason"
   - DO NOT include fields not listed above
   - "payload" must contain only valid View fields
+  - For "MODIFY_FILTER", put filter instructions in "payload.filter" only.
+  - Valid filter shape:
+    - { "top": number }
+    - { "includeXValues": [string | number, ...] }
+    - { "includeColumns": [string, ...] } // TABLE views only
+    - { "includeByColumn": [ { "column": string, "includeValues": [string | number | boolean, ...] } ] }
+    - To remove filter: { "filter": null }
+  - NEVER output empty arrays for filter lists (includeXValues, includeColumns, includeByColumn, includeValues).
+  - If you cannot provide at least one concrete filter value, do NOT emit MODIFY_FILTER.
+  - "includeByColumn[].column" MUST exactly match an existing column name from DATA SCHEMA.
+  - Use a filter value only when it is supported by conversation context or clearly plausible from the schema/domain.
   - "id" is the recommendation identifier. It MUST be unique and MUST NOT equal any existing view id.
   - If the recommendation applies to an existing view, you MUST include "targetViewId" to specify which view is affected.
   - Never use recommendation "id" as a view id.
@@ -92,7 +104,17 @@ export function makePrompt({
   Use when:
   - Axis or grouping should better match discussion intent
   - A more suitable chart type exists
+
+  ### MODIFY_FILTER
+  Use when:
   - Filters should reflect conversation context
+  - Need view-only subset (e.g., top N or specific attributes/values)
+  - You want to apply/remove filter without changing chart structure
+  - For "Top 5", prefer: payload.filter = { "top": 5 }
+  - For specific values on x-axis, prefer: payload.filter = { "includeXValues": [...] }
+  - For TABLE column-focused filtering, prefer: payload.filter = { "includeColumns": [...] }
+  - For non-x-axis attributes (e.g., Status = LOST while x-axis is Country), use:
+    payload.filter = { "includeByColumn": [ { "column": "Status", "includeValues": ["LOST"] } ] }
   
   ### REMOVE_CONTENT
   Use when:

@@ -54,6 +54,20 @@ function isChartView(v: View): v is ChartView {
  */
 type AnyPayload = any;
 
+function hasOwn(obj: any, key: string) {
+  return Object.prototype.hasOwnProperty.call(obj ?? {}, key);
+}
+
+function resolveFilterPatch(payload: AnyPayload, current: View["filter"]) {
+  if (!hasOwn(payload, "filter")) return current;
+  return payload?.filter ?? undefined;
+}
+
+function getRecommendationTargetViewId(r: Recommendation) {
+  const payload = r.payload as AnyPayload;
+  return r.targetViewId ?? payload?.id;
+}
+
 /* =====================================================
    View factories (type-safe)
 ===================================================== */
@@ -73,6 +87,7 @@ function makeChartView(
     xLabel: payload.xLabel,
     yLabel: payload.yLabel,
     title: payload.title ?? "",
+    filter: payload.filter,
   };
 }
 
@@ -87,6 +102,7 @@ function makeTableView(
     size: payload.size ?? "md",
     priority,
     title: payload.title ?? "",
+    filter: payload.filter,
   };
 }
 
@@ -126,6 +142,7 @@ function normalizeViewUpdate(
     id: payload?.id ?? base.id,
     size: payload?.size ?? base.size,
     title: payload?.title ?? base.title,
+    filter: resolveFilterPatch(payload, base.filter),
     // keep priority stable unless explicitly overwritten elsewhere (e.g., REORDER)
   };
 
@@ -209,6 +226,7 @@ function buildNewViewFromPayload(payload: AnyPayload, priority: number): View {
         columns: Array.isArray(payload?.columns) ? payload.columns : [],
         size: payload?.size,
         title: payload?.title,
+        filter: payload?.filter ?? undefined,
       },
       priority
     );
@@ -226,6 +244,7 @@ function buildNewViewFromPayload(payload: AnyPayload, priority: number): View {
       xLabel: payload?.xLabel,
       yLabel: payload?.yLabel,
       title: payload?.title,
+      filter: payload?.filter ?? undefined,
     },
     priority
   );
@@ -311,9 +330,12 @@ function AppContent() {
   /* ================= PREVIEW ================= */
 
   const previewMap = useMemo<Record<string, PreviewState>>(() => {
-    if (!hoveredRec || !hoveredRec.targetViewId) return {};
+    if (!hoveredRec) return {};
 
-    const base = views.find((v) => v.id === hoveredRec.targetViewId);
+    const targetId = getRecommendationTargetViewId(hoveredRec);
+    if (!targetId) return {};
+
+    const base = views.find((v) => v.id === targetId);
     if (!base) return {};
 
     const payload = hoveredRec.payload as AnyPayload;
@@ -341,9 +363,15 @@ function AppContent() {
   const modifyRecommendationsByViewId = useMemo(() => {
     const map: Record<string, Recommendation> = {};
     activeRecommendations.forEach((r) => {
-      if (r.type !== "MODIFY_CONTENT" && r.type !== "REMOVE_CONTENT") return;
-      if (!r.targetViewId) return;
-      if (!map[r.targetViewId]) map[r.targetViewId] = r;
+      if (
+        r.type !== "MODIFY_CONTENT" &&
+        r.type !== "MODIFY_FILTER" &&
+        r.type !== "REMOVE_CONTENT"
+      )
+        return;
+      const targetId = getRecommendationTargetViewId(r);
+      if (!targetId) return;
+      if (!map[targetId]) map[targetId] = r;
     });
     return map;
   }, [activeRecommendations]);
@@ -395,9 +423,12 @@ function AppContent() {
 
       switch (r.type) {
         case "MODIFY_CONTENT":
+        case "MODIFY_FILTER":
         case "RESIZE": {
+          const targetId = getRecommendationTargetViewId(r);
+          if (!targetId) return prev;
           return prev.map((v) => {
-            if (v.id !== r.targetViewId) return v;
+            if (v.id !== targetId) return v;
 
             const nextType: ChartType = payload?.chartType ?? v.chartType;
             return normalizeViewUpdate(v, payload, nextType);
@@ -428,7 +459,7 @@ function AppContent() {
         }
 
         case "REMOVE_CONTENT": {
-          const id: string | undefined = r.targetViewId ?? payload?.id;
+          const id: string | undefined = getRecommendationTargetViewId(r);
           if (!id) return prev;
           return prev.filter((v) => v.id !== id);
         }

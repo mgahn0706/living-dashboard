@@ -3,13 +3,27 @@ export type ChartType = "BAR" | "LINE" | "TABLE" | "SCATTER";
 
 export type View = ChartView | TableView;
 
+export type ViewFilter = {
+  top?: number;
+  includeXValues?: Array<string | number>;
+  includeColumns?: string[];
+  includeByColumn?: Array<{
+    column: string;
+    includeValues: Array<string | number | boolean>;
+  }>;
+};
+
 type ChartPayload = {
   chartType: "BAR" | "LINE" | "SCATTER";
-} & Partial<Omit<ChartView, "chartType">>;
+} & Partial<Omit<ChartView, "chartType">> & {
+    filter?: ViewFilter | null;
+  };
 
 type TablePayload = {
   chartType: "TABLE";
-} & Partial<Omit<TableView, "chartType">>;
+} & Partial<Omit<TableView, "chartType">> & {
+    filter?: ViewFilter | null;
+  };
 
 export type ChartView = {
   id: string;
@@ -21,6 +35,7 @@ export type ChartView = {
   xLabel?: string;
   yLabel?: string;
   title: string;
+  filter?: ViewFilter;
 };
 
 export type TableView = {
@@ -30,17 +45,19 @@ export type TableView = {
   size: "sm" | "md" | "lg";
   priority: number;
   title: string;
+  filter?: ViewFilter;
 };
 
 export type Recommendation = {
   id: string;
   title: string;
-  targetViewId: string;
+  targetViewId?: string;
   type:
     | "REORDER"
     | "RESIZE"
     | "NEW_CONTENT"
     | "MODIFY_CONTENT"
+    | "MODIFY_FILTER"
     | "REMOVE_CONTENT";
   payload: ChartPayload | TablePayload;
   reason: string;

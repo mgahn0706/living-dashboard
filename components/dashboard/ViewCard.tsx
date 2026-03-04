@@ -194,7 +194,7 @@ export default function ViewCard({
           <CardContent
             className={cn(CHART_HEIGHT[view.size], "flex p-0 overflow-hidden")}
           >
-            <ChartRenderer view={view} height="100%" />
+            <ChartRenderer view={view} filter={view.filter} height="100%" />
           </CardContent>
         </div>
 
@@ -220,6 +220,8 @@ export default function ViewCard({
 const REC_STYLES: Record<Recommendation["type"], string> = {
   MODIFY_CONTENT:
     "border-sky-200/70 bg-gradient-to-br from-sky-50/90 to-sky-100/60 text-sky-900 shadow-[0_10px_25px_rgba(14,116,144,0.18)] dark:border-sky-900/60 dark:from-sky-950/50 dark:to-sky-900/25 dark:text-sky-100",
+  MODIFY_FILTER:
+    "border-cyan-200/70 bg-gradient-to-br from-cyan-50/90 to-cyan-100/60 text-cyan-900 shadow-[0_10px_25px_rgba(8,145,178,0.18)] dark:border-cyan-900/60 dark:from-cyan-950/50 dark:to-cyan-900/25 dark:text-cyan-100",
   NEW_CONTENT:
     "border-emerald-200/70 bg-gradient-to-br from-emerald-50/90 to-emerald-100/60 text-emerald-900 shadow-[0_10px_25px_rgba(16,185,129,0.16)] dark:border-emerald-900/60 dark:from-emerald-950/50 dark:to-emerald-900/25 dark:text-emerald-100",
   REORDER:
@@ -340,7 +342,7 @@ function ModifyOverlay({ view, size }: { view: View; size: View["size"] }) {
         <CardContent
           className={cn(CHART_HEIGHT[size], "flex p-0 overflow-hidden")}
         >
-          <ChartRenderer view={view} height="100%" />
+          <ChartRenderer view={view} filter={view.filter} height="100%" />
         </CardContent>
       </div>
     </div>
@@ -383,7 +385,7 @@ function AddOverlay({ view, size }: { view: View; size: View["size"] }) {
         <CardContent
           className={cn(CHART_HEIGHT[size], "flex p-0 overflow-hidden")}
         >
-          <ChartRenderer view={view} height="100%" />
+          <ChartRenderer view={view} filter={view.filter} height="100%" />
         </CardContent>
       </div>
     </div>
