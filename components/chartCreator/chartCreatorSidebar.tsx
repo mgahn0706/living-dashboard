@@ -72,6 +72,40 @@ function chartHint(chartType: ChartType) {
   }
 }
 
+function isChartTypeAvailable(
+  chartType: ChartType,
+  attributeKeys: string[],
+  numericLikeCount: number
+) {
+  if (chartType === "TABLE") return attributeKeys.length > 0;
+
+  if (chartType === "SCATTER") return numericLikeCount >= 2;
+
+  // BAR/LINE/PIE need at least one numeric metric and one dimension.
+  return numericLikeCount >= 1 && attributeKeys.length >= 2;
+}
+
+function isSelectionCompatible(
+  chartType: ChartType,
+  xAttr: string | null,
+  yAttr: string | null,
+  isNumericLike: (attr: string) => boolean
+) {
+  if (chartType === "TABLE") return true;
+  if (!xAttr || !yAttr) return false;
+  if (xAttr === yAttr) return false;
+
+  const xIsNumeric = isNumericLike(xAttr);
+  const yIsNumeric = isNumericLike(yAttr);
+
+  if (chartType === "SCATTER") {
+    return xIsNumeric && yIsNumeric;
+  }
+
+  // BAR / LINE / PIE
+  return yIsNumeric;
+}
+
 /* =====================================================
    Main Component
 ===================================================== */
@@ -87,10 +121,32 @@ export default function ChartCreatorSidebar({
   onAddView: (payload: NewViewPayload) => void;
   onDeleteView: (id: string) => void;
 }) {
-  const { attributeKeys } = useDataset();
+  const { attributeKeys, attributeTypes, resolveAttribute } = useDataset();
   const isEditMode = selectedView !== null;
 
   const [selectedType, setSelectedType] = useState<ChartType | null>(null);
+
+  const isNumericLike = (attr: string) => {
+    if (attributeTypes[attr] === "number") return true;
+    const values = resolveAttribute(attr);
+    if (!Array.isArray(values) || values.length === 0) return false;
+
+    const filtered = values.filter((v) => v !== null && v !== undefined && v !== "");
+    if (filtered.length === 0) return false;
+
+    const numericCount = filtered.filter((v) => {
+      if (typeof v === "number") return !Number.isNaN(v);
+      if (typeof v !== "string") return false;
+      const cleaned = v.replace(/,/g, "").trim();
+      return cleaned !== "" && !Number.isNaN(Number(cleaned));
+    }).length;
+
+    return numericCount / filtered.length >= 0.7;
+  };
+
+  const numericLikeCount = attributeKeys.filter((k) => isNumericLike(k)).length;
+  const isTypeAvailable = (type: ChartType) =>
+    isChartTypeAvailable(type, attributeKeys, numericLikeCount);
 
   /* ===== prefill chart type ===== */
   useEffect(() => {
@@ -102,8 +158,16 @@ export default function ChartCreatorSidebar({
   }, [selectedView?.id]);
 
   function handleToggle(type: ChartType) {
+    if (!isTypeAvailable(type)) return;
     setSelectedType((prev) => (prev === type ? null : type));
   }
+
+  useEffect(() => {
+    if (!selectedType) return;
+    if (!isTypeAvailable(selectedType)) {
+      setSelectedType(null);
+    }
+  }, [selectedType, attributeKeys, attributeTypes]);
 
   return (
     <>
@@ -123,6 +187,7 @@ export default function ChartCreatorSidebar({
                   variant="ghost"
                   size="icon"
                   onClick={() => handleToggle(c.type)}
+                  disabled={!isTypeAvailable(c.type)}
                   className={
                     selectedType === c.type
                       ? "bg-accent text-accent-foreground"
@@ -178,7 +243,7 @@ function ChartConfigPanel({
   onEditView: (id: string, next: View) => void;
   onDeleteView: (id: string) => void;
 }) {
-  const { attributeTypes } = useDataset();
+  const { attributeTypes, resolveAttribute } = useDataset();
 
   const [xAttr, setXAttr] = useState<string | null>(null);
   const [yAttr, setYAttr] = useState<string | null>(null);
@@ -214,7 +279,27 @@ function ChartConfigPanel({
   }, [isEditMode, selectedView, chartType]);
 
   const canApply =
-    chartType === "TABLE" ? tableAttrs.length > 0 : !!xAttr && !!yAttr;
+    chartType === "TABLE"
+      ? tableAttrs.length > 0
+      : isSelectionCompatible(chartType, xAttr, yAttr, (attr) => {
+          if (attributeTypes[attr] === "number") return true;
+          const values = resolveAttribute(attr);
+          if (!Array.isArray(values) || values.length === 0) return false;
+
+          const filtered = values.filter(
+            (v) => v !== null && v !== undefined && v !== ""
+          );
+          if (filtered.length === 0) return false;
+
+          const numericCount = filtered.filter((v) => {
+            if (typeof v === "number") return !Number.isNaN(v);
+            if (typeof v !== "string") return false;
+            const cleaned = v.replace(/,/g, "").trim();
+            return cleaned !== "" && !Number.isNaN(Number(cleaned));
+          }).length;
+
+          return numericCount / filtered.length >= 0.7;
+        });
 
   const xLabel = chartType === "PIE" ? "Category" : "Select X";
   const yLabel = chartType === "PIE" ? "Value" : "Select Y";
@@ -285,6 +370,12 @@ function ChartConfigPanel({
             <div className="text-[11px] text-muted-foreground">
               Pick a categorical column for Category and a numeric column for
               Value.
+            </div>
+          )}
+
+          {!canApply && xAttr && yAttr && (
+            <div className="text-[11px] text-destructive">
+              Selected attributes are incompatible with {chartType}.
             </div>
           )}
         </>

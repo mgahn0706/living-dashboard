@@ -64,19 +64,30 @@ function formatFocus(score: number) {
   return `Low (${pct}%)`;
 }
 
-function parseList(input: string) {
-  return input
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+function toDistinctStringOptions(values: any[], limit = 120) {
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const v of values) {
+    if (v === null || v === undefined || v === "") continue;
+    const raw = String(v).trim();
+    if (!raw) continue;
+    const key = raw.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(raw);
+    if (out.length >= limit) break;
+  }
+
+  return out;
 }
 
 function buildFilterFromDraft(draft: {
   top: string;
-  includeXValues: string;
+  includeXValues: string[];
   includeColumns: string[];
   byColumn: string;
-  byValues: string;
+  byValues: string[];
 }): ViewFilter | undefined {
   const next: ViewFilter = {};
 
@@ -85,7 +96,9 @@ function buildFilterFromDraft(draft: {
     next.top = Math.floor(top);
   }
 
-  const includeXValues = parseList(draft.includeXValues);
+  const includeXValues = draft.includeXValues
+    .map((v) => v.trim())
+    .filter(Boolean);
   if (includeXValues.length > 0) {
     next.includeXValues = includeXValues;
   }
@@ -98,7 +111,7 @@ function buildFilterFromDraft(draft: {
   }
 
   const byColumn = draft.byColumn.trim();
-  const byValues = parseList(draft.byValues);
+  const byValues = draft.byValues.map((v) => v.trim()).filter(Boolean);
   if (byColumn && byValues.length > 0) {
     next.includeByColumn = [{ column: byColumn, includeValues: byValues }];
   }
@@ -141,24 +154,42 @@ export default function ViewCard({
   onApplyFilter?: (viewId: string, filter: ViewFilter | undefined) => void;
 }) {
   const isEditing = isSelected;
-  const { attributeKeys } = useDataset();
+  const { attributeKeys, resolveAttribute } = useDataset();
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [draft, setDraft] = React.useState({
     top: "",
-    includeXValues: "",
+    includeXValues: [] as string[],
     includeColumns: [] as string[],
     byColumn: "",
-    byValues: "",
+    byValues: [] as string[],
   });
+
+  const xFilterColumn =
+    view.chartType === "TABLE" ? view.columns[0] ?? "" : view.xColumn;
+  const xValueOptions = React.useMemo(
+    () =>
+      xFilterColumn
+        ? toDistinctStringOptions(resolveAttribute(xFilterColumn))
+        : ([] as string[]),
+    [xFilterColumn, resolveAttribute]
+  );
+  const byValueOptions = React.useMemo(
+    () =>
+      draft.byColumn
+        ? toDistinctStringOptions(resolveAttribute(draft.byColumn))
+        : ([] as string[]),
+    [draft.byColumn, resolveAttribute]
+  );
 
   React.useEffect(() => {
     const by = view.filter?.includeByColumn?.[0];
     setDraft({
       top: view.filter?.top != null ? String(view.filter.top) : "",
-      includeXValues: view.filter?.includeXValues?.join(", ") ?? "",
+      includeXValues:
+        view.filter?.includeXValues?.map((v) => String(v)) ?? [],
       includeColumns: view.filter?.includeColumns ?? [],
       byColumn: by?.column ?? "",
-      byValues: by?.includeValues?.map((v) => String(v)).join(", ") ?? "",
+      byValues: by?.includeValues?.map((v) => String(v)) ?? [],
     });
   }, [view.id, view.filter]);
 
@@ -186,7 +217,6 @@ export default function ViewCard({
         className={cn(
           SIZE_CLASS[view.size],
           "relative overflow-hidden transition-all cursor-pointer",
-          isFilterOpen && "z-50",
           "hover:ring-1 hover:ring-ring",
           isEditing &&
             "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]"
@@ -243,12 +273,12 @@ export default function ViewCard({
                         side="bottom"
                         align="end"
                         sideOffset={8}
-                        className="z-[200] w-64 rounded-md border bg-background p-2 shadow-md"
+                        className="z-[200] w-72 rounded-md border bg-background p-2 shadow-md"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="mb-2 text-[11px] font-medium">View Filter</div>
 
-                        <div className="space-y-2 text-[11px]">
+                        <div className="max-h-[320px] overflow-y-auto pr-1 space-y-2 text-[11px]">
                           <label className="block">
                             <span className="mb-1 block text-muted-foreground">Top N</span>
                             <input
@@ -263,19 +293,38 @@ export default function ViewCard({
 
                           <label className="block">
                             <span className="mb-1 block text-muted-foreground">
-                              X Values (comma separated)
+                              X Values
                             </span>
-                            <input
-                              className="w-full rounded border px-2 py-1 text-xs"
-                              placeholder="e.g. US, KR"
-                              value={draft.includeXValues}
-                              onChange={(e) =>
-                                setDraft((prev) => ({
-                                  ...prev,
-                                  includeXValues: e.target.value,
-                                }))
-                              }
-                            />
+                            <div className="max-h-24 overflow-auto rounded border p-1">
+                              <div className="flex flex-wrap gap-1">
+                                {xValueOptions.map((value) => {
+                                  const selected =
+                                    draft.includeXValues.includes(value);
+                                  return (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      className={cn(
+                                        "rounded-full border px-2 py-1 text-[11px] transition",
+                                        selected
+                                          ? "border-primary bg-primary/10 text-primary"
+                                          : "border-border bg-background text-muted-foreground"
+                                      )}
+                                      onClick={() =>
+                                        setDraft((prev) => ({
+                                          ...prev,
+                                          includeXValues: prev.includeXValues.includes(value)
+                                            ? prev.includeXValues.filter((v) => v !== value)
+                                            : [...prev.includeXValues, value],
+                                        }))
+                                      }
+                                    >
+                                      {value}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </label>
 
                           {view.chartType === "TABLE" && (
@@ -321,7 +370,11 @@ export default function ViewCard({
                               className="w-full rounded border px-2 py-1 text-xs"
                               value={draft.byColumn}
                               onChange={(e) =>
-                                setDraft((prev) => ({ ...prev, byColumn: e.target.value }))
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  byColumn: e.target.value,
+                                  byValues: [],
+                                }))
                               }
                             >
                               <option value="">Select attribute</option>
@@ -335,16 +388,37 @@ export default function ViewCard({
 
                           <label className="block">
                             <span className="mb-1 block text-muted-foreground">
-                              Attribute Values (comma separated)
+                              Attribute Values
                             </span>
-                            <input
-                              className="w-full rounded border px-2 py-1 text-xs"
-                              placeholder="e.g. WON"
-                              value={draft.byValues}
-                              onChange={(e) =>
-                                setDraft((prev) => ({ ...prev, byValues: e.target.value }))
-                              }
-                            />
+                            <div className="max-h-24 overflow-auto rounded border p-1">
+                              <div className="flex flex-wrap gap-1">
+                                {byValueOptions.map((value) => {
+                                  const selected = draft.byValues.includes(value);
+                                  return (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      className={cn(
+                                        "rounded-full border px-2 py-1 text-[11px] transition",
+                                        selected
+                                          ? "border-primary bg-primary/10 text-primary"
+                                          : "border-border bg-background text-muted-foreground"
+                                      )}
+                                      onClick={() =>
+                                        setDraft((prev) => ({
+                                          ...prev,
+                                          byValues: prev.byValues.includes(value)
+                                            ? prev.byValues.filter((v) => v !== value)
+                                            : [...prev.byValues, value],
+                                        }))
+                                      }
+                                    >
+                                      {value}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </label>
                         </div>
 

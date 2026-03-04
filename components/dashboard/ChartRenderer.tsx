@@ -110,15 +110,6 @@ function parseXValue(
       return { x: ms, xRaw: value, xType: "date" };
     }
 
-    // Heuristic: treat large epoch-like numbers as dates.
-    const abs = Math.abs(n);
-    const looksLikeSeconds = abs >= 1e9 && abs < 5e10;
-    const looksLikeMs = abs >= 1e11 && abs < 5e13;
-    if (looksLikeSeconds || looksLikeMs) {
-      const ms = looksLikeSeconds ? n * 1000 : n;
-      return { x: ms, xRaw: value, xType: "date" };
-    }
-
     return { x: n, xRaw: value, xType: "number" };
   }
 
@@ -175,11 +166,6 @@ function inferXTypeFromColumn(
   if (dateStringCount >= ratio) return "date";
 
   if (numberCount >= ratio && numericValues.length) {
-    const sorted = [...numericValues].map((v) => Math.abs(v)).sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const looksLikeSeconds = median >= 1e9 && median < 5e10;
-    const looksLikeMs = median >= 1e11 && median < 5e13;
-    if (looksLikeSeconds || looksLikeMs) return "date";
     return "number";
   }
 
@@ -433,6 +419,16 @@ export default function ChartRenderer({
 
   const blue = "#3b82f6";
   const faded = "#cbd5e1";
+  const piePalette = [
+    "#3b82f6",
+    "#06b6d4",
+    "#10b981",
+    "#f59e0b",
+    "#ef4444",
+    "#8b5cf6",
+    "#14b8a6",
+    "#f97316",
+  ];
 
   if (view.chartType === "TABLE") {
     return (
@@ -452,6 +448,14 @@ export default function ChartRenderer({
     () => applyChartViewFilter(data, filter),
     [data, filter]
   );
+  const pieData = React.useMemo(() => {
+    const total = visibleData.reduce((sum, d) => sum + (Number(d.y) || 0), 0);
+    return visibleData.map((d) => ({
+      ...d,
+      name: String(d.xRaw ?? d.x),
+      ratio: total > 0 ? d.y / total : 0,
+    }));
+  }, [visibleData]);
 
   const chartConfig = React.useMemo(
     () =>
@@ -583,11 +587,28 @@ export default function ChartRenderer({
             </BarChart>
           ) : view.chartType === "PIE" ? (
             <PieChart>
-              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartTooltip
+                content={<ChartTooltipContent />}
+                labelFormatter={(_label: any, payload: any) =>
+                  payload?.[0]?.payload?.name ?? ""
+                }
+                formatter={(value: any, _name: any, item: any) => {
+                  const ratio = Number(item?.payload?.ratio ?? 0) * 100;
+                  const numeric = Number(value);
+                  const valueText = Number.isNaN(numeric)
+                    ? String(value)
+                    : numeric.toLocaleString();
+                  return [`${valueText} (${ratio.toFixed(1)}%)`, "Value"];
+                }}
+              />
               <Pie
-                data={visibleData}
+                data={pieData}
                 dataKey="y"
-                nameKey="x"
+                nameKey="name"
+                labelLine={false}
+                label={({ percent }: any) =>
+                  percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ""
+                }
                 onClick={(data: any) => {
                   const clickedX = data?.xRaw ?? data?.x;
                   if (clickedX !== undefined) {
@@ -595,10 +616,18 @@ export default function ChartRenderer({
                   }
                 }}
               >
-                {visibleData.map((entry, index) => (
+                {pieData.map((entry, index) => (
                   <Cell
                     key={index}
-                    fill={entry.highlighted ? blue : faded}
+                    fill={
+                      hasSelection
+                        ? entry.highlighted
+                          ? blue
+                          : faded
+                        : piePalette[index % piePalette.length]
+                    }
+                    stroke="#ffffff"
+                    strokeWidth={1}
                     opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
                   />
                 ))}

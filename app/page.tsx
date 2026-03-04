@@ -54,6 +54,103 @@ function isChartView(v: View): v is ChartView {
  */
 type AnyPayload = any;
 
+function getValueByPath(row: any, path: string) {
+  return path.split(".").reduce((acc, key) => {
+    if (acc == null || typeof acc !== "object") return undefined;
+    return acc[key];
+  }, row);
+}
+
+function normalizeFilterValue(v: any) {
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim().toLowerCase();
+  return String(v).trim().toLowerCase();
+}
+
+function getDistinctValueMap(rows: any[], column: string) {
+  const map = new Map<string, any>();
+  for (const row of rows) {
+    const value = getValueByPath(row, column);
+    if (value === null || value === undefined || value === "") continue;
+    const key = normalizeFilterValue(value);
+    if (!key) continue;
+    if (!map.has(key)) map.set(key, value);
+  }
+  return map;
+}
+
+function coerceToExistingValues(
+  candidates: Array<string | number | boolean> | undefined,
+  rows: any[],
+  column: string
+): Array<string | number | boolean> {
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+  const existing = getDistinctValueMap(rows, column);
+  const out: Array<string | number | boolean> = [];
+  for (const v of candidates) {
+    const matched = existing.get(normalizeFilterValue(v));
+    if (matched !== undefined) out.push(matched);
+  }
+  return out;
+}
+
+function sanitizeFilterForView(
+  filter: View["filter"] | undefined,
+  view: View,
+  rawData: any[]
+): View["filter"] | undefined {
+  if (!filter) return undefined;
+
+  const next: NonNullable<View["filter"]> = {};
+
+  if (typeof filter.top === "number" && filter.top > 0) {
+    next.top = Math.floor(filter.top);
+  }
+
+  if (Array.isArray(filter.includeColumns) && view.chartType === "TABLE") {
+    const valid = new Set(view.columns);
+    const cols = filter.includeColumns.filter((c) => valid.has(c));
+    if (cols.length > 0) next.includeColumns = cols;
+  }
+
+  const xColumn = view.chartType === "TABLE" ? view.columns[0] : view.xColumn;
+  if (xColumn) {
+    const xValues = coerceToExistingValues(
+      filter.includeXValues,
+      rawData,
+      xColumn
+    ).filter(
+      (v): v is string | number => typeof v === "string" || typeof v === "number"
+    );
+    if (xValues.length > 0) next.includeXValues = xValues;
+  }
+
+  if (Array.isArray(filter.includeByColumn)) {
+    const rules: Array<{
+      column: string;
+      includeValues: Array<string | number | boolean>;
+    }> = filter.includeByColumn
+      .map((rule) => {
+        if (!rule?.column) return null;
+        const values = coerceToExistingValues(
+          rule.includeValues,
+          rawData,
+          rule.column
+        );
+        if (values.length === 0) return null;
+        return { column: rule.column, includeValues: values };
+      })
+      .filter(Boolean) as Array<{
+      column: string;
+      includeValues: Array<string | number | boolean>;
+    }>;
+    if (rules.length > 0) next.includeByColumn = rules;
+  }
+
+  if (Object.keys(next).length === 0) return undefined;
+  return next;
+}
+
 function hasOwn(obj: any, key: string) {
   return Object.prototype.hasOwnProperty.call(obj ?? {}, key);
 }
@@ -280,6 +377,26 @@ function sanitizeInitialGeneratedView(
   return view;
 }
 
+function buildFallbackTableView(
+  attributeKeys: string[],
+  priority: number
+): TableView | null {
+  if (!attributeKeys.length) return null;
+  const columns = attributeKeys.slice(0, Math.min(6, attributeKeys.length));
+  if (columns.length === 0) return null;
+
+  return makeTableView(
+    {
+      id: `v_table_fallback_${Date.now()}`,
+      chartType: "TABLE",
+      columns,
+      size: "md",
+      title: "Detailed Data",
+    },
+    priority
+  );
+}
+
 /* =====================================================
    App Content
 ===================================================== */
@@ -461,7 +578,15 @@ function AppContent() {
             if (v.id !== targetId) return v;
 
             const nextType: ChartType = payload?.chartType ?? v.chartType;
-            return normalizeViewUpdate(v, payload, nextType);
+            const nextView = normalizeViewUpdate(v, payload, nextType);
+            return {
+              ...nextView,
+              filter: sanitizeFilterForView(
+                nextView.filter,
+                nextView,
+                Array.isArray(rawData) ? rawData : []
+              ),
+            };
           });
         }
 
@@ -484,7 +609,15 @@ function AppContent() {
         case "NEW_CONTENT": {
           const minPriority =
             prev.length > 0 ? Math.min(...prev.map((v) => v.priority ?? 0)) : 0;
-          const next = buildNewViewFromPayload(payload, minPriority - 1);
+          const built = buildNewViewFromPayload(payload, minPriority - 1);
+          const next = {
+            ...built,
+            filter: sanitizeFilterForView(
+              built.filter,
+              built,
+              Array.isArray(rawData) ? rawData : []
+            ),
+          } as View;
           return [...prev, next];
         }
 
@@ -538,16 +671,32 @@ function AppContent() {
       const data = (await res.json()) as AnyPayload[];
       if (!Array.isArray(data) || data.length === 0) return;
 
-      const nextViews = data
+      let nextViews = data
         .map((payload, i) => buildNewViewFromPayload(payload, data.length - i))
         .map((v) =>
           sanitizeInitialGeneratedView(v, attributeKeys, attributeTypes)
         )
         .filter(Boolean) as View[];
 
+      const hasTableView = nextViews.some((v) => v.chartType === "TABLE");
+      if (!hasTableView) {
+        const minPriority =
+          nextViews.length > 0
+            ? Math.min(...nextViews.map((v) => v.priority ?? 0))
+            : 0;
+        const fallbackTable = buildFallbackTableView(attributeKeys, minPriority - 1);
+        if (fallbackTable) {
+          nextViews = [...nextViews, fallbackTable];
+        }
+      }
+
       if (nextViews.length === 0) {
-        console.warn("No compatible views from initial generation.");
-        return;
+        const fallbackTable = buildFallbackTableView(attributeKeys, 0);
+        if (!fallbackTable) {
+          console.warn("No compatible views from initial generation.");
+          return;
+        }
+        nextViews = [fallbackTable];
       }
 
       setViews(nextViews);
@@ -600,7 +749,18 @@ function AppContent() {
                   triggeredBy: "manual_filter",
                 });
                 setViews((prev) =>
-                  prev.map((v) => (v.id === viewId ? { ...v, filter } : v))
+                  prev.map((v) =>
+                    v.id === viewId
+                      ? {
+                          ...v,
+                          filter: sanitizeFilterForView(
+                            filter,
+                            v,
+                            Array.isArray(rawData) ? rawData : []
+                          ),
+                        }
+                      : v
+                  )
                 );
               }}
             />

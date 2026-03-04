@@ -46,6 +46,10 @@ Rules:
 - Choose sensible titles, short and descriptive.
 - Priorities should be numbers where higher means more important.
 - Ensure table columns are valid.
+- You MUST include at least 1 TABLE view.
+- TABLE "columns" MUST be a non-empty array.
+- Every TABLE column MUST exist in ATTRIBUTE KEYS.
+- Never return TABLE with empty columns.
 
 Prefer:
 - 1 table view for context (top 4-6 columns).

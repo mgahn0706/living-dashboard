@@ -60,6 +60,8 @@ export function makePrompt({
   - DO NOT include explanations outside "reason"
   - DO NOT include fields not listed above
   - "payload" must contain only valid View fields
+  - If payload.chartType is "TABLE", payload.columns MUST be a non-empty array of valid schema columns.
+  - Never output TABLE payload with empty or missing columns.
   - For "MODIFY_FILTER", put filter instructions in "payload.filter" only.
   - Valid filter shape:
     - { "top": number }
@@ -71,6 +73,7 @@ export function makePrompt({
   - If you cannot provide at least one concrete filter value, do NOT emit MODIFY_FILTER.
   - "includeByColumn[].column" MUST exactly match an existing column name from DATA SCHEMA.
   - Use a filter value only when it is supported by conversation context or clearly plausible from the schema/domain.
+  - Filter values MUST match existing values in the dataset for the target column. If uncertain, do NOT emit MODIFY_FILTER.
   - "id" is the recommendation identifier. It MUST be unique and MUST NOT equal any existing view id.
   - If the recommendation applies to an existing view, you MUST include "targetViewId" to specify which view is affected.
   - Never use recommendation "id" as a view id.
