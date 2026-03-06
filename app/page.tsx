@@ -501,6 +501,17 @@ function getDemoViews(): View[] {
       priority: 94,
       title: "Revenue by Territory",
     },
+    // Revenue by Country — Bubble map
+    {
+      id: "demo_map_country",
+      chartType: "MAP",
+      xColumn: "Country",
+      yColumn: "Revenue",
+      aggregation: "sum",
+      size: "xl",
+      priority: 93,
+      title: "Revenue by Country",
+    },
     // Revenue by Segment — Stacked bar
     {
       id: "demo_rev_segment",
@@ -509,7 +520,7 @@ function getDemoViews(): View[] {
       yColumn: "Revenue",
       groupByColumn: "Status",
       size: "md",
-      priority: 93,
+      priority: 92,
       title: "Revenue by Segment",
     },
     // Revenue by Product Category — Donut chart

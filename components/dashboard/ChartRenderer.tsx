@@ -36,6 +36,7 @@ import {
 } from "recharts";
 
 import type { ChartView, View, ViewFilter } from "@/types/dashboard";
+import MapRenderer from "./MapRenderer";
 import { useDataset } from "@/context/DatasetContext";
 import { useSelection, type RangeFilter, type LassoFilter } from "@/context/SelectionContext";
 import { useTimeFilter } from "@/context/TimeFilterContext";
@@ -885,6 +886,13 @@ export default React.memo(function ChartRenderer({
   if (view.chartType === "KPI") {
     return (
       <KPIRenderer view={view as ChartView} height={height} filter={filter} />
+    );
+  }
+
+  /* ---- MAP ---- */
+  if (view.chartType === "MAP") {
+    return (
+      <MapRenderer view={view as ChartView} height={height} filter={filter} />
     );
   }
 

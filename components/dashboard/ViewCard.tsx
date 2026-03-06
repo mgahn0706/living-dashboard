@@ -32,18 +32,28 @@ import {
 ======================================================= */
 
 const SIZE_CLASS: Record<View["size"], string> = {
+  xl: "basis-[49%]",
   lg: "basis-[24%]",
   md: "basis-[24%]",
   sm: "basis-[24%]",
 };
 
+const KPI_SIZE_CLASS: Record<View["size"], string> = {
+  xl: "basis-[11.5%]",
+  lg: "basis-[11.5%]",
+  md: "basis-[11.5%]",
+  sm: "basis-[11.5%]",
+};
+
 const CHART_HEIGHT: Record<View["size"], string> = {
+  xl: "h-[400px]",
   lg: "h-[260px]",
   md: "h-[210px]",
   sm: "h-[170px]",
 };
 
 const KPI_HEIGHT: Record<View["size"], string> = {
+  xl: "h-[120px]",
   lg: "h-[120px]",
   md: "h-[100px]",
   sm: "h-[80px]",
@@ -221,7 +231,7 @@ export default React.memo(function ViewCard({
         onPointerMove={onPointerMove}
         onClick={onCardClick}
         className={cn(
-          SIZE_CLASS[view.size],
+          view.chartType === "KPI" ? KPI_SIZE_CLASS[view.size] : SIZE_CLASS[view.size],
           "relative overflow-hidden transition-all cursor-pointer",
           "hover:ring-1 hover:ring-ring",
           isEditing &&

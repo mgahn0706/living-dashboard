@@ -10,7 +10,8 @@ export type ChartType =
   | "HORIZONTAL_BAR"
   | "STACKED_BAR"
   | "GROUPED_BAR"
-  | "DONUT";
+  | "DONUT"
+  | "MAP";
 
 export type View = ChartView | TableView;
 
@@ -41,7 +42,7 @@ export type ChartView = {
   xColumn: string;
   yColumn: string;
   chartType: Exclude<ChartType, "TABLE">;
-  size: "sm" | "md" | "lg";
+  size: "sm" | "md" | "lg" | "xl";
   priority: number;
   xLabel?: string;
   yLabel?: string;
@@ -57,7 +58,7 @@ export type TableView = {
   id: string;
   chartType: "TABLE";
   columns: string[];
-  size: "sm" | "md" | "lg";
+  size: "sm" | "md" | "lg" | "xl";
   priority: number;
   title: string;
   filter?: ViewFilter;

@@ -35,14 +35,14 @@ export type NewViewPayload =
   | {
       chartType: "TABLE";
       columns: string[];
-      size: "sm" | "md" | "lg";
+      size: "sm" | "md" | "lg" | "xl";
       title: string;
     }
   | {
       chartType: Exclude<ChartType, "TABLE">;
       xColumn: string;
       yColumn: string;
-      size: "sm" | "md" | "lg";
+      size: "sm" | "md" | "lg" | "xl";
       title: string;
       groupByColumn?: string;
       aggregation?: "sum" | "avg" | "count";
@@ -281,7 +281,7 @@ function ChartConfigPanel({
   const [yAttr, setYAttr] = useState<string | null>(null);
   const [tableAttrs, setTableAttrs] = useState<string[]>([]);
   const [title, setTitle] = useState("");
-  const [size, setSize] = useState<"sm" | "md" | "lg">("md");
+  const [size, setSize] = useState<"sm" | "md" | "lg" | "xl">("md");
 
   /* ===== prefill form (column-based) ===== */
   useEffect(() => {
