@@ -5,6 +5,7 @@ import { useFocus } from "@/context/FocusContext";
 import ViewCard, { PreviewState } from "./ViewCard";
 import { Button } from "../ui/button";
 import { ArrowRight } from "lucide-react";
+import TimeSlider from "./TimeSlider";
 
 export default function DashboardView({
   views = [],
@@ -103,6 +104,8 @@ export default function DashboardView({
   ======================================================= */
 
   return (
+    <>
+    <TimeSlider />
     <div className="flex flex-wrap gap-4 items-stretch">
       {sortedViews.map((view) => (
         <ViewCard
@@ -144,5 +147,6 @@ export default function DashboardView({
         />
       )}
     </div>
+    </>
   );
 }

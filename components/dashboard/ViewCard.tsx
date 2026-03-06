@@ -43,6 +43,12 @@ const CHART_HEIGHT: Record<View["size"], string> = {
   sm: "h-[170px]",
 };
 
+const KPI_HEIGHT: Record<View["size"], string> = {
+  lg: "h-[120px]",
+  md: "h-[100px]",
+  sm: "h-[80px]",
+};
+
 /* =======================================================
    Preview Types
 ======================================================= */
@@ -473,7 +479,10 @@ export default React.memo(function ViewCard({
 
           {/* Content */}
           <CardContent
-            className={cn(CHART_HEIGHT[view.size], "flex p-0 overflow-hidden")}
+            className={cn(
+              view.chartType === "KPI" ? KPI_HEIGHT[view.size] : CHART_HEIGHT[view.size],
+              "flex p-0 overflow-hidden"
+            )}
           >
             <ChartRenderer view={view} filter={view.filter} height="100%" />
           </CardContent>
@@ -625,7 +634,10 @@ function ModifyOverlay({ view, size }: { view: View; size: View["size"] }) {
         </CardHeader>
 
         <CardContent
-          className={cn(CHART_HEIGHT[size], "flex p-0 overflow-hidden")}
+          className={cn(
+            view.chartType === "KPI" ? KPI_HEIGHT[size] : CHART_HEIGHT[size],
+            "flex p-0 overflow-hidden"
+          )}
         >
           <ChartRenderer view={view} filter={view.filter} height="100%" />
         </CardContent>
@@ -668,7 +680,10 @@ function AddOverlay({ view, size }: { view: View; size: View["size"] }) {
         </CardHeader>
 
         <CardContent
-          className={cn(CHART_HEIGHT[size], "flex p-0 overflow-hidden")}
+          className={cn(
+            view.chartType === "KPI" ? KPI_HEIGHT[size] : CHART_HEIGHT[size],
+            "flex p-0 overflow-hidden"
+          )}
         >
           <ChartRenderer view={view} filter={view.filter} height="100%" />
         </CardContent>

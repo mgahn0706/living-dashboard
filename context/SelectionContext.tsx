@@ -25,17 +25,32 @@ export type RangeFilter = {
   yMax: number;
 };
 
+export type LassoFilter = {
+  xColumn: string;
+  yColumn: string;
+  polygon: Array<{ x: number; y: number }>;
+};
+
 type SelectionContextType = {
   selection: SelectionState;
 
   /** Range filter for scatter brushing */
   rangeFilter: RangeFilter | null;
 
+  /** Lasso filter for freehand scatter selection */
+  lassoFilter: LassoFilter | null;
+
   /** replace selection (single active dimension model) */
   replaceSelection: (column: string, value: any) => void;
 
+  /** add/toggle a value in the current selection (Ctrl+Click) */
+  addToSelection: (column: string, value: any) => void;
+
   /** set brush/range selection (clears discrete selection) */
   setBrushSelection: (range: RangeFilter | null) => void;
+
+  /** set lasso selection (clears discrete + range selection) */
+  setLassoSelection: (lasso: LassoFilter | null) => void;
 
   /** completely clear all selections */
   clearSelection: () => void;
@@ -56,6 +71,7 @@ const SelectionContext = createContext<SelectionContextType | null>(null);
 export function SelectionProvider({ children }: { children: React.ReactNode }) {
   const [selection, setSelection] = useState<SelectionState>({});
   const [rangeFilter, setRangeFilter] = useState<RangeFilter | null>(null);
+  const [lassoFilter, setLassoFilter] = useState<LassoFilter | null>(null);
 
   /* ===============================
      Replace Selection
@@ -66,13 +82,37 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
 
   const replaceSelection = useCallback((column: string, value: any) => {
     setRangeFilter(null);
+    setLassoFilter(null);
     setSelection(() => {
-      // Always set the clicked value as the active selection.
-      // No toggle-off: clicking the same bar keeps it selected
-      // so that the rest of the dashboard stays cross-filtered.
       return {
         [column]: new Set([value]),
       };
+    });
+  }, []);
+
+  /* ===============================
+     Add to Selection (Ctrl+Click)
+     - Toggle value on same column
+     - If different column, start fresh
+  =============================== */
+
+  const addToSelection = useCallback((column: string, value: any) => {
+    setRangeFilter(null);
+    setLassoFilter(null);
+    setSelection((prev) => {
+      const existingColumns = Object.keys(prev);
+      if (existingColumns.length > 0 && !prev[column]) {
+        return { [column]: new Set([value]) };
+      }
+      const existing = prev[column] ?? new Set();
+      const next = new Set(existing);
+      if (next.has(value)) {
+        next.delete(value);
+      } else {
+        next.add(value);
+      }
+      if (next.size === 0) return {};
+      return { [column]: next };
     });
   }, []);
 
@@ -84,7 +124,20 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
 
   const setBrushSelection = useCallback((range: RangeFilter | null) => {
     setSelection({});
+    setLassoFilter(null);
     setRangeFilter(range);
+  }, []);
+
+  /* ===============================
+     Lasso Selection
+     - Sets lasso filter
+     - Clears discrete + range selection
+  =============================== */
+
+  const setLassoSelection = useCallback((lasso: LassoFilter | null) => {
+    setSelection({});
+    setRangeFilter(null);
+    setLassoFilter(lasso);
   }, []);
 
   /* ===============================
@@ -94,6 +147,7 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
   const clearSelection = useCallback(() => {
     setSelection({});
     setRangeFilter(null);
+    setLassoFilter(null);
   }, []);
 
   /* ===============================
@@ -113,8 +167,9 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
 
   const hasSelection = useMemo(() => {
     if (rangeFilter) return true;
+    if (lassoFilter) return true;
     return Object.values(selection).some((set) => set && set.size > 0);
-  }, [selection, rangeFilter]);
+  }, [selection, rangeFilter, lassoFilter]);
 
   /* ===============================
      Context Value
@@ -124,13 +179,16 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
     () => ({
       selection,
       rangeFilter,
+      lassoFilter,
       replaceSelection,
+      addToSelection,
       setBrushSelection,
+      setLassoSelection,
       clearSelection,
       isSelected,
       hasSelection,
     }),
-    [selection, rangeFilter, replaceSelection, setBrushSelection, clearSelection, isSelected, hasSelection]
+    [selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, setBrushSelection, setLassoSelection, clearSelection, isSelected, hasSelection]
   );
 
   return (

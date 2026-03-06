@@ -37,7 +37,9 @@ import {
 
 import type { ChartView, View, ViewFilter } from "@/types/dashboard";
 import { useDataset } from "@/context/DatasetContext";
-import { useSelection, type RangeFilter } from "@/context/SelectionContext";
+import { useSelection, type RangeFilter, type LassoFilter } from "@/context/SelectionContext";
+import { useTimeFilter } from "@/context/TimeFilterContext";
+import { formatCompactNumber } from "@/lib/utils";
 
 /* =======================================================
    Types
@@ -185,15 +187,34 @@ function formatDateTick(value: number | string) {
   });
 }
 
+/** Ray-casting point-in-polygon test */
+function pointInPolygon(
+  px: number,
+  py: number,
+  polygon: Array<{ x: number; y: number }>
+): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 function rowMatchesSelection(
   row: any,
   selection: any,
-  rangeFilter?: RangeFilter | null
+  rangeFilter?: RangeFilter | null,
+  lassoFilter?: LassoFilter | null
 ) {
   const hasDiscrete = selection && Object.keys(selection).length > 0;
   const hasRange = !!rangeFilter;
+  const hasLasso = !!lassoFilter;
 
-  if (!hasDiscrete && !hasRange) return true;
+  if (!hasDiscrete && !hasRange && !hasLasso) return true;
 
   // Check discrete selection
   if (hasDiscrete) {
@@ -218,6 +239,14 @@ function rowMatchesSelection(
     ) {
       return false;
     }
+  }
+
+  // Check lasso filter
+  if (hasLasso) {
+    const xVal = Number(getValueByPath(row, lassoFilter.xColumn));
+    const yVal = Number(getValueByPath(row, lassoFilter.yColumn));
+    if (Number.isNaN(xVal) || Number.isNaN(yVal)) return false;
+    if (!pointInPolygon(xVal, yVal, lassoFilter.polygon)) return false;
   }
 
   return true;
@@ -350,7 +379,8 @@ function buildSeries(
   selection: any,
   attributeTypes: Record<string, "string" | "number" | "date" | "unknown">,
   filter?: ChartRendererFilter,
-  rangeFilter?: RangeFilter | null
+  rangeFilter?: RangeFilter | null,
+  lassoFilter?: LassoFilter | null
 ): { data: GenericPoint[]; xType: "number" | "date" | "category" } {
   if (!Array.isArray(rawData)) {
     return { data: [], xType: "category" };
@@ -386,7 +416,7 @@ function buildSeries(
       return {
         x: xParsed.x as number | string,
         y: typeof yParsed === "number" ? yParsed : 0,
-        highlighted: rowMatchesSelection(row, selection, rangeFilter),
+        highlighted: rowMatchesSelection(row, selection, rangeFilter, lassoFilter),
         xRaw: xParsed.xRaw,
         xType: xParsed.xType,
       };
@@ -457,7 +487,8 @@ function buildGroupedSeries(
   attributeTypes: Record<string, "string" | "number" | "date" | "unknown">,
   filter?: ChartRendererFilter,
   selection?: any,
-  rangeFilter?: RangeFilter | null
+  rangeFilter?: RangeFilter | null,
+  lassoFilter?: LassoFilter | null
 ): GroupedSeriesResult & { highlightedXValues: Set<string> } {
   if (!Array.isArray(rawData) || !view.groupByColumn) {
     return { rows: [], groups: [], xLabels: [], highlightedXValues: new Set() };
@@ -501,7 +532,7 @@ function buildGroupedSeries(
     if (Number.isNaN(yVal) && agg !== "count") return;
 
     // Track highlighting
-    if (rowMatchesSelection(row, selection, rangeFilter)) {
+    if (rowMatchesSelection(row, selection, rangeFilter, lassoFilter)) {
       highlightedXValues.add(xKey);
     }
 
@@ -542,7 +573,8 @@ function computeKPIValue(
   view: ChartView,
   filter?: ChartRendererFilter,
   selection?: any,
-  rangeFilter?: RangeFilter | null
+  rangeFilter?: RangeFilter | null,
+  lassoFilter?: LassoFilter | null
 ): { total: number; filtered: number; hasFilter: boolean } {
   if (!Array.isArray(rawData)) return { total: 0, filtered: 0, hasFilter: false };
 
@@ -573,14 +605,15 @@ function computeKPIValue(
 
   const hasDiscrete = selection && Object.keys(selection).length > 0;
   const hasRange = !!rangeFilter;
-  const hasFilter = hasDiscrete || hasRange;
+  const hasLasso = !!lassoFilter;
+  const hasFilter = hasDiscrete || hasRange || hasLasso;
 
   if (!hasFilter) {
     return { total, filtered: total, hasFilter: false };
   }
 
   const selectedData = data.filter((row) =>
-    rowMatchesSelection(row, selection, rangeFilter)
+    rowMatchesSelection(row, selection, rangeFilter, lassoFilter)
   );
   const filtered = computeAgg(selectedData);
 
@@ -597,7 +630,8 @@ function buildColoredScatterSeries(
   selection: any,
   attributeTypes: Record<string, "string" | "number" | "date" | "unknown">,
   filter?: ChartRendererFilter,
-  rangeFilter?: RangeFilter | null
+  rangeFilter?: RangeFilter | null,
+  lassoFilter?: LassoFilter | null
 ): { data: ColoredPoint[]; groups: string[] } {
   if (!Array.isArray(rawData) || !view.colorByColumn) {
     return { data: [], groups: [] };
@@ -625,7 +659,7 @@ function buildColoredScatterSeries(
     points.push({
       x,
       y,
-      highlighted: rowMatchesSelection(row, selection, rangeFilter),
+      highlighted: rowMatchesSelection(row, selection, rangeFilter, lassoFilter),
       xRaw,
       xType: "number",
       group,
@@ -636,27 +670,67 @@ function buildColoredScatterSeries(
 }
 
 /* =======================================================
+   Time-filtered data hook
+======================================================= */
+
+function useTimeFilteredData(): any[] {
+  const { rawData } = useDataset();
+  const { timeFilter } = useTimeFilter();
+
+  return React.useMemo(() => {
+    if (!Array.isArray(rawData)) return [];
+    if (!timeFilter) return rawData;
+
+    const { column, min, max } = timeFilter;
+    return rawData.filter((row: any) => {
+      const val = getValueByPath(row, column);
+      if (val == null || val === "") return false;
+      const ts = Date.parse(String(val));
+      if (Number.isNaN(ts)) return false;
+      return ts >= min && ts <= max;
+    });
+  }, [rawData, timeFilter]);
+}
+
+/* =======================================================
    Color palette
 ======================================================= */
 
+// ColorBrewer Set2 (8 muted colors) + 4 extension from Paired
 const GROUP_PALETTE = [
-  "#3b82f6",
-  "#ef4444",
-  "#10b981",
-  "#f59e0b",
-  "#8b5cf6",
-  "#06b6d4",
-  "#f97316",
-  "#ec4899",
+  "#66c2a5",
+  "#fc8d62",
+  "#8da0cb",
+  "#e78ac3",
+  "#a6d854",
+  "#ffd92f",
+  "#e5c494",
+  "#b3b3b3",
+  "#a6cee3",
+  "#b2df8a",
+  "#fb9a99",
+  "#cab2d6",
 ];
 
+// Sequential teal for funnel
 const FUNNEL_PALETTE = [
-  "#3b82f6",
-  "#60a5fa",
-  "#93c5fd",
-  "#bfdbfe",
-  "#dbeafe",
+  "#00796b",
+  "#26a69a",
+  "#4db6ac",
+  "#80cbc4",
+  "#b2dfdb",
+  "#e0f2f1",
 ];
+
+/* =======================================================
+   Label helpers
+======================================================= */
+
+function shouldRotateLabels(data: GenericPoint[]): boolean {
+  if (data.length > 6) return true;
+  const avgLen = data.reduce((sum, d) => sum + String(d.xRaw ?? d.x).length, 0) / (data.length || 1);
+  return avgLen > 8;
+}
 
 /* =======================================================
    Format helpers
@@ -667,12 +741,9 @@ function formatKPIValue(value: number, yLabel?: string) {
     return `${(value * 100).toFixed(1)}%`;
   }
   if (yLabel === "$") {
-    return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    return `$${formatCompactNumber(value)}`;
   }
-  if (Math.abs(value) >= 1000) {
-    return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
-  }
-  return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  return formatCompactNumber(value);
 }
 
 /* =======================================================
@@ -694,10 +765,11 @@ export default React.memo(function ChartRenderer({
   height?: number | "100%";
   filter?: ChartRendererFilter;
 }) {
-  const { rawData, attributeTypes } = useDataset();
-  const { selection, rangeFilter, replaceSelection, clearSelection, hasSelection } = useSelection();
+  const { attributeTypes } = useDataset();
+  const rawData = useTimeFilteredData();
+  const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
 
-  const blue = "#3b82f6";
+  const primaryColor = "#66c2a5"; // Set2 teal — single-series charts
   const faded = "#cbd5e1";
   const piePalette = GROUP_PALETTE;
 
@@ -708,24 +780,24 @@ export default React.memo(function ChartRenderer({
   // Heavy computation: build base data WITHOUT selection dependency (stable across clicks)
   const { data: baseData, xType } = React.useMemo(() => {
     if (!chartView) return { data: [] as GenericPoint[], xType: "category" as const };
-    return buildSeries(rawData ?? [], chartView, {}, attributeTypes, filter, null);
+    return buildSeries(rawData, chartView, {}, attributeTypes, filter, null, null);
   }, [rawData, chartView, attributeTypes, filter]);
 
   // Lightweight: compute which x values are highlighted by current selection
   const highlightedXKeys = React.useMemo(() => {
     if (!hasSelection || !chartView) return null;
     const keys = new Set<any>();
-    const rawFiltered = (rawData ?? []).filter((row: any) =>
+    const rawFiltered = rawData.filter((row: any) =>
       rowMatchesAttributeFilter(row, filter?.includeByColumn)
     );
     for (const row of rawFiltered) {
-      if (rowMatchesSelection(row, selection, rangeFilter)) {
+      if (rowMatchesSelection(row, selection, rangeFilter, lassoFilter)) {
         const xRaw = getValueByPath(row, chartView.xColumn);
         keys.add(xRaw);
       }
     }
     return keys;
-  }, [rawData, chartView, selection, rangeFilter, hasSelection, filter]);
+  }, [rawData, chartView, selection, rangeFilter, lassoFilter, hasSelection, filter]);
 
   const isPointHighlighted = React.useCallback(
     (point: { x: any; xRaw?: any }) => {
@@ -738,6 +810,11 @@ export default React.memo(function ChartRenderer({
   const visibleData = React.useMemo(
     () => applyChartViewFilter(baseData, filter),
     [baseData, filter]
+  );
+
+  const rotateXLabels = React.useMemo(
+    () => xType === "category" && shouldRotateLabels(visibleData),
+    [visibleData, xType]
   );
 
   const pieData = React.useMemo(() => {
@@ -766,6 +843,7 @@ export default React.memo(function ChartRenderer({
         height={height}
         filter={filter}
         replaceSelection={replaceSelection}
+        addToSelection={addToSelection}
       />
     );
   }
@@ -887,7 +965,7 @@ export default React.memo(function ChartRenderer({
         <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
 <BarChart data={visibleData} layout="vertical">
               <CartesianGrid horizontal={false} strokeOpacity={0.15} />
-              <XAxis type="number" />
+              <XAxis type="number" tickFormatter={formatCompactNumber} />
               <YAxis
                 dataKey="x"
                 type="category"
@@ -899,17 +977,22 @@ export default React.memo(function ChartRenderer({
                 dataKey="y"
                 isAnimationActive={false}
                 activeBar={false}
-                onClick={(data: any) => {
+                onClick={(data: any, _idx: any, event: any) => {
                   const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
                   if (clickedX !== undefined) {
-                    replaceSelection(view.xColumn, clickedX);
+                    const e = event?.nativeEvent ?? event;
+                    if (e?.ctrlKey || e?.metaKey) {
+                      addToSelection(view.xColumn, clickedX);
+                    } else {
+                      replaceSelection(view.xColumn, clickedX);
+                    }
                   }
                 }}
               >
                 {visibleData.map((entry, index) => (
                   <Cell
                     key={index}
-                    fill={isPointHighlighted(entry) ? blue : faded}
+                    fill={isPointHighlighted(entry) ? primaryColor : faded}
                     opacity={!hasSelection || isPointHighlighted(entry) ? 1 : 0.3}
                     style={{ cursor: "pointer" }}
                   />
@@ -952,10 +1035,15 @@ export default React.memo(function ChartRenderer({
                 label={({ percent }: any) =>
                   percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ""
                 }
-                onClick={(data: any) => {
+                onClick={(data: any, _idx: any, event: any) => {
                   const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
                   if (clickedX !== undefined) {
-                    replaceSelection(view.xColumn, clickedX);
+                    const e = event?.nativeEvent ?? event;
+                    if (e?.ctrlKey || e?.metaKey) {
+                      addToSelection(view.xColumn, clickedX);
+                    } else {
+                      replaceSelection(view.xColumn, clickedX);
+                    }
                   }
                 }}
               >
@@ -965,7 +1053,7 @@ export default React.memo(function ChartRenderer({
                     fill={
                       hasSelection
                         ? isPointHighlighted(entry)
-                          ? blue
+                          ? primaryColor
                           : faded
                         : piePalette[index % piePalette.length]
                     }
@@ -995,8 +1083,12 @@ export default React.memo(function ChartRenderer({
                 scale={xType === "date" ? "time" : undefined}
                 domain={xType === "date" ? ["auto", "auto"] : undefined}
                 tickFormatter={xType === "date" ? formatDateTick : undefined}
+                angle={rotateXLabels ? -45 : 0}
+                textAnchor={rotateXLabels ? "end" : "middle"}
+                height={rotateXLabels ? 60 : 30}
+                tick={{ fontSize: 11 }}
               />
-              <YAxis type="number" />
+              <YAxis type="number" tickFormatter={formatCompactNumber} />
               <ChartTooltip
                 content={<ChartTooltipContent />}
                 trigger="hover"
@@ -1011,8 +1103,8 @@ export default React.memo(function ChartRenderer({
               <Area
                 type="monotone"
                 dataKey="y"
-                stroke={blue}
-                fill={blue}
+                stroke={primaryColor}
+                fill={primaryColor}
                 strokeOpacity={hasSelection ? 0.25 : 1}
                 fillOpacity={hasSelection ? 0.05 : 0.15}
                 isAnimationActive={false}
@@ -1025,12 +1117,16 @@ export default React.memo(function ChartRenderer({
                       cx={cx}
                       cy={cy}
                       r={4}
-                      fill={highlighted ? blue : faded}
+                      fill={highlighted ? primaryColor : faded}
                       opacity={!hasSelection || highlighted ? 1 : 0.3}
                       style={{ cursor: "pointer" }}
-                      onClick={() =>
-                        replaceSelection(view.xColumn, payload.xRaw ?? payload.x)
-                      }
+                      onClick={(e: React.MouseEvent) => {
+                        if (e.ctrlKey || e.metaKey) {
+                          addToSelection(view.xColumn, payload.xRaw ?? payload.x);
+                        } else {
+                          replaceSelection(view.xColumn, payload.xRaw ?? payload.x);
+                        }
+                      }}
                     />
                   );
                 }}
@@ -1040,8 +1136,8 @@ export default React.memo(function ChartRenderer({
                 <Area
                   type="monotone"
                   dataKey="yHL"
-                  stroke={blue}
-                  fill={blue}
+                  stroke={primaryColor}
+                  fill={primaryColor}
                   strokeWidth={3}
                   strokeOpacity={1}
                   fillOpacity={0.2}
@@ -1064,8 +1160,12 @@ export default React.memo(function ChartRenderer({
                 scale={xType === "date" ? "time" : undefined}
                 domain={xType === "date" ? ["auto", "auto"] : undefined}
                 tickFormatter={xType === "date" ? formatDateTick : undefined}
+                angle={rotateXLabels ? -45 : 0}
+                textAnchor={rotateXLabels ? "end" : "middle"}
+                height={rotateXLabels ? 60 : 30}
+                tick={{ fontSize: 11 }}
               />
-              <YAxis type="number" />
+              <YAxis type="number" tickFormatter={formatCompactNumber} />
               <ChartTooltip
                 content={<ChartTooltipContent />}
                 trigger="hover"
@@ -1081,17 +1181,22 @@ export default React.memo(function ChartRenderer({
                 dataKey="y"
                 isAnimationActive={false}
                 activeBar={false}
-                onClick={(data: any) => {
+                onClick={(data: any, _idx: any, event: any) => {
                   const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
                   if (clickedX !== undefined) {
-                    replaceSelection(view.xColumn, clickedX);
+                    const e = event?.nativeEvent ?? event;
+                    if (e?.ctrlKey || e?.metaKey) {
+                      addToSelection(view.xColumn, clickedX);
+                    } else {
+                      replaceSelection(view.xColumn, clickedX);
+                    }
                   }
                 }}
               >
                 {visibleData.map((entry, index) => (
                   <Cell
                     key={index}
-                    fill={isPointHighlighted(entry) ? blue : faded}
+                    fill={isPointHighlighted(entry) ? primaryColor : faded}
                     opacity={!hasSelection || isPointHighlighted(entry) ? 1 : 0.3}
                     style={{ cursor: "pointer" }}
                   />
@@ -1125,10 +1230,15 @@ export default React.memo(function ChartRenderer({
                 label={({ percent }: any) =>
                   percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ""
                 }
-                onClick={(data: any) => {
+                onClick={(data: any, _idx: any, event: any) => {
                   const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
                   if (clickedX !== undefined) {
-                    replaceSelection(view.xColumn, clickedX);
+                    const e = event?.nativeEvent ?? event;
+                    if (e?.ctrlKey || e?.metaKey) {
+                      addToSelection(view.xColumn, clickedX);
+                    } else {
+                      replaceSelection(view.xColumn, clickedX);
+                    }
                   }
                 }}
               >
@@ -1138,7 +1248,7 @@ export default React.memo(function ChartRenderer({
                     fill={
                       hasSelection
                         ? isPointHighlighted(entry)
-                          ? blue
+                          ? primaryColor
                           : faded
                         : piePalette[index % piePalette.length]
                     }
@@ -1169,12 +1279,12 @@ function KPIRenderer({
   height: number | "100%";
   filter?: ChartRendererFilter;
 }) {
-  const { rawData } = useDataset();
-  const { selection, rangeFilter, hasSelection } = useSelection();
+  const rawData = useTimeFilteredData();
+  const { selection, rangeFilter, lassoFilter, hasSelection } = useSelection();
 
   const { total, filtered, hasFilter } = React.useMemo(
-    () => computeKPIValue(rawData ?? [], view, filter, selection, rangeFilter),
-    [rawData, view, filter, selection, rangeFilter]
+    () => computeKPIValue(rawData, view, filter, selection, rangeFilter, lassoFilter),
+    [rawData, view, filter, selection, rangeFilter, lassoFilter]
   );
 
   return (
@@ -1182,7 +1292,7 @@ function KPIRenderer({
       style={{ height }}
       className="h-full w-full flex flex-col items-center justify-center gap-1"
     >
-      <span className="text-3xl font-bold tracking-tight text-primary">
+      <span className="text-2xl font-bold tracking-tight text-primary">
         {formatKPIValue(hasFilter ? filtered : total, view.yLabel)}
       </span>
       {hasFilter && hasSelection && (
@@ -1209,12 +1319,13 @@ function GroupedBarRenderer({
   filter?: ChartRendererFilter;
   stacked: boolean;
 }) {
-  const { rawData, attributeTypes } = useDataset();
-  const { selection, rangeFilter, replaceSelection, clearSelection, hasSelection } = useSelection();
+  const { attributeTypes } = useDataset();
+  const rawData = useTimeFilteredData();
+  const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
 
   // Heavy computation: build grouped data WITHOUT selection dependency
   const { rows, groups } = React.useMemo(
-    () => buildGroupedSeries(rawData ?? [], view, attributeTypes, filter),
+    () => buildGroupedSeries(rawData, view, attributeTypes, filter),
     [rawData, view, attributeTypes, filter]
   );
 
@@ -1222,17 +1333,22 @@ function GroupedBarRenderer({
   const highlightedXValues = React.useMemo(() => {
     if (!hasSelection) return new Set<string>();
     const keys = new Set<string>();
-    const rawFiltered = (rawData ?? []).filter((row: any) =>
+    const rawFiltered = rawData.filter((row: any) =>
       rowMatchesAttributeFilter(row, filter?.includeByColumn)
     );
     for (const row of rawFiltered) {
-      if (rowMatchesSelection(row, selection, rangeFilter)) {
+      if (rowMatchesSelection(row, selection, rangeFilter, lassoFilter)) {
         const xRaw = getValueByPath(row, view.xColumn);
         if (xRaw != null) keys.add(String(xRaw));
       }
     }
     return keys;
-  }, [rawData, view.xColumn, selection, rangeFilter, hasSelection, filter]);
+  }, [rawData, view.xColumn, selection, rangeFilter, lassoFilter, hasSelection, filter]);
+
+  const rotateXLabels = React.useMemo(
+    () => rows.length > 6 || rows.some((r: any) => String(r.x).length > 8),
+    [rows]
+  );
 
   const chartConfig = React.useMemo(() => {
     const cfg: ChartConfig = {};
@@ -1258,8 +1374,15 @@ function GroupedBarRenderer({
       <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
 <BarChart data={rows}>
             <CartesianGrid vertical={false} strokeOpacity={0.15} />
-            <XAxis dataKey="x" type="category" tick={{ fontSize: 11 }} />
-            <YAxis type="number" />
+            <XAxis
+              dataKey="x"
+              type="category"
+              tick={{ fontSize: 11 }}
+              angle={rotateXLabels ? -45 : 0}
+              textAnchor={rotateXLabels ? "end" : "middle"}
+              height={rotateXLabels ? 60 : 30}
+            />
+            <YAxis type="number" tickFormatter={formatCompactNumber} />
             <ChartTooltip content={<ChartTooltipContent />} trigger="hover" />
             <Legend
               wrapperStyle={{ fontSize: 11 }}
@@ -1275,10 +1398,15 @@ function GroupedBarRenderer({
                 radius={stacked ? undefined : [2, 2, 0, 0]}
                 isAnimationActive={false}
                 activeBar={false}
-                onClick={(data: any) => {
+                onClick={(data: any, _idx: any, event: any) => {
                   const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
                   if (clickedX !== undefined) {
-                    replaceSelection(view.xColumn, clickedX);
+                    const e = event?.nativeEvent ?? event;
+                    if (e?.ctrlKey || e?.metaKey) {
+                      addToSelection(view.xColumn, clickedX);
+                    } else {
+                      replaceSelection(view.xColumn, clickedX);
+                    }
                   }
                 }}
                 style={{ cursor: "pointer" }}
@@ -1315,25 +1443,27 @@ function ColoredScatterRenderer({
   height: number | "100%";
   filter?: ChartRendererFilter;
 }) {
-  const { rawData, attributeTypes } = useDataset();
-  const { selection, rangeFilter, replaceSelection, setBrushSelection, clearSelection, hasSelection } = useSelection();
+  const { attributeTypes } = useDataset();
+  const rawData = useTimeFilteredData();
+  const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, setLassoSelection, clearSelection, hasSelection } = useSelection();
 
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const [brushStart, setBrushStart] = React.useState<{ x: number; y: number } | null>(null);
-  const [brushEnd, setBrushEnd] = React.useState<{ x: number; y: number } | null>(null);
+  const lassoPathRef = React.useRef<Array<{ x: number; y: number }>>([]);
+  const [lassoPixels, setLassoPixels] = React.useState<Array<{ x: number; y: number }>>([]);
   const isDragging = React.useRef(false);
 
   const { data, groups } = React.useMemo(
     () =>
       buildColoredScatterSeries(
-        rawData ?? [],
+        rawData,
         view,
         selection,
         attributeTypes,
         filter,
-        rangeFilter
+        rangeFilter,
+        lassoFilter
       ),
-    [rawData, view, selection, attributeTypes, filter, rangeFilter]
+    [rawData, view, selection, attributeTypes, filter, rangeFilter, lassoFilter]
   );
 
   const chartConfig = React.useMemo(() => {
@@ -1369,18 +1499,18 @@ function ColoredScatterRenderer({
   const pixelToData = React.useCallback(
     (px: number, py: number) => {
       const el = containerRef.current;
-      if (!el) return { dx: 0, dy: 0 };
+      if (!el) return { x: 0, y: 0 };
       const w = el.clientWidth;
       const h = el.clientHeight;
       const plotW = w - SCATTER_MARGIN.left - SCATTER_MARGIN.right;
       const plotH = h - SCATTER_MARGIN.top - SCATTER_MARGIN.bottom;
-      const dx =
+      const x =
         dataRange.xMin +
         ((px - SCATTER_MARGIN.left) / plotW) * (dataRange.xMax - dataRange.xMin);
-      const dy =
+      const y =
         dataRange.yMax -
         ((py - SCATTER_MARGIN.top) / plotH) * (dataRange.yMax - dataRange.yMin);
-      return { dx, dy };
+      return { x, y };
     },
     [dataRange]
   );
@@ -1392,62 +1522,52 @@ function ColoredScatterRenderer({
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       isDragging.current = false;
-      setBrushStart({ x, y });
-      setBrushEnd({ x, y });
+      lassoPathRef.current = [{ x, y }];
+      setLassoPixels([{ x, y }]);
     },
     []
   );
 
   const handleMouseMove = React.useCallback(
     (e: React.MouseEvent) => {
-      if (!brushStart) return;
+      if (lassoPathRef.current.length === 0) return;
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      const dx = Math.abs(x - brushStart.x);
-      const dy = Math.abs(y - brushStart.y);
-      if (dx > 5 || dy > 5) isDragging.current = true;
-      setBrushEnd({ x, y });
+      const last = lassoPathRef.current[lassoPathRef.current.length - 1];
+      const dist = Math.hypot(x - last.x, y - last.y);
+      if (dist < 3) return; // throttle: skip if <3px from last point
+      if (!isDragging.current && dist > 5) isDragging.current = true;
+      lassoPathRef.current.push({ x, y });
+      setLassoPixels([...lassoPathRef.current]);
     },
-    [brushStart]
+    []
   );
 
   const handleMouseUp = React.useCallback(() => {
-    if (!brushStart || !brushEnd) {
-      setBrushStart(null);
-      setBrushEnd(null);
+    const path = lassoPathRef.current;
+    lassoPathRef.current = [];
+
+    if (path.length < 5 || !isDragging.current) {
+      // Too few points = click, not lasso
+      setLassoPixels([]);
+      isDragging.current = false;
       return;
     }
 
-    if (!isDragging.current) {
-      // Small movement = click, not brush. Clear brush state.
-      setBrushStart(null);
-      setBrushEnd(null);
-      return;
-    }
+    // Convert pixel path to data coords
+    const polygon = path.map((p) => pixelToData(p.x, p.y));
 
-    // Convert pixel coords to data coords
-    const p1 = pixelToData(brushStart.x, brushStart.y);
-    const p2 = pixelToData(brushEnd.x, brushEnd.y);
-
-    const xMin = Math.min(p1.dx, p2.dx);
-    const xMax = Math.max(p1.dx, p2.dx);
-    const yMin = Math.min(p1.dy, p2.dy);
-    const yMax = Math.max(p1.dy, p2.dy);
-
-    setBrushSelection({
+    setLassoSelection({
       xColumn: view.xColumn,
       yColumn: view.yColumn,
-      xMin,
-      xMax,
-      yMin,
-      yMax,
+      polygon,
     });
 
-    setBrushStart(null);
-    setBrushEnd(null);
-  }, [brushStart, brushEnd, pixelToData, setBrushSelection, view.xColumn, view.yColumn]);
+    setLassoPixels([]);
+    isDragging.current = false;
+  }, [pixelToData, setLassoSelection, view.xColumn, view.yColumn]);
 
   if (!data.length) {
     return (
@@ -1457,7 +1577,9 @@ function ColoredScatterRenderer({
     );
   }
 
-  const showBrushRect = brushStart && brushEnd && isDragging.current;
+  const lassoSvgPath = lassoPixels.length > 1
+    ? lassoPixels.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ")
+    : "";
 
   return (
     <div
@@ -1483,6 +1605,7 @@ function ColoredScatterRenderer({
               type="number"
               dataKey="y"
               name={view.yLabel ?? view.yColumn}
+              tickFormatter={formatCompactNumber}
             />
             <ChartTooltip trigger="hover" content={<ChartTooltipContent />} />
             <Legend
@@ -1499,11 +1622,16 @@ function ColoredScatterRenderer({
                   data={groupData}
                   fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
                   isAnimationActive={false}
-                  onClick={(e: any) => {
+                  onClick={(e: any, _idx: any, event: any) => {
                     if (isDragging.current) return;
                     const clickedX = e?.payload?.xRaw ?? e?.payload?.x;
                     if (clickedX !== undefined) {
-                      replaceSelection(view.xColumn, clickedX);
+                      const ne = event?.nativeEvent ?? event;
+                      if (ne?.ctrlKey || ne?.metaKey) {
+                        addToSelection(view.xColumn, clickedX);
+                      } else {
+                        replaceSelection(view.xColumn, clickedX);
+                      }
                     }
                   }}
                 >
@@ -1521,17 +1649,11 @@ function ColoredScatterRenderer({
           </ScatterChart>
       </ChartContainer>
 
-      {/* Brush selection rectangle */}
-      {showBrushRect && (
-        <div
-          className="absolute pointer-events-none border border-blue-500/50 bg-blue-500/10 rounded-sm"
-          style={{
-            left: Math.min(brushStart.x, brushEnd.x),
-            top: Math.min(brushStart.y, brushEnd.y),
-            width: Math.abs(brushEnd.x - brushStart.x),
-            height: Math.abs(brushEnd.y - brushStart.y),
-          }}
-        />
+      {/* Freehand lasso overlay */}
+      {lassoSvgPath && (
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 10 }}>
+          <path d={lassoSvgPath} fill="rgba(102,194,165,0.1)" stroke="#66c2a5" strokeWidth={1.5} strokeDasharray="4 2" />
+        </svg>
       )}
     </div>
   );
@@ -1550,20 +1672,21 @@ function ScatterWithBrush({
   height: number | "100%";
   filter?: ChartRendererFilter;
 }) {
-  const { rawData, attributeTypes } = useDataset();
-  const { selection, rangeFilter, replaceSelection, setBrushSelection, clearSelection, hasSelection } = useSelection();
+  const { attributeTypes } = useDataset();
+  const rawData = useTimeFilteredData();
+  const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, setLassoSelection, clearSelection, hasSelection } = useSelection();
 
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const [brushStart, setBrushStart] = React.useState<{ x: number; y: number } | null>(null);
-  const [brushEnd, setBrushEnd] = React.useState<{ x: number; y: number } | null>(null);
+  const lassoPathRef = React.useRef<Array<{ x: number; y: number }>>([]);
+  const [lassoPixels, setLassoPixels] = React.useState<Array<{ x: number; y: number }>>([]);
   const isDragging = React.useRef(false);
 
-  const blue = "#3b82f6";
+  const primaryColor = "#66c2a5";
   const faded = "#cbd5e1";
 
-  const { data, xType } = React.useMemo(() => {
-    return buildSeries(rawData ?? [], view, selection, attributeTypes, filter, rangeFilter);
-  }, [rawData, view, selection, attributeTypes, filter, rangeFilter]);
+  const { data, xType: _xType } = React.useMemo(() => {
+    return buildSeries(rawData, view, selection, attributeTypes, filter, rangeFilter, lassoFilter);
+  }, [rawData, view, selection, attributeTypes, filter, rangeFilter, lassoFilter]);
 
   const visibleData = React.useMemo(
     () => applyChartViewFilter(data, filter),
@@ -1600,18 +1723,18 @@ function ScatterWithBrush({
   const pixelToData = React.useCallback(
     (px: number, py: number) => {
       const el = containerRef.current;
-      if (!el) return { dx: 0, dy: 0 };
+      if (!el) return { x: 0, y: 0 };
       const w = el.clientWidth;
       const h = el.clientHeight;
       const plotW = w - SCATTER_MARGIN.left - SCATTER_MARGIN.right;
       const plotH = h - SCATTER_MARGIN.top - SCATTER_MARGIN.bottom;
-      const dx =
+      const x =
         dataRange.xMin +
         ((px - SCATTER_MARGIN.left) / plotW) * (dataRange.xMax - dataRange.xMin);
-      const dy =
+      const y =
         dataRange.yMax -
         ((py - SCATTER_MARGIN.top) / plotH) * (dataRange.yMax - dataRange.yMin);
-      return { dx, dy };
+      return { x, y };
     },
     [dataRange]
   );
@@ -1623,60 +1746,50 @@ function ScatterWithBrush({
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       isDragging.current = false;
-      setBrushStart({ x, y });
-      setBrushEnd({ x, y });
+      lassoPathRef.current = [{ x, y }];
+      setLassoPixels([{ x, y }]);
     },
     []
   );
 
   const handleMouseMove = React.useCallback(
     (e: React.MouseEvent) => {
-      if (!brushStart) return;
+      if (lassoPathRef.current.length === 0) return;
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      const dx = Math.abs(x - brushStart.x);
-      const dy = Math.abs(y - brushStart.y);
-      if (dx > 5 || dy > 5) isDragging.current = true;
-      setBrushEnd({ x, y });
+      const last = lassoPathRef.current[lassoPathRef.current.length - 1];
+      const dist = Math.hypot(x - last.x, y - last.y);
+      if (dist < 3) return;
+      if (!isDragging.current && dist > 5) isDragging.current = true;
+      lassoPathRef.current.push({ x, y });
+      setLassoPixels([...lassoPathRef.current]);
     },
-    [brushStart]
+    []
   );
 
   const handleMouseUp = React.useCallback(() => {
-    if (!brushStart || !brushEnd) {
-      setBrushStart(null);
-      setBrushEnd(null);
+    const path = lassoPathRef.current;
+    lassoPathRef.current = [];
+
+    if (path.length < 5 || !isDragging.current) {
+      setLassoPixels([]);
+      isDragging.current = false;
       return;
     }
 
-    if (!isDragging.current) {
-      setBrushStart(null);
-      setBrushEnd(null);
-      return;
-    }
+    const polygon = path.map((p) => pixelToData(p.x, p.y));
 
-    const p1 = pixelToData(brushStart.x, brushStart.y);
-    const p2 = pixelToData(brushEnd.x, brushEnd.y);
-
-    const xMin = Math.min(p1.dx, p2.dx);
-    const xMax = Math.max(p1.dx, p2.dx);
-    const yMin = Math.min(p1.dy, p2.dy);
-    const yMax = Math.max(p1.dy, p2.dy);
-
-    setBrushSelection({
+    setLassoSelection({
       xColumn: view.xColumn,
       yColumn: view.yColumn,
-      xMin,
-      xMax,
-      yMin,
-      yMax,
+      polygon,
     });
 
-    setBrushStart(null);
-    setBrushEnd(null);
-  }, [brushStart, brushEnd, pixelToData, setBrushSelection, view.xColumn, view.yColumn]);
+    setLassoPixels([]);
+    isDragging.current = false;
+  }, [pixelToData, setLassoSelection, view.xColumn, view.yColumn]);
 
   if (!visibleData.length) {
     return (
@@ -1686,7 +1799,9 @@ function ScatterWithBrush({
     );
   }
 
-  const showBrushRect = brushStart && brushEnd && isDragging.current;
+  const lassoSvgPath = lassoPixels.length > 1
+    ? lassoPixels.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ")
+    : "";
 
   return (
     <div
@@ -1703,25 +1818,30 @@ function ScatterWithBrush({
       <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
 <ScatterChart margin={SCATTER_MARGIN}>
             <CartesianGrid vertical={false} strokeOpacity={0.15} />
-            <XAxis type="number" dataKey="x" />
-            <YAxis type="number" dataKey="y" />
+            <XAxis type="number" dataKey="x" tickFormatter={formatCompactNumber} />
+            <YAxis type="number" dataKey="y" tickFormatter={formatCompactNumber} />
             <ChartTooltip trigger="hover" content={<ChartTooltipContent />} />
 
             <Scatter
               data={visibleData}
               isAnimationActive={false}
-              onClick={(e: any) => {
+              onClick={(e: any, _idx: any, event: any) => {
                 if (isDragging.current) return;
                 const clickedX = e?.payload?.xRaw ?? e?.payload?.x;
                 if (clickedX !== undefined) {
-                  replaceSelection(view.xColumn, clickedX);
+                  const ne = event?.nativeEvent ?? event;
+                  if (ne?.ctrlKey || ne?.metaKey) {
+                    addToSelection(view.xColumn, clickedX);
+                  } else {
+                    replaceSelection(view.xColumn, clickedX);
+                  }
                 }
               }}
             >
               {visibleData.map((entry, index) => (
                 <Cell
                   key={index}
-                  fill={entry.highlighted ? blue : faded}
+                  fill={entry.highlighted ? primaryColor : faded}
                   opacity={!hasSelection || entry.highlighted ? 1 : 0.15}
                   style={{ cursor: "pointer" }}
                 />
@@ -1730,17 +1850,11 @@ function ScatterWithBrush({
           </ScatterChart>
       </ChartContainer>
 
-      {/* Brush selection rectangle */}
-      {showBrushRect && (
-        <div
-          className="absolute pointer-events-none border border-blue-500/50 bg-blue-500/10 rounded-sm"
-          style={{
-            left: Math.min(brushStart.x, brushEnd.x),
-            top: Math.min(brushStart.y, brushEnd.y),
-            width: Math.abs(brushEnd.x - brushStart.x),
-            height: Math.abs(brushEnd.y - brushStart.y),
-          }}
-        />
+      {/* Freehand lasso overlay */}
+      {lassoSvgPath && (
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 10 }}>
+          <path d={lassoSvgPath} fill="rgba(102,194,165,0.1)" stroke="#66c2a5" strokeWidth={1.5} strokeDasharray="4 2" />
+        </svg>
       )}
     </div>
   );
@@ -1755,16 +1869,18 @@ function TableRenderer({
   height,
   filter,
   replaceSelection,
+  addToSelection,
 }: {
   view: Extract<View, { chartType: "TABLE" }>;
   height: number | "100%";
   filter?: ChartRendererFilter;
   replaceSelection: (column: string, value: any) => void;
+  addToSelection: (column: string, value: any) => void;
 }) {
-  const { rawData } = useDataset();
-  const { selection, rangeFilter, hasSelection } = useSelection();
+  const rawData = useTimeFilteredData();
+  const { selection, rangeFilter, lassoFilter, hasSelection } = useSelection();
 
-  if (!Array.isArray(rawData) || rawData.length === 0) {
+  if (rawData.length === 0) {
     return <div>No data</div>;
   }
 
@@ -1793,7 +1909,7 @@ function TableRenderer({
         </TableHeader>
         <TableBody>
           {rows.map((row, i) => {
-            const highlighted = rowMatchesSelection(row, selection, rangeFilter);
+            const highlighted = rowMatchesSelection(row, selection, rangeFilter, lassoFilter);
 
             return (
               <TableRow
@@ -1801,10 +1917,14 @@ function TableRenderer({
                 className={`cursor-pointer ${
                   hasSelection && !highlighted ? "opacity-40" : ""
                 }`}
-                onClick={() => {
+                onClick={(e) => {
                   const value = getValueByPath(row, columns[0]);
                   if (value !== undefined) {
-                    replaceSelection(columns[0], value);
+                    if (e.ctrlKey || e.metaKey) {
+                      addToSelection(columns[0], value);
+                    } else {
+                      replaceSelection(columns[0], value);
+                    }
                   }
                 }}
               >

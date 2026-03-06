@@ -29,6 +29,7 @@ import { Edit, Plus } from "lucide-react";
 import { IconSparkles } from "@tabler/icons-react";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 import { SelectionProvider } from "@/context/SelectionContext";
+import { TimeFilterProvider } from "@/context/TimeFilterContext";
 
 import { useExperimentLogger } from "@/hooks/useExperimentLogger";
 
@@ -1137,7 +1138,9 @@ export default function Page() {
       <SelectionProvider>
         <FocusProvider>
           <DatasetProvider>
-            <AppContent />
+            <TimeFilterProvider>
+              <AppContent />
+            </TimeFilterProvider>
           </DatasetProvider>
         </FocusProvider>
       </SelectionProvider>
