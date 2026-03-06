@@ -83,7 +83,11 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
   const replaceSelection = useCallback((column: string, value: any) => {
     setRangeFilter(null);
     setLassoFilter(null);
-    setSelection(() => {
+    setSelection((prev) => {
+      // Toggle off: clicking the same already-selected value clears selection
+      if (Object.keys(prev).length === 1 && prev[column]?.has(value) && prev[column].size === 1) {
+        return {};
+      }
       return {
         [column]: new Set([value]),
       };

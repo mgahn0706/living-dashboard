@@ -915,7 +915,7 @@ export default React.memo(function ChartRenderer({
               <Tooltip
                 trigger="hover"
                 formatter={(value: any) => [
-                  Number(value).toLocaleString(),
+                  formatCompactNumber(Number(value)),
                   "Count",
                 ]}
               />
@@ -1021,7 +1021,7 @@ export default React.memo(function ChartRenderer({
                   const numeric = Number(value);
                   const valueText = Number.isNaN(numeric)
                     ? String(value)
-                    : numeric.toLocaleString();
+                    : formatCompactNumber(numeric);
                   return [`${valueText} (${ratio.toFixed(1)}%)`, "Value"];
                 }}
               />
@@ -1051,10 +1051,8 @@ export default React.memo(function ChartRenderer({
                   <Cell
                     key={index}
                     fill={
-                      hasSelection
-                        ? isPointHighlighted(entry)
-                          ? primaryColor
-                          : faded
+                      hasSelection && !isPointHighlighted(entry)
+                        ? faded
                         : piePalette[index % piePalette.length]
                     }
                     stroke="#ffffff"
@@ -1217,7 +1215,7 @@ export default React.memo(function ChartRenderer({
                   const numeric = Number(value);
                   const valueText = Number.isNaN(numeric)
                     ? String(value)
-                    : numeric.toLocaleString();
+                    : formatCompactNumber(numeric);
                   return [`${valueText} (${ratio.toFixed(1)}%)`, "Value"];
                 }}
               />
@@ -1246,10 +1244,8 @@ export default React.memo(function ChartRenderer({
                   <Cell
                     key={index}
                     fill={
-                      hasSelection
-                        ? isPointHighlighted(entry)
-                          ? primaryColor
-                          : faded
+                      hasSelection && !isPointHighlighted(entry)
+                        ? faded
                         : piePalette[index % piePalette.length]
                     }
                     stroke="#ffffff"

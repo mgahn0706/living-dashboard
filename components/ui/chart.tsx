@@ -3,7 +3,7 @@
 import * as React from 'react'
 import * as RechartsPrimitive from 'recharts'
 
-import { cn } from '@/lib/utils'
+import { cn, formatCompactNumber } from '@/lib/utils'
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: '', dark: '.dark' } as const
@@ -222,7 +222,7 @@ function ChartTooltipContent({
                   )}
                   <div
                     className={cn(
-                      'flex flex-1 justify-between leading-none',
+                      'flex flex-1 justify-between gap-4 leading-none',
                       nestLabel ? 'items-end' : 'items-center',
                     )}
                   >
@@ -232,9 +232,11 @@ function ChartTooltipContent({
                         {itemConfig?.label || item.name}
                       </span>
                     </div>
-                    {item.value && (
+                    {item.value !== undefined && item.value !== null && (
                       <span className="text-foreground font-mono font-medium tabular-nums">
-                        {item.value.toLocaleString()}
+                        {typeof item.value === 'number'
+                          ? formatCompactNumber(item.value)
+                          : item.value}
                       </span>
                     )}
                   </div>
