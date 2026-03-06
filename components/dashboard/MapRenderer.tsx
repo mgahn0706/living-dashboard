@@ -171,9 +171,50 @@ export default function MapRenderer({
   const yColumn = view.yColumn;
   const agg = view.aggregation || "sum";
 
+  // Cross-filter: when selection is from another chart, filter data so values update
+  const crossFilteredData = React.useMemo(() => {
+    if (!hasSelection) return rawData;
+    // Inline selection matching (mirrors ChartRenderer's rowMatchesSelection)
+    return rawData.filter((row: any) => {
+      // Discrete selection
+      if (selection && Object.keys(selection).length > 0) {
+        const match = Object.entries(selection).every(([col, values]: any) => {
+          if (!values || values.size === 0) return true;
+          const val = getValueByPath(row, col);
+          return values.has(val);
+        });
+        if (!match) return false;
+      }
+      // Range filter
+      if (rangeFilter) {
+        const xVal = Number(getValueByPath(row, rangeFilter.xColumn));
+        const yVal = Number(getValueByPath(row, rangeFilter.yColumn));
+        if (Number.isNaN(xVal) || Number.isNaN(yVal)) return false;
+        if (xVal < rangeFilter.xMin || xVal > rangeFilter.xMax || yVal < rangeFilter.yMin || yVal > rangeFilter.yMax) return false;
+      }
+      // Lasso filter
+      if (lassoFilter) {
+        const xVal = Number(getValueByPath(row, lassoFilter.xColumn));
+        const yVal = Number(getValueByPath(row, lassoFilter.yColumn));
+        if (Number.isNaN(xVal) || Number.isNaN(yVal)) return false;
+        let inside = false;
+        const poly = lassoFilter.polygon;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const xi = poly[i].x, yi = poly[i].y;
+          const xj = poly[j].x, yj = poly[j].y;
+          if ((yi > yVal) !== (yj > yVal) && xVal < ((xj - xi) * (yVal - yi)) / (yj - yi) + xi) {
+            inside = !inside;
+          }
+        }
+        if (!inside) return false;
+      }
+      return true;
+    });
+  }, [rawData, hasSelection, selection, rangeFilter, lassoFilter]);
+
   // Filter + aggregate by country
   const bubbleData = React.useMemo(() => {
-    const filtered = rawData.filter((row: any) =>
+    const filtered = crossFilteredData.filter((row: any) =>
       rowMatchesAttributeFilter(row, filter?.includeByColumn)
     );
 
@@ -203,7 +244,7 @@ export default function MapRenderer({
     }
 
     return result;
-  }, [rawData, countryColumn, yColumn, agg, filter]);
+  }, [crossFilteredData, countryColumn, yColumn, agg, filter]);
 
   // Compute bubble scale
   const { maxValue, scale } = React.useMemo(() => {

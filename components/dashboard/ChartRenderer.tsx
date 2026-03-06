@@ -806,11 +806,16 @@ export default React.memo(function ChartRenderer({
   const isChartView = view.chartType !== "TABLE";
   const chartView = isChartView ? (view as ChartView) : null;
 
-  // Heavy computation: build base data WITHOUT selection dependency (stable across clicks)
+  // Cross-filter: when selection exists, rebuild data from only matching rows
+  const crossFilteredData = React.useMemo(() => {
+    if (!hasSelection) return rawData;
+    return rawData.filter((row: any) => rowMatchesSelection(row, selection, rangeFilter, lassoFilter));
+  }, [rawData, hasSelection, selection, rangeFilter, lassoFilter]);
+
   const { data: baseData, xType } = React.useMemo(() => {
     if (!chartView) return { data: [] as GenericPoint[], xType: "category" as const };
-    return buildSeries(rawData, chartView, {}, attributeTypes, filter, null, null);
-  }, [rawData, chartView, attributeTypes, filter]);
+    return buildSeries(crossFilteredData, chartView, {}, attributeTypes, filter, null, null);
+  }, [crossFilteredData, chartView, attributeTypes, filter]);
 
   // Lightweight: compute which x values are highlighted by current selection
   const highlightedXKeys = React.useMemo(() => {
@@ -1386,10 +1391,15 @@ function GroupedBarRenderer({
   const rawData = useTimeFilteredData();
   const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
 
-  // Heavy computation: build grouped data WITHOUT selection dependency
+  // Cross-filter: when selection exists, rebuild data from only matching rows
+  const crossFilteredData = React.useMemo(() => {
+    if (!hasSelection) return rawData;
+    return rawData.filter((row: any) => rowMatchesSelection(row, selection, rangeFilter, lassoFilter));
+  }, [rawData, hasSelection, selection, rangeFilter, lassoFilter]);
+
   const { rows, groups } = React.useMemo(
-    () => buildGroupedSeries(rawData, view, attributeTypes, filter),
-    [rawData, view, attributeTypes, filter]
+    () => buildGroupedSeries(crossFilteredData, view, attributeTypes, filter),
+    [crossFilteredData, view, attributeTypes, filter]
   );
 
   // Lightweight: compute which x values are highlighted
@@ -1518,10 +1528,16 @@ function HorizontalBarDrillDown({
   const yColumn = view.yColumn;
   const agg = view.aggregation || "sum";
 
-  // Filter raw data by view filter (e.g. Status = Won)
+  // Cross-filter: when selection exists, filter to matching rows first
+  const crossFilteredData = React.useMemo(() => {
+    if (!hasSelection) return rawData;
+    return rawData.filter((row: any) => rowMatchesSelection(row, selection, rangeFilter, lassoFilter));
+  }, [rawData, hasSelection, selection, rangeFilter, lassoFilter]);
+
+  // Then apply view filter (e.g. Status = Won)
   const filteredRawData = React.useMemo(
-    () => rawData.filter((row: any) => rowMatchesAttributeFilter(row, filter?.includeByColumn)),
-    [rawData, filter]
+    () => crossFilteredData.filter((row: any) => rowMatchesAttributeFilter(row, filter?.includeByColumn)),
+    [crossFilteredData, filter]
   );
 
   // Category-level aggregation (top level)
