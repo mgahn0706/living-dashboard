@@ -220,14 +220,13 @@ export default function ChartCreatorSidebar({
                   size="sm"
                   onClick={() => handleToggle(c.type)}
                   disabled={!isTypeAvailable(c.type)}
-                  className={`flex items-center gap-1 px-2 h-8 text-[11px] ${
+                  className={`flex items-center justify-center p-0 h-8 w-8 ${
                     selectedType === c.type
                       ? "bg-accent text-accent-foreground"
                       : ""
                   }`}
                 >
                   <span className="size-4 shrink-0">{c.icon}</span>
-                  <span className="truncate">{c.label}</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{c.label}</TooltipContent>

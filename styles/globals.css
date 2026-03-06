@@ -123,3 +123,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Prevent Recharts tooltips from capturing mouse events */
+[data-slot="chart"] .recharts-tooltip-wrapper {
+  pointer-events: none !important;
+}
+
+/* Force-hide tooltips when mouse is not over the chart container */
+[data-slot="chart"]:not(:hover) .recharts-tooltip-wrapper {
+  visibility: hidden !important;
+}

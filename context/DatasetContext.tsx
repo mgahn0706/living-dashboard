@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useState } from "react";
 import * as XLSX from "xlsx";
 
 /* =====================================================
@@ -278,8 +278,10 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
     ingestData(enriched);
   };
 
-  const resolveAttribute = (attr: string) =>
-    getValuesByAttribute(rawData, attr);
+  const resolveAttribute = useCallback(
+    (attr: string) => getValuesByAttribute(rawData, attr),
+    [rawData]
+  );
 
   return (
     <DatasetContext.Provider

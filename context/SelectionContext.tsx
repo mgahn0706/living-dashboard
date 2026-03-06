@@ -66,15 +66,10 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
 
   const replaceSelection = useCallback((column: string, value: any) => {
     setRangeFilter(null);
-    setSelection((prev) => {
-      const currentSet = prev[column];
-
-      // if same column & same value already selected -> clear
-      if (currentSet?.has(value) && Object.keys(prev).length === 1) {
-        return {};
-      }
-
-      // replace entire selection with new column/value
+    setSelection(() => {
+      // Always set the clicked value as the active selection.
+      // No toggle-off: clicking the same bar keeps it selected
+      // so that the rest of the dashboard stays cross-filtered.
       return {
         [column]: new Set([value]),
       };

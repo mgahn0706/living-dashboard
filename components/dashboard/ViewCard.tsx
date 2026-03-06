@@ -124,7 +124,7 @@ function buildFilterFromDraft(draft: {
    ViewCard
 ======================================================= */
 
-export default function ViewCard({
+export default React.memo(function ViewCard({
   view,
   isSelected,
   preview = null,
@@ -496,7 +496,7 @@ export default function ViewCard({
       </Card>
     </>
   );
-}
+});
 
 /* =======================================================
    Recommendation Banner

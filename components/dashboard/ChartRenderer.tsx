@@ -25,7 +25,6 @@ import {
   CartesianGrid,
   XAxis,
   YAxis,
-  ResponsiveContainer,
   ScatterChart,
   Scatter,
   Cell,
@@ -686,7 +685,7 @@ const SCATTER_MARGIN = { top: 10, right: 20, bottom: 30, left: 60 };
    Main Renderer
 ======================================================= */
 
-export default function ChartRenderer({
+export default React.memo(function ChartRenderer({
   view,
   height = "100%",
   filter,
@@ -696,7 +695,7 @@ export default function ChartRenderer({
   filter?: ChartRendererFilter;
 }) {
   const { rawData, attributeTypes } = useDataset();
-  const { selection, rangeFilter, replaceSelection, hasSelection } = useSelection();
+  const { selection, rangeFilter, replaceSelection, clearSelection, hasSelection } = useSelection();
 
   const blue = "#3b82f6";
   const faded = "#cbd5e1";
@@ -706,14 +705,39 @@ export default function ChartRenderer({
   const isChartView = view.chartType !== "TABLE";
   const chartView = isChartView ? (view as ChartView) : null;
 
-  const { data, xType } = React.useMemo(() => {
+  // Heavy computation: build base data WITHOUT selection dependency (stable across clicks)
+  const { data: baseData, xType } = React.useMemo(() => {
     if (!chartView) return { data: [] as GenericPoint[], xType: "category" as const };
-    return buildSeries(rawData ?? [], chartView, selection, attributeTypes, filter, rangeFilter);
-  }, [rawData, chartView, selection, attributeTypes, filter, rangeFilter]);
+    return buildSeries(rawData ?? [], chartView, {}, attributeTypes, filter, null);
+  }, [rawData, chartView, attributeTypes, filter]);
+
+  // Lightweight: compute which x values are highlighted by current selection
+  const highlightedXKeys = React.useMemo(() => {
+    if (!hasSelection || !chartView) return null;
+    const keys = new Set<any>();
+    const rawFiltered = (rawData ?? []).filter((row: any) =>
+      rowMatchesAttributeFilter(row, filter?.includeByColumn)
+    );
+    for (const row of rawFiltered) {
+      if (rowMatchesSelection(row, selection, rangeFilter)) {
+        const xRaw = getValueByPath(row, chartView.xColumn);
+        keys.add(xRaw);
+      }
+    }
+    return keys;
+  }, [rawData, chartView, selection, rangeFilter, hasSelection, filter]);
+
+  const isPointHighlighted = React.useCallback(
+    (point: { x: any; xRaw?: any }) => {
+      if (!highlightedXKeys) return true;
+      return highlightedXKeys.has(point.xRaw) || highlightedXKeys.has(point.x);
+    },
+    [highlightedXKeys]
+  );
 
   const visibleData = React.useMemo(
-    () => applyChartViewFilter(data, filter),
-    [data, filter]
+    () => applyChartViewFilter(baseData, filter),
+    [baseData, filter]
   );
 
   const pieData = React.useMemo(() => {
@@ -802,16 +826,16 @@ export default function ChartRenderer({
         name: String(d.xRaw ?? d.x),
         value: d.y,
         fill: FUNNEL_PALETTE[i % FUNNEL_PALETTE.length],
-        highlighted: d.highlighted,
+        highlighted: isPointHighlighted(d),
         xRaw: d.xRaw ?? d.x,
       }));
 
     return (
-      <div className="h-full w-full" style={{ height }}>
-        <ChartContainer config={chartConfig} className="h-full w-full p-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <FunnelChart>
+      <div className="h-full w-full outline-none" style={{ height }} onDoubleClick={() => clearSelection()} onClick={(e) => e.stopPropagation()}>
+        <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
+<FunnelChart>
               <Tooltip
+                trigger="hover"
                 formatter={(value: any) => [
                   Number(value).toLocaleString(),
                   "Count",
@@ -822,7 +846,7 @@ export default function ChartRenderer({
                 data={funnelData}
                 isAnimationActive={false}
                 onClick={(data: any) => {
-                  const clickedX = data?.xRaw ?? data?.name;
+                  const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x ?? data?.name;
                   if (clickedX !== undefined) {
                     replaceSelection(view.xColumn, clickedX);
                   }
@@ -851,7 +875,6 @@ export default function ChartRenderer({
                 ))}
               </Funnel>
             </FunnelChart>
-          </ResponsiveContainer>
         </ChartContainer>
       </div>
     );
@@ -860,10 +883,9 @@ export default function ChartRenderer({
   /* ---- HORIZONTAL_BAR ---- */
   if (view.chartType === "HORIZONTAL_BAR") {
     return (
-      <div className="h-full w-full" style={{ height }}>
-        <ChartContainer config={chartConfig} className="h-full w-full p-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={visibleData} layout="vertical">
+      <div className="h-full w-full outline-none" style={{ height }} onDoubleClick={() => clearSelection()} onClick={(e) => e.stopPropagation()}>
+        <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
+<BarChart data={visibleData} layout="vertical">
               <CartesianGrid horizontal={false} strokeOpacity={0.15} />
               <XAxis type="number" />
               <YAxis
@@ -872,11 +894,13 @@ export default function ChartRenderer({
                 width={100}
                 tick={{ fontSize: 11 }}
               />
-              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartTooltip content={<ChartTooltipContent />} trigger="hover" />
               <Bar
                 dataKey="y"
+                isAnimationActive={false}
+                activeBar={false}
                 onClick={(data: any) => {
-                  const clickedX = data?.payload?.xRaw ?? data?.payload?.x;
+                  const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
                   if (clickedX !== undefined) {
                     replaceSelection(view.xColumn, clickedX);
                   }
@@ -885,14 +909,13 @@ export default function ChartRenderer({
                 {visibleData.map((entry, index) => (
                   <Cell
                     key={index}
-                    fill={entry.highlighted ? blue : faded}
-                    opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                    fill={isPointHighlighted(entry) ? blue : faded}
+                    opacity={!hasSelection || isPointHighlighted(entry) ? 1 : 0.3}
                     style={{ cursor: "pointer" }}
                   />
                 ))}
               </Bar>
             </BarChart>
-          </ResponsiveContainer>
         </ChartContainer>
       </div>
     );
@@ -901,12 +924,12 @@ export default function ChartRenderer({
   /* ---- DONUT ---- */
   if (view.chartType === "DONUT") {
     return (
-      <div className="h-full w-full" style={{ height }}>
-        <ChartContainer config={chartConfig} className="h-full w-full p-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
+      <div className="h-full w-full outline-none" style={{ height }} onDoubleClick={() => clearSelection()} onClick={(e) => e.stopPropagation()}>
+        <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
+<PieChart>
               <ChartTooltip
                 content={<ChartTooltipContent />}
+                trigger="hover"
                 labelFormatter={(_label: any, payload: any) =>
                   payload?.[0]?.payload?.name ?? ""
                 }
@@ -924,12 +947,13 @@ export default function ChartRenderer({
                 dataKey="y"
                 nameKey="name"
                 innerRadius="50%"
+                isAnimationActive={false}
                 labelLine={false}
                 label={({ percent }: any) =>
                   percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ""
                 }
                 onClick={(data: any) => {
-                  const clickedX = data?.xRaw ?? data?.x;
+                  const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
                   if (clickedX !== undefined) {
                     replaceSelection(view.xColumn, clickedX);
                   }
@@ -940,20 +964,19 @@ export default function ChartRenderer({
                     key={index}
                     fill={
                       hasSelection
-                        ? entry.highlighted
+                        ? isPointHighlighted(entry)
                           ? blue
                           : faded
                         : piePalette[index % piePalette.length]
                     }
                     stroke="#ffffff"
                     strokeWidth={1}
-                    opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                    opacity={!hasSelection || isPointHighlighted(entry) ? 1 : 0.3}
                     style={{ cursor: "pointer" }}
                   />
                 ))}
               </Pie>
             </PieChart>
-          </ResponsiveContainer>
         </ChartContainer>
       </div>
     );
@@ -961,10 +984,9 @@ export default function ChartRenderer({
 
   /* ---- Original chart types: LINE, BAR, PIE ---- */
   return (
-    <div className="h-full w-full" style={{ height }}>
-      <ChartContainer config={chartConfig} className="h-full w-full p-0">
-        <ResponsiveContainer width="100%" height="100%">
-          {view.chartType === "LINE" ? (
+    <div className="h-full w-full outline-none" style={{ height }} onDoubleClick={() => clearSelection()} onClick={(e) => e.stopPropagation()}>
+      <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
+{view.chartType === "LINE" ? (
             <AreaChart data={visibleData}>
               <CartesianGrid vertical={false} strokeOpacity={0.15} />
               <XAxis
@@ -977,6 +999,7 @@ export default function ChartRenderer({
               <YAxis type="number" />
               <ChartTooltip
                 content={<ChartTooltipContent />}
+                trigger="hover"
                 labelFormatter={
                   xType === "date"
                     ? (_label: any, payload: any) =>
@@ -995,7 +1018,7 @@ export default function ChartRenderer({
                 isAnimationActive={false}
                 dot={(props: any) => {
                   const { cx, cy, payload } = props;
-                  const highlighted = payload.highlighted;
+                  const highlighted = isPointHighlighted(payload);
 
                   return (
                     <circle
@@ -1016,16 +1039,19 @@ export default function ChartRenderer({
               {hasSelection && (
                 <Area
                   type="monotone"
-                  dataKey="y"
+                  dataKey="yHL"
                   stroke={blue}
                   fill={blue}
                   strokeWidth={3}
                   strokeOpacity={1}
                   fillOpacity={0.2}
                   isAnimationActive={false}
-                  data={visibleData.map((d) =>
-                    d.highlighted ? d : { ...d, y: null }
-                  )}
+                  legendType="none"
+                  tooltipType="none"
+                  data={visibleData.map((d) => ({
+                    ...d,
+                    yHL: isPointHighlighted(d) ? d.y : null,
+                  }))}
                 />
               )}
             </AreaChart>
@@ -1042,6 +1068,7 @@ export default function ChartRenderer({
               <YAxis type="number" />
               <ChartTooltip
                 content={<ChartTooltipContent />}
+                trigger="hover"
                 labelFormatter={
                   xType === "date"
                     ? (_label: any, payload: any) =>
@@ -1052,8 +1079,10 @@ export default function ChartRenderer({
 
               <Bar
                 dataKey="y"
+                isAnimationActive={false}
+                activeBar={false}
                 onClick={(data: any) => {
-                  const clickedX = data?.payload?.xRaw ?? data?.payload?.x;
+                  const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
                   if (clickedX !== undefined) {
                     replaceSelection(view.xColumn, clickedX);
                   }
@@ -1062,8 +1091,8 @@ export default function ChartRenderer({
                 {visibleData.map((entry, index) => (
                   <Cell
                     key={index}
-                    fill={entry.highlighted ? blue : faded}
-                    opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                    fill={isPointHighlighted(entry) ? blue : faded}
+                    opacity={!hasSelection || isPointHighlighted(entry) ? 1 : 0.3}
                     style={{ cursor: "pointer" }}
                   />
                 ))}
@@ -1074,6 +1103,7 @@ export default function ChartRenderer({
             <PieChart>
               <ChartTooltip
                 content={<ChartTooltipContent />}
+                trigger="hover"
                 labelFormatter={(_label: any, payload: any) =>
                   payload?.[0]?.payload?.name ?? ""
                 }
@@ -1090,12 +1120,13 @@ export default function ChartRenderer({
                 data={pieData}
                 dataKey="y"
                 nameKey="name"
+                isAnimationActive={false}
                 labelLine={false}
                 label={({ percent }: any) =>
                   percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ""
                 }
                 onClick={(data: any) => {
-                  const clickedX = data?.xRaw ?? data?.x;
+                  const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
                   if (clickedX !== undefined) {
                     replaceSelection(view.xColumn, clickedX);
                   }
@@ -1106,25 +1137,24 @@ export default function ChartRenderer({
                     key={index}
                     fill={
                       hasSelection
-                        ? entry.highlighted
+                        ? isPointHighlighted(entry)
                           ? blue
                           : faded
                         : piePalette[index % piePalette.length]
                     }
                     stroke="#ffffff"
                     strokeWidth={1}
-                    opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                    opacity={!hasSelection || isPointHighlighted(entry) ? 1 : 0.3}
                     style={{ cursor: "pointer" }}
                   />
                 ))}
               </Pie>
             </PieChart>
           )}
-        </ResponsiveContainer>
       </ChartContainer>
     </div>
   );
-}
+});
 
 /* =======================================================
    KPI Renderer (with cross-filtering)
@@ -1180,12 +1210,29 @@ function GroupedBarRenderer({
   stacked: boolean;
 }) {
   const { rawData, attributeTypes } = useDataset();
-  const { selection, rangeFilter, replaceSelection, hasSelection } = useSelection();
+  const { selection, rangeFilter, replaceSelection, clearSelection, hasSelection } = useSelection();
 
-  const { rows, groups, highlightedXValues } = React.useMemo(
-    () => buildGroupedSeries(rawData ?? [], view, attributeTypes, filter, selection, rangeFilter),
-    [rawData, view, attributeTypes, filter, selection, rangeFilter]
+  // Heavy computation: build grouped data WITHOUT selection dependency
+  const { rows, groups } = React.useMemo(
+    () => buildGroupedSeries(rawData ?? [], view, attributeTypes, filter),
+    [rawData, view, attributeTypes, filter]
   );
+
+  // Lightweight: compute which x values are highlighted
+  const highlightedXValues = React.useMemo(() => {
+    if (!hasSelection) return new Set<string>();
+    const keys = new Set<string>();
+    const rawFiltered = (rawData ?? []).filter((row: any) =>
+      rowMatchesAttributeFilter(row, filter?.includeByColumn)
+    );
+    for (const row of rawFiltered) {
+      if (rowMatchesSelection(row, selection, rangeFilter)) {
+        const xRaw = getValueByPath(row, view.xColumn);
+        if (xRaw != null) keys.add(String(xRaw));
+      }
+    }
+    return keys;
+  }, [rawData, view.xColumn, selection, rangeFilter, hasSelection, filter]);
 
   const chartConfig = React.useMemo(() => {
     const cfg: ChartConfig = {};
@@ -1207,14 +1254,13 @@ function GroupedBarRenderer({
   }
 
   return (
-    <div className="h-full w-full" style={{ height }}>
-      <ChartContainer config={chartConfig} className="h-full w-full p-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={rows}>
+    <div className="h-full w-full outline-none" style={{ height }} onDoubleClick={() => clearSelection()} onClick={(e) => e.stopPropagation()}>
+      <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
+<BarChart data={rows}>
             <CartesianGrid vertical={false} strokeOpacity={0.15} />
             <XAxis dataKey="x" type="category" tick={{ fontSize: 11 }} />
             <YAxis type="number" />
-            <ChartTooltip content={<ChartTooltipContent />} />
+            <ChartTooltip content={<ChartTooltipContent />} trigger="hover" />
             <Legend
               wrapperStyle={{ fontSize: 11 }}
               iconSize={10}
@@ -1227,8 +1273,10 @@ function GroupedBarRenderer({
                 fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
                 stackId={stacked ? "a" : undefined}
                 radius={stacked ? undefined : [2, 2, 0, 0]}
+                isAnimationActive={false}
+                activeBar={false}
                 onClick={(data: any) => {
-                  const clickedX = data?.x ?? data?.payload?.x;
+                  const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
                   if (clickedX !== undefined) {
                     replaceSelection(view.xColumn, clickedX);
                   }
@@ -1249,7 +1297,6 @@ function GroupedBarRenderer({
               </Bar>
             ))}
           </BarChart>
-        </ResponsiveContainer>
       </ChartContainer>
     </div>
   );
@@ -1415,17 +1462,17 @@ function ColoredScatterRenderer({
   return (
     <div
       ref={containerRef}
-      className="h-full w-full relative select-none"
+      className="h-full w-full relative select-none outline-none"
       style={{ height }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onDoubleClick={() => clearSelection()}
+      onClick={(e) => e.stopPropagation()}
     >
-      <ChartContainer config={chartConfig} className="h-full w-full p-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart margin={SCATTER_MARGIN}>
+      <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
+<ScatterChart margin={SCATTER_MARGIN}>
             <CartesianGrid vertical={false} strokeOpacity={0.15} />
             <XAxis
               type="number"
@@ -1437,7 +1484,7 @@ function ColoredScatterRenderer({
               dataKey="y"
               name={view.yLabel ?? view.yColumn}
             />
-            <ChartTooltip content={<ChartTooltipContent />} />
+            <ChartTooltip trigger="hover" content={<ChartTooltipContent />} />
             <Legend
               wrapperStyle={{ fontSize: 11 }}
               iconSize={10}
@@ -1451,6 +1498,7 @@ function ColoredScatterRenderer({
                   name={g}
                   data={groupData}
                   fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
+                  isAnimationActive={false}
                   onClick={(e: any) => {
                     if (isDragging.current) return;
                     const clickedX = e?.payload?.xRaw ?? e?.payload?.x;
@@ -1471,7 +1519,6 @@ function ColoredScatterRenderer({
               );
             })}
           </ScatterChart>
-        </ResponsiveContainer>
       </ChartContainer>
 
       {/* Brush selection rectangle */}
@@ -1644,24 +1691,25 @@ function ScatterWithBrush({
   return (
     <div
       ref={containerRef}
-      className="h-full w-full relative select-none"
+      className="h-full w-full relative select-none outline-none"
       style={{ height }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onDoubleClick={() => clearSelection()}
+      onClick={(e) => e.stopPropagation()}
     >
-      <ChartContainer config={chartConfig} className="h-full w-full p-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart margin={SCATTER_MARGIN}>
+      <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
+<ScatterChart margin={SCATTER_MARGIN}>
             <CartesianGrid vertical={false} strokeOpacity={0.15} />
             <XAxis type="number" dataKey="x" />
             <YAxis type="number" dataKey="y" />
-            <ChartTooltip content={<ChartTooltipContent />} />
+            <ChartTooltip trigger="hover" content={<ChartTooltipContent />} />
 
             <Scatter
               data={visibleData}
+              isAnimationActive={false}
               onClick={(e: any) => {
                 if (isDragging.current) return;
                 const clickedX = e?.payload?.xRaw ?? e?.payload?.x;
@@ -1680,7 +1728,6 @@ function ScatterWithBrush({
               ))}
             </Scatter>
           </ScatterChart>
-        </ResponsiveContainer>
       </ChartContainer>
 
       {/* Brush selection rectangle */}
@@ -1735,7 +1782,7 @@ function TableRenderer({
   }
 
   return (
-    <div style={{ height }} className="overflow-auto">
+    <div style={{ height }} className="overflow-auto outline-none" onClick={(e) => e.stopPropagation()}>
       <ShadTable>
         <TableHeader>
           <TableRow>
