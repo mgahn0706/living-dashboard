@@ -211,22 +211,23 @@ export default function ChartCreatorSidebar({
 
       <SidebarContent className="flex flex-col gap-4 p-4">
         {/* Chart type buttons */}
-        <div className="flex gap-1">
+        <div className="grid grid-cols-4 gap-1">
           {CHART_BUTTONS.map((c) => (
             <Tooltip key={c.type}>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon"
+                  size="sm"
                   onClick={() => handleToggle(c.type)}
                   disabled={!isTypeAvailable(c.type)}
-                  className={
+                  className={`flex items-center gap-1 px-2 h-8 text-[11px] ${
                     selectedType === c.type
                       ? "bg-accent text-accent-foreground"
                       : ""
-                  }
+                  }`}
                 >
-                  {c.icon}
+                  <span className="size-4 shrink-0">{c.icon}</span>
+                  <span className="truncate">{c.label}</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{c.label}</TooltipContent>

@@ -38,7 +38,7 @@ import {
 
 import type { ChartView, View, ViewFilter } from "@/types/dashboard";
 import { useDataset } from "@/context/DatasetContext";
-import { useSelection } from "@/context/SelectionContext";
+import { useSelection, type RangeFilter } from "@/context/SelectionContext";
 
 /* =======================================================
    Types
@@ -106,10 +106,9 @@ function parseXValue(
 
   const n = Number(value);
   if (!Number.isNaN(n) && value !== "") {
-    // If the column is known as date, treat numeric epochs as date.
     if (hint === "date") {
       const ms =
-        Math.abs(n) < 3e10 // ~year 2960 in seconds
+        Math.abs(n) < 3e10
           ? n * 1000
           : n;
       return { x: ms, xRaw: value, xType: "date" };
@@ -146,7 +145,6 @@ function inferXTypeFromColumn(
 
   let numberCount = 0;
   let dateStringCount = 0;
-  const numericValues: number[] = [];
 
   for (const v of filtered) {
     if (v instanceof Date) {
@@ -163,27 +161,17 @@ function inferXTypeFromColumn(
     const n = Number(v);
     if (!Number.isNaN(n) && v !== "") {
       numberCount++;
-      numericValues.push(n);
     }
   }
 
   const ratio = filtered.length * 0.6;
   if (dateStringCount >= ratio) return "date";
 
-  if (numberCount >= ratio && numericValues.length) {
+  if (numberCount >= ratio) {
     return "number";
   }
 
   return "category";
-}
-
-function resolveXType(points: GenericPoint[]) {
-  if (!points.length) return "category" as const;
-  const allDate = points.every((p) => p.xType === "date");
-  if (allDate) return "date" as const;
-  const allNumber = points.every((p) => p.xType === "number");
-  if (allNumber) return "number" as const;
-  return "category" as const;
 }
 
 function formatDateTick(value: number | string) {
@@ -198,14 +186,42 @@ function formatDateTick(value: number | string) {
   });
 }
 
-function rowMatchesSelection(row: any, selection: any) {
-  if (!selection || Object.keys(selection).length === 0) return true;
+function rowMatchesSelection(
+  row: any,
+  selection: any,
+  rangeFilter?: RangeFilter | null
+) {
+  const hasDiscrete = selection && Object.keys(selection).length > 0;
+  const hasRange = !!rangeFilter;
 
-  return Object.entries(selection).every(([col, values]: any) => {
-    if (!values || values.size === 0) return true;
-    const val = getValueByPath(row, col);
-    return values.has(val);
-  });
+  if (!hasDiscrete && !hasRange) return true;
+
+  // Check discrete selection
+  if (hasDiscrete) {
+    const discreteMatch = Object.entries(selection).every(([col, values]: any) => {
+      if (!values || values.size === 0) return true;
+      const val = getValueByPath(row, col);
+      return values.has(val);
+    });
+    if (!discreteMatch) return false;
+  }
+
+  // Check range filter
+  if (hasRange) {
+    const xVal = Number(getValueByPath(row, rangeFilter.xColumn));
+    const yVal = Number(getValueByPath(row, rangeFilter.yColumn));
+    if (Number.isNaN(xVal) || Number.isNaN(yVal)) return false;
+    if (
+      xVal < rangeFilter.xMin ||
+      xVal > rangeFilter.xMax ||
+      yVal < rangeFilter.yMin ||
+      yVal > rangeFilter.yMax
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function valueMatches(target: any, candidate: any) {
@@ -334,7 +350,8 @@ function buildSeries(
   view: ChartView,
   selection: any,
   attributeTypes: Record<string, "string" | "number" | "date" | "unknown">,
-  filter?: ChartRendererFilter
+  filter?: ChartRendererFilter,
+  rangeFilter?: RangeFilter | null
 ): { data: GenericPoint[]; xType: "number" | "date" | "category" } {
   if (!Array.isArray(rawData)) {
     return { data: [], xType: "category" };
@@ -370,7 +387,7 @@ function buildSeries(
       return {
         x: xParsed.x as number | string,
         y: typeof yParsed === "number" ? yParsed : 0,
-        highlighted: rowMatchesSelection(row, selection),
+        highlighted: rowMatchesSelection(row, selection, rangeFilter),
         xRaw: xParsed.xRaw,
         xType: xParsed.xType,
       };
@@ -439,10 +456,12 @@ function buildGroupedSeries(
   rawData: any[],
   view: ChartView,
   attributeTypes: Record<string, "string" | "number" | "date" | "unknown">,
-  filter?: ChartRendererFilter
-): GroupedSeriesResult {
+  filter?: ChartRendererFilter,
+  selection?: any,
+  rangeFilter?: RangeFilter | null
+): GroupedSeriesResult & { highlightedXValues: Set<string> } {
   if (!Array.isArray(rawData) || !view.groupByColumn) {
-    return { rows: [], groups: [], xLabels: [] };
+    return { rows: [], groups: [], xLabels: [], highlightedXValues: new Set() };
   }
 
   const filtered = rawData.filter((row) =>
@@ -459,6 +478,9 @@ function buildGroupedSeries(
     if (g != null && g !== "") groupSet.add(String(g));
   });
   const groups = Array.from(groupSet).sort();
+
+  // Track which x values have at least one highlighted row
+  const highlightedXValues = new Set<string>();
 
   // Build grouped map: Map<xKey, Map<groupKey, { sum, count }>>
   const grouped = new Map<
@@ -478,6 +500,11 @@ function buildGroupedSeries(
     const yVal =
       agg === "count" ? 1 : Number(typeof yRaw === "number" ? yRaw : yRaw);
     if (Number.isNaN(yVal) && agg !== "count") return;
+
+    // Track highlighting
+    if (rowMatchesSelection(row, selection, rangeFilter)) {
+      highlightedXValues.add(xKey);
+    }
 
     if (!grouped.has(xKey)) grouped.set(xKey, new Map());
     const xMap = grouped.get(xKey)!;
@@ -506,7 +533,7 @@ function buildGroupedSeries(
     return row;
   });
 
-  return { rows, groups, xLabels };
+  return { rows, groups, xLabels, highlightedXValues };
 }
 
 /* ---- KPI value computation ---- */
@@ -514,9 +541,11 @@ function buildGroupedSeries(
 function computeKPIValue(
   rawData: any[],
   view: ChartView,
-  filter?: ChartRendererFilter
-): number {
-  if (!Array.isArray(rawData)) return 0;
+  filter?: ChartRendererFilter,
+  selection?: any,
+  rangeFilter?: RangeFilter | null
+): { total: number; filtered: number; hasFilter: boolean } {
+  if (!Array.isArray(rawData)) return { total: 0, filtered: 0, hasFilter: false };
 
   let data = rawData;
   if (filter?.includeByColumn) {
@@ -526,19 +555,37 @@ function computeKPIValue(
   }
 
   const agg = view.aggregation || "sum";
-  if (agg === "count") return data.length;
 
-  const values = data
-    .map((row) => {
-      const val = getValueByPath(row, view.yColumn);
-      return typeof val === "number" ? val : Number(val);
-    })
-    .filter((v) => !Number.isNaN(v));
+  const computeAgg = (rows: any[]) => {
+    if (agg === "count") return rows.length;
+    const values = rows
+      .map((row) => {
+        const val = getValueByPath(row, view.yColumn);
+        return typeof val === "number" ? val : Number(val);
+      })
+      .filter((v) => !Number.isNaN(v));
+    if (values.length === 0) return 0;
+    const sum = values.reduce((a, b) => a + b, 0);
+    if (agg === "avg") return sum / values.length;
+    return sum;
+  };
 
-  if (values.length === 0) return 0;
-  const sum = values.reduce((a, b) => a + b, 0);
-  if (agg === "avg") return sum / values.length;
-  return sum;
+  const total = computeAgg(data);
+
+  const hasDiscrete = selection && Object.keys(selection).length > 0;
+  const hasRange = !!rangeFilter;
+  const hasFilter = hasDiscrete || hasRange;
+
+  if (!hasFilter) {
+    return { total, filtered: total, hasFilter: false };
+  }
+
+  const selectedData = data.filter((row) =>
+    rowMatchesSelection(row, selection, rangeFilter)
+  );
+  const filtered = computeAgg(selectedData);
+
+  return { total, filtered, hasFilter };
 }
 
 /* ---- Scatter with color-by column ---- */
@@ -550,7 +597,8 @@ function buildColoredScatterSeries(
   view: ChartView,
   selection: any,
   attributeTypes: Record<string, "string" | "number" | "date" | "unknown">,
-  filter?: ChartRendererFilter
+  filter?: ChartRendererFilter,
+  rangeFilter?: RangeFilter | null
 ): { data: ColoredPoint[]; groups: string[] } {
   if (!Array.isArray(rawData) || !view.colorByColumn) {
     return { data: [], groups: [] };
@@ -578,7 +626,7 @@ function buildColoredScatterSeries(
     points.push({
       x,
       y,
-      highlighted: rowMatchesSelection(row, selection),
+      highlighted: rowMatchesSelection(row, selection, rangeFilter),
       xRaw,
       xType: "number",
       group,
@@ -587,10 +635,6 @@ function buildColoredScatterSeries(
 
   return { data: points, groups: Array.from(groupSet).sort() };
 }
-
-/* =======================================================
-   Renderer
-======================================================= */
 
 /* =======================================================
    Color palette
@@ -633,6 +677,12 @@ function formatKPIValue(value: number, yLabel?: string) {
 }
 
 /* =======================================================
+   Scatter Brush Constants
+======================================================= */
+
+const SCATTER_MARGIN = { top: 10, right: 20, bottom: 30, left: 60 };
+
+/* =======================================================
    Main Renderer
 ======================================================= */
 
@@ -646,56 +696,20 @@ export default function ChartRenderer({
   filter?: ChartRendererFilter;
 }) {
   const { rawData, attributeTypes } = useDataset();
-  const { selection, replaceSelection, hasSelection } = useSelection();
+  const { selection, rangeFilter, replaceSelection, hasSelection } = useSelection();
 
   const blue = "#3b82f6";
   const faded = "#cbd5e1";
   const piePalette = GROUP_PALETTE;
 
-  if (view.chartType === "TABLE") {
-    return (
-      <TableRenderer
-        view={view}
-        height={height}
-        filter={filter}
-        replaceSelection={replaceSelection}
-      />
-    );
-  }
+  /* ---- All hooks must be called unconditionally (React rules) ---- */
+  const isChartView = view.chartType !== "TABLE";
+  const chartView = isChartView ? (view as ChartView) : null;
 
-  /* ---- KPI ---- */
-  if (view.chartType === "KPI") {
-    return (
-      <KPIRenderer view={view} height={height} filter={filter} />
-    );
-  }
-
-  /* ---- STACKED_BAR / GROUPED_BAR ---- */
-  if (
-    (view.chartType === "STACKED_BAR" || view.chartType === "GROUPED_BAR") &&
-    view.groupByColumn
-  ) {
-    return (
-      <GroupedBarRenderer
-        view={view}
-        height={height}
-        filter={filter}
-        stacked={view.chartType === "STACKED_BAR"}
-      />
-    );
-  }
-
-  /* ---- SCATTER with colorByColumn ---- */
-  if (view.chartType === "SCATTER" && view.colorByColumn) {
-    return (
-      <ColoredScatterRenderer view={view} height={height} filter={filter} />
-    );
-  }
-
-  /* ---- Standard single-series charts ---- */
   const { data, xType } = React.useMemo(() => {
-    return buildSeries(rawData ?? [], view, selection, attributeTypes, filter);
-  }, [rawData, view, selection, attributeTypes, filter]);
+    if (!chartView) return { data: [] as GenericPoint[], xType: "category" as const };
+    return buildSeries(rawData ?? [], chartView, selection, attributeTypes, filter, rangeFilter);
+  }, [rawData, chartView, selection, attributeTypes, filter, rangeFilter]);
 
   const visibleData = React.useMemo(
     () => applyChartViewFilter(data, filter),
@@ -714,10 +728,61 @@ export default function ChartRenderer({
   const chartConfig = React.useMemo(
     () =>
       ({
-        y: { label: view.yLabel ?? view.yColumn },
+        y: { label: chartView?.yLabel ?? chartView?.yColumn ?? "" },
       } satisfies ChartConfig),
-    [view.yLabel, view.yColumn]
+    [chartView?.yLabel, chartView?.yColumn]
   );
+
+  /* ---- Dispatchers (after all hooks) ---- */
+
+  if (view.chartType === "TABLE") {
+    return (
+      <TableRenderer
+        view={view}
+        height={height}
+        filter={filter}
+        replaceSelection={replaceSelection}
+      />
+    );
+  }
+
+  /* ---- KPI ---- */
+  if (view.chartType === "KPI") {
+    return (
+      <KPIRenderer view={view as ChartView} height={height} filter={filter} />
+    );
+  }
+
+  /* ---- STACKED_BAR / GROUPED_BAR ---- */
+  if (
+    (view.chartType === "STACKED_BAR" || view.chartType === "GROUPED_BAR") &&
+    (view as ChartView).groupByColumn
+  ) {
+    return (
+      <GroupedBarRenderer
+        view={view as ChartView}
+        height={height}
+        filter={filter}
+        stacked={view.chartType === "STACKED_BAR"}
+      />
+    );
+  }
+
+  /* ---- SCATTER with colorByColumn ---- */
+  if (view.chartType === "SCATTER" && (view as ChartView).colorByColumn) {
+    return (
+      <ColoredScatterRenderer view={view as ChartView} height={height} filter={filter} />
+    );
+  }
+
+  /* ---- Plain SCATTER with brushing ---- */
+  if (view.chartType === "SCATTER") {
+    return (
+      <ScatterWithBrush view={view as ChartView} height={height} filter={filter} />
+    );
+  }
+
+  /* ---- Standard single-series charts (LINE, BAR, PIE, FUNNEL, HORIZONTAL_BAR, DONUT) ---- */
 
   if (!visibleData.length) {
     return (
@@ -737,6 +802,8 @@ export default function ChartRenderer({
         name: String(d.xRaw ?? d.x),
         value: d.y,
         fill: FUNNEL_PALETTE[i % FUNNEL_PALETTE.length],
+        highlighted: d.highlighted,
+        xRaw: d.xRaw ?? d.x,
       }));
 
     return (
@@ -750,7 +817,17 @@ export default function ChartRenderer({
                   "Count",
                 ]}
               />
-              <Funnel dataKey="value" data={funnelData} isAnimationActive={false}>
+              <Funnel
+                dataKey="value"
+                data={funnelData}
+                isAnimationActive={false}
+                onClick={(data: any) => {
+                  const clickedX = data?.xRaw ?? data?.name;
+                  if (clickedX !== undefined) {
+                    replaceSelection(view.xColumn, clickedX);
+                  }
+                }}
+              >
                 <LabelList
                   position="right"
                   fill="#666"
@@ -759,7 +836,18 @@ export default function ChartRenderer({
                   fontSize={11}
                 />
                 {funnelData.map((entry, i) => (
-                  <Cell key={i} fill={entry.fill} />
+                  <Cell
+                    key={i}
+                    fill={
+                      hasSelection
+                        ? entry.highlighted
+                          ? entry.fill
+                          : faded
+                        : entry.fill
+                    }
+                    opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                    style={{ cursor: "pointer" }}
+                  />
                 ))}
               </Funnel>
             </FunnelChart>
@@ -785,12 +873,21 @@ export default function ChartRenderer({
                 tick={{ fontSize: 11 }}
               />
               <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="y">
+              <Bar
+                dataKey="y"
+                onClick={(data: any) => {
+                  const clickedX = data?.payload?.xRaw ?? data?.payload?.x;
+                  if (clickedX !== undefined) {
+                    replaceSelection(view.xColumn, clickedX);
+                  }
+                }}
+              >
                 {visibleData.map((entry, index) => (
                   <Cell
                     key={index}
                     fill={entry.highlighted ? blue : faded}
                     opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                    style={{ cursor: "pointer" }}
                   />
                 ))}
               </Bar>
@@ -851,6 +948,7 @@ export default function ChartRenderer({
                     stroke="#ffffff"
                     strokeWidth={1}
                     opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                    style={{ cursor: "pointer" }}
                   />
                 ))}
               </Pie>
@@ -861,7 +959,7 @@ export default function ChartRenderer({
     );
   }
 
-  /* ---- Original chart types: LINE, BAR, PIE, SCATTER ---- */
+  /* ---- Original chart types: LINE, BAR, PIE ---- */
   return (
     <div className="h-full w-full" style={{ height }}>
       <ChartContainer config={chartConfig} className="h-full w-full p-0">
@@ -966,11 +1064,13 @@ export default function ChartRenderer({
                     key={index}
                     fill={entry.highlighted ? blue : faded}
                     opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                    style={{ cursor: "pointer" }}
                   />
                 ))}
               </Bar>
             </BarChart>
-          ) : view.chartType === "PIE" ? (
+          ) : (
+            /* PIE */
             <PieChart>
               <ChartTooltip
                 content={<ChartTooltipContent />}
@@ -1014,35 +1114,11 @@ export default function ChartRenderer({
                     stroke="#ffffff"
                     strokeWidth={1}
                     opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+                    style={{ cursor: "pointer" }}
                   />
                 ))}
               </Pie>
             </PieChart>
-          ) : (
-            <ScatterChart>
-              <CartesianGrid vertical={false} strokeOpacity={0.15} />
-              <XAxis type="number" dataKey="x" />
-              <YAxis type="number" dataKey="y" />
-              <ChartTooltip content={<ChartTooltipContent />} />
-
-              <Scatter
-                data={visibleData}
-                onClick={(e: any) => {
-                  const clickedX = e?.payload?.xRaw ?? e?.payload?.x;
-                  if (clickedX !== undefined) {
-                    replaceSelection(view.xColumn, clickedX);
-                  }
-                }}
-              >
-                {visibleData.map((entry, index) => (
-                  <Cell
-                    key={index}
-                    fill={entry.highlighted ? blue : faded}
-                    opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
-                  />
-                ))}
-              </Scatter>
-            </ScatterChart>
           )}
         </ResponsiveContainer>
       </ChartContainer>
@@ -1051,7 +1127,7 @@ export default function ChartRenderer({
 }
 
 /* =======================================================
-   KPI Renderer
+   KPI Renderer (with cross-filtering)
 ======================================================= */
 
 function KPIRenderer({
@@ -1064,10 +1140,11 @@ function KPIRenderer({
   filter?: ChartRendererFilter;
 }) {
   const { rawData } = useDataset();
+  const { selection, rangeFilter, hasSelection } = useSelection();
 
-  const value = React.useMemo(
-    () => computeKPIValue(rawData ?? [], view, filter),
-    [rawData, view, filter]
+  const { total, filtered, hasFilter } = React.useMemo(
+    () => computeKPIValue(rawData ?? [], view, filter, selection, rangeFilter),
+    [rawData, view, filter, selection, rangeFilter]
   );
 
   return (
@@ -1076,14 +1153,19 @@ function KPIRenderer({
       className="h-full w-full flex flex-col items-center justify-center gap-1"
     >
       <span className="text-3xl font-bold tracking-tight text-primary">
-        {formatKPIValue(value, view.yLabel)}
+        {formatKPIValue(hasFilter ? filtered : total, view.yLabel)}
       </span>
+      {hasFilter && hasSelection && (
+        <span className="text-xs text-muted-foreground">
+          of {formatKPIValue(total, view.yLabel)} total
+        </span>
+      )}
     </div>
   );
 }
 
 /* =======================================================
-   Grouped / Stacked Bar Renderer
+   Grouped / Stacked Bar Renderer (with cross-filtering)
 ======================================================= */
 
 function GroupedBarRenderer({
@@ -1098,10 +1180,11 @@ function GroupedBarRenderer({
   stacked: boolean;
 }) {
   const { rawData, attributeTypes } = useDataset();
+  const { selection, rangeFilter, replaceSelection, hasSelection } = useSelection();
 
-  const { rows, groups } = React.useMemo(
-    () => buildGroupedSeries(rawData ?? [], view, attributeTypes, filter),
-    [rawData, view, attributeTypes, filter]
+  const { rows, groups, highlightedXValues } = React.useMemo(
+    () => buildGroupedSeries(rawData ?? [], view, attributeTypes, filter, selection, rangeFilter),
+    [rawData, view, attributeTypes, filter, selection, rangeFilter]
   );
 
   const chartConfig = React.useMemo(() => {
@@ -1144,7 +1227,26 @@ function GroupedBarRenderer({
                 fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
                 stackId={stacked ? "a" : undefined}
                 radius={stacked ? undefined : [2, 2, 0, 0]}
-              />
+                onClick={(data: any) => {
+                  const clickedX = data?.x ?? data?.payload?.x;
+                  if (clickedX !== undefined) {
+                    replaceSelection(view.xColumn, clickedX);
+                  }
+                }}
+                style={{ cursor: "pointer" }}
+              >
+                {rows.map((row, idx) => (
+                  <Cell
+                    key={idx}
+                    fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
+                    opacity={
+                      !hasSelection || highlightedXValues.has(String(row.x))
+                        ? 1
+                        : 0.3
+                    }
+                  />
+                ))}
+              </Bar>
             ))}
           </BarChart>
         </ResponsiveContainer>
@@ -1154,7 +1256,7 @@ function GroupedBarRenderer({
 }
 
 /* =======================================================
-   Colored Scatter Renderer
+   Colored Scatter Renderer (with brushing)
 ======================================================= */
 
 function ColoredScatterRenderer({
@@ -1167,7 +1269,12 @@ function ColoredScatterRenderer({
   filter?: ChartRendererFilter;
 }) {
   const { rawData, attributeTypes } = useDataset();
-  const { selection, replaceSelection, hasSelection } = useSelection();
+  const { selection, rangeFilter, replaceSelection, setBrushSelection, clearSelection, hasSelection } = useSelection();
+
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [brushStart, setBrushStart] = React.useState<{ x: number; y: number } | null>(null);
+  const [brushEnd, setBrushEnd] = React.useState<{ x: number; y: number } | null>(null);
+  const isDragging = React.useRef(false);
 
   const { data, groups } = React.useMemo(
     () =>
@@ -1176,9 +1283,10 @@ function ColoredScatterRenderer({
         view,
         selection,
         attributeTypes,
-        filter
+        filter,
+        rangeFilter
       ),
-    [rawData, view, selection, attributeTypes, filter]
+    [rawData, view, selection, attributeTypes, filter, rangeFilter]
   );
 
   const chartConfig = React.useMemo(() => {
@@ -1192,6 +1300,108 @@ function ColoredScatterRenderer({
     return cfg;
   }, [groups]);
 
+  // Compute data ranges for pixel-to-data conversion
+  const dataRange = React.useMemo(() => {
+    if (!data.length) return { xMin: 0, xMax: 1, yMin: 0, yMax: 1 };
+    const xs = data.map((d) => d.x as number);
+    const ys = data.map((d) => d.y);
+    const xMin = Math.min(...xs);
+    const xMax = Math.max(...xs);
+    const yMin = Math.min(...ys);
+    const yMax = Math.max(...ys);
+    const xPad = (xMax - xMin) * 0.05 || 1;
+    const yPad = (yMax - yMin) * 0.05 || 1;
+    return {
+      xMin: xMin - xPad,
+      xMax: xMax + xPad,
+      yMin: yMin - yPad,
+      yMax: yMax + yPad,
+    };
+  }, [data]);
+
+  const pixelToData = React.useCallback(
+    (px: number, py: number) => {
+      const el = containerRef.current;
+      if (!el) return { dx: 0, dy: 0 };
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      const plotW = w - SCATTER_MARGIN.left - SCATTER_MARGIN.right;
+      const plotH = h - SCATTER_MARGIN.top - SCATTER_MARGIN.bottom;
+      const dx =
+        dataRange.xMin +
+        ((px - SCATTER_MARGIN.left) / plotW) * (dataRange.xMax - dataRange.xMin);
+      const dy =
+        dataRange.yMax -
+        ((py - SCATTER_MARGIN.top) / plotH) * (dataRange.yMax - dataRange.yMin);
+      return { dx, dy };
+    },
+    [dataRange]
+  );
+
+  const handleMouseDown = React.useCallback(
+    (e: React.MouseEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      isDragging.current = false;
+      setBrushStart({ x, y });
+      setBrushEnd({ x, y });
+    },
+    []
+  );
+
+  const handleMouseMove = React.useCallback(
+    (e: React.MouseEvent) => {
+      if (!brushStart) return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const dx = Math.abs(x - brushStart.x);
+      const dy = Math.abs(y - brushStart.y);
+      if (dx > 5 || dy > 5) isDragging.current = true;
+      setBrushEnd({ x, y });
+    },
+    [brushStart]
+  );
+
+  const handleMouseUp = React.useCallback(() => {
+    if (!brushStart || !brushEnd) {
+      setBrushStart(null);
+      setBrushEnd(null);
+      return;
+    }
+
+    if (!isDragging.current) {
+      // Small movement = click, not brush. Clear brush state.
+      setBrushStart(null);
+      setBrushEnd(null);
+      return;
+    }
+
+    // Convert pixel coords to data coords
+    const p1 = pixelToData(brushStart.x, brushStart.y);
+    const p2 = pixelToData(brushEnd.x, brushEnd.y);
+
+    const xMin = Math.min(p1.dx, p2.dx);
+    const xMax = Math.max(p1.dx, p2.dx);
+    const yMin = Math.min(p1.dy, p2.dy);
+    const yMax = Math.max(p1.dy, p2.dy);
+
+    setBrushSelection({
+      xColumn: view.xColumn,
+      yColumn: view.yColumn,
+      xMin,
+      xMax,
+      yMin,
+      yMax,
+    });
+
+    setBrushStart(null);
+    setBrushEnd(null);
+  }, [brushStart, brushEnd, pixelToData, setBrushSelection, view.xColumn, view.yColumn]);
+
   if (!data.length) {
     return (
       <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
@@ -1200,16 +1410,22 @@ function ColoredScatterRenderer({
     );
   }
 
-  const groupColorMap = new Map<string, string>();
-  groups.forEach((g, i) => {
-    groupColorMap.set(g, GROUP_PALETTE[i % GROUP_PALETTE.length]);
-  });
+  const showBrushRect = brushStart && brushEnd && isDragging.current;
 
   return (
-    <div className="h-full w-full" style={{ height }}>
+    <div
+      ref={containerRef}
+      className="h-full w-full relative select-none"
+      style={{ height }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onDoubleClick={() => clearSelection()}
+    >
       <ChartContainer config={chartConfig} className="h-full w-full p-0">
         <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart>
+          <ScatterChart margin={SCATTER_MARGIN}>
             <CartesianGrid vertical={false} strokeOpacity={0.15} />
             <XAxis
               type="number"
@@ -1236,17 +1452,249 @@ function ColoredScatterRenderer({
                   data={groupData}
                   fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
                   onClick={(e: any) => {
+                    if (isDragging.current) return;
                     const clickedX = e?.payload?.xRaw ?? e?.payload?.x;
                     if (clickedX !== undefined) {
                       replaceSelection(view.xColumn, clickedX);
                     }
                   }}
-                />
+                >
+                  {groupData.map((entry, idx) => (
+                    <Cell
+                      key={idx}
+                      fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
+                      opacity={!hasSelection || entry.highlighted ? 1 : 0.15}
+                      style={{ cursor: "pointer" }}
+                    />
+                  ))}
+                </Scatter>
               );
             })}
           </ScatterChart>
         </ResponsiveContainer>
       </ChartContainer>
+
+      {/* Brush selection rectangle */}
+      {showBrushRect && (
+        <div
+          className="absolute pointer-events-none border border-blue-500/50 bg-blue-500/10 rounded-sm"
+          style={{
+            left: Math.min(brushStart.x, brushEnd.x),
+            top: Math.min(brushStart.y, brushEnd.y),
+            width: Math.abs(brushEnd.x - brushStart.x),
+            height: Math.abs(brushEnd.y - brushStart.y),
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* =======================================================
+   Plain Scatter with Brush
+======================================================= */
+
+function ScatterWithBrush({
+  view,
+  height,
+  filter,
+}: {
+  view: ChartView;
+  height: number | "100%";
+  filter?: ChartRendererFilter;
+}) {
+  const { rawData, attributeTypes } = useDataset();
+  const { selection, rangeFilter, replaceSelection, setBrushSelection, clearSelection, hasSelection } = useSelection();
+
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [brushStart, setBrushStart] = React.useState<{ x: number; y: number } | null>(null);
+  const [brushEnd, setBrushEnd] = React.useState<{ x: number; y: number } | null>(null);
+  const isDragging = React.useRef(false);
+
+  const blue = "#3b82f6";
+  const faded = "#cbd5e1";
+
+  const { data, xType } = React.useMemo(() => {
+    return buildSeries(rawData ?? [], view, selection, attributeTypes, filter, rangeFilter);
+  }, [rawData, view, selection, attributeTypes, filter, rangeFilter]);
+
+  const visibleData = React.useMemo(
+    () => applyChartViewFilter(data, filter),
+    [data, filter]
+  );
+
+  const chartConfig = React.useMemo(
+    () =>
+      ({
+        y: { label: view.yLabel ?? view.yColumn },
+      } satisfies ChartConfig),
+    [view.yLabel, view.yColumn]
+  );
+
+  // Compute data ranges for pixel-to-data conversion
+  const dataRange = React.useMemo(() => {
+    if (!visibleData.length) return { xMin: 0, xMax: 1, yMin: 0, yMax: 1 };
+    const xs = visibleData.map((d) => Number(d.x));
+    const ys = visibleData.map((d) => d.y);
+    const xMin = Math.min(...xs);
+    const xMax = Math.max(...xs);
+    const yMin = Math.min(...ys);
+    const yMax = Math.max(...ys);
+    const xPad = (xMax - xMin) * 0.05 || 1;
+    const yPad = (yMax - yMin) * 0.05 || 1;
+    return {
+      xMin: xMin - xPad,
+      xMax: xMax + xPad,
+      yMin: yMin - yPad,
+      yMax: yMax + yPad,
+    };
+  }, [visibleData]);
+
+  const pixelToData = React.useCallback(
+    (px: number, py: number) => {
+      const el = containerRef.current;
+      if (!el) return { dx: 0, dy: 0 };
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      const plotW = w - SCATTER_MARGIN.left - SCATTER_MARGIN.right;
+      const plotH = h - SCATTER_MARGIN.top - SCATTER_MARGIN.bottom;
+      const dx =
+        dataRange.xMin +
+        ((px - SCATTER_MARGIN.left) / plotW) * (dataRange.xMax - dataRange.xMin);
+      const dy =
+        dataRange.yMax -
+        ((py - SCATTER_MARGIN.top) / plotH) * (dataRange.yMax - dataRange.yMin);
+      return { dx, dy };
+    },
+    [dataRange]
+  );
+
+  const handleMouseDown = React.useCallback(
+    (e: React.MouseEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      isDragging.current = false;
+      setBrushStart({ x, y });
+      setBrushEnd({ x, y });
+    },
+    []
+  );
+
+  const handleMouseMove = React.useCallback(
+    (e: React.MouseEvent) => {
+      if (!brushStart) return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const dx = Math.abs(x - brushStart.x);
+      const dy = Math.abs(y - brushStart.y);
+      if (dx > 5 || dy > 5) isDragging.current = true;
+      setBrushEnd({ x, y });
+    },
+    [brushStart]
+  );
+
+  const handleMouseUp = React.useCallback(() => {
+    if (!brushStart || !brushEnd) {
+      setBrushStart(null);
+      setBrushEnd(null);
+      return;
+    }
+
+    if (!isDragging.current) {
+      setBrushStart(null);
+      setBrushEnd(null);
+      return;
+    }
+
+    const p1 = pixelToData(brushStart.x, brushStart.y);
+    const p2 = pixelToData(brushEnd.x, brushEnd.y);
+
+    const xMin = Math.min(p1.dx, p2.dx);
+    const xMax = Math.max(p1.dx, p2.dx);
+    const yMin = Math.min(p1.dy, p2.dy);
+    const yMax = Math.max(p1.dy, p2.dy);
+
+    setBrushSelection({
+      xColumn: view.xColumn,
+      yColumn: view.yColumn,
+      xMin,
+      xMax,
+      yMin,
+      yMax,
+    });
+
+    setBrushStart(null);
+    setBrushEnd(null);
+  }, [brushStart, brushEnd, pixelToData, setBrushSelection, view.xColumn, view.yColumn]);
+
+  if (!visibleData.length) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
+        No compatible data
+      </div>
+    );
+  }
+
+  const showBrushRect = brushStart && brushEnd && isDragging.current;
+
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full relative select-none"
+      style={{ height }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onDoubleClick={() => clearSelection()}
+    >
+      <ChartContainer config={chartConfig} className="h-full w-full p-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <ScatterChart margin={SCATTER_MARGIN}>
+            <CartesianGrid vertical={false} strokeOpacity={0.15} />
+            <XAxis type="number" dataKey="x" />
+            <YAxis type="number" dataKey="y" />
+            <ChartTooltip content={<ChartTooltipContent />} />
+
+            <Scatter
+              data={visibleData}
+              onClick={(e: any) => {
+                if (isDragging.current) return;
+                const clickedX = e?.payload?.xRaw ?? e?.payload?.x;
+                if (clickedX !== undefined) {
+                  replaceSelection(view.xColumn, clickedX);
+                }
+              }}
+            >
+              {visibleData.map((entry, index) => (
+                <Cell
+                  key={index}
+                  fill={entry.highlighted ? blue : faded}
+                  opacity={!hasSelection || entry.highlighted ? 1 : 0.15}
+                  style={{ cursor: "pointer" }}
+                />
+              ))}
+            </Scatter>
+          </ScatterChart>
+        </ResponsiveContainer>
+      </ChartContainer>
+
+      {/* Brush selection rectangle */}
+      {showBrushRect && (
+        <div
+          className="absolute pointer-events-none border border-blue-500/50 bg-blue-500/10 rounded-sm"
+          style={{
+            left: Math.min(brushStart.x, brushEnd.x),
+            top: Math.min(brushStart.y, brushEnd.y),
+            width: Math.abs(brushEnd.x - brushStart.x),
+            height: Math.abs(brushEnd.y - brushStart.y),
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1267,7 +1715,7 @@ function TableRenderer({
   replaceSelection: (column: string, value: any) => void;
 }) {
   const { rawData } = useDataset();
-  const { selection, hasSelection } = useSelection();
+  const { selection, rangeFilter, hasSelection } = useSelection();
 
   if (!Array.isArray(rawData) || rawData.length === 0) {
     return <div>No data</div>;
@@ -1298,7 +1746,7 @@ function TableRenderer({
         </TableHeader>
         <TableBody>
           {rows.map((row, i) => {
-            const highlighted = rowMatchesSelection(row, selection);
+            const highlighted = rowMatchesSelection(row, selection, rangeFilter);
 
             return (
               <TableRow
