@@ -1,5 +1,16 @@
 // types/dashboard.ts
-export type ChartType = "BAR" | "LINE" | "TABLE" | "SCATTER" | "PIE";
+export type ChartType =
+  | "BAR"
+  | "LINE"
+  | "TABLE"
+  | "SCATTER"
+  | "PIE"
+  | "KPI"
+  | "FUNNEL"
+  | "HORIZONTAL_BAR"
+  | "STACKED_BAR"
+  | "GROUPED_BAR"
+  | "DONUT";
 
 export type View = ChartView | TableView;
 
@@ -14,7 +25,7 @@ export type ViewFilter = {
 };
 
 type ChartPayload = {
-  chartType: "BAR" | "LINE" | "SCATTER" | "PIE";
+  chartType: Exclude<ChartType, "TABLE">;
 } & Partial<Omit<ChartView, "chartType">> & {
     filter?: ViewFilter | null;
   };
@@ -29,13 +40,17 @@ export type ChartView = {
   id: string;
   xColumn: string;
   yColumn: string;
-  chartType: "BAR" | "LINE" | "SCATTER" | "PIE";
+  chartType: Exclude<ChartType, "TABLE">;
   size: "sm" | "md" | "lg";
   priority: number;
   xLabel?: string;
   yLabel?: string;
   title: string;
   filter?: ViewFilter;
+  groupByColumn?: string;
+  aggregation?: "sum" | "avg" | "count";
+  colorByColumn?: string;
+  sortDescending?: boolean;
 };
 
 export type TableView = {

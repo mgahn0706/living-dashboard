@@ -185,6 +185,10 @@ function makeChartView(
     yLabel: payload.yLabel,
     title: payload.title ?? "",
     filter: payload.filter,
+    groupByColumn: payload.groupByColumn,
+    aggregation: payload.aggregation,
+    colorByColumn: payload.colorByColumn,
+    sortDescending: payload.sortDescending,
   };
 }
 
@@ -342,6 +346,10 @@ function buildNewViewFromPayload(payload: AnyPayload, priority: number): View {
       yLabel: payload?.yLabel,
       title: payload?.title,
       filter: payload?.filter ?? undefined,
+      groupByColumn: payload?.groupByColumn,
+      aggregation: payload?.aggregation,
+      colorByColumn: payload?.colorByColumn,
+      sortDescending: payload?.sortDescending,
     },
     priority
   );
@@ -398,6 +406,231 @@ function buildFallbackTableView(
 }
 
 /* =====================================================
+   Demo Dashboard Views
+===================================================== */
+
+function getDemoViews(): View[] {
+  return [
+    // KPI 1: Total Revenue Won
+    {
+      id: "demo_kpi_revenue",
+      chartType: "KPI",
+      xColumn: "",
+      yColumn: "Revenue",
+      size: "sm",
+      priority: 100,
+      title: "Total Revenue Won",
+      aggregation: "sum",
+      yLabel: "$",
+      filter: {
+        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
+      },
+    },
+    // KPI 2: Total Units Sold
+    {
+      id: "demo_kpi_units",
+      chartType: "KPI",
+      xColumn: "",
+      yColumn: "Units",
+      size: "sm",
+      priority: 99,
+      title: "Total Units Sold",
+      aggregation: "sum",
+      filter: {
+        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
+      },
+    },
+    // KPI 3: Overall Win Rate %
+    {
+      id: "demo_kpi_winrate",
+      chartType: "KPI",
+      xColumn: "",
+      yColumn: "WonNumeric",
+      size: "sm",
+      priority: 98,
+      title: "Overall Win Rate %",
+      aggregation: "avg",
+      yLabel: "%",
+    },
+    // KPI 4: Avg Deal Size
+    {
+      id: "demo_kpi_avgdeal",
+      chartType: "KPI",
+      xColumn: "",
+      yColumn: "Revenue",
+      size: "sm",
+      priority: 97,
+      title: "Avg Deal Size",
+      aggregation: "avg",
+      yLabel: "$",
+      filter: {
+        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
+      },
+    },
+    // Funnel Chart — Deal count by Stage
+    {
+      id: "demo_funnel",
+      chartType: "FUNNEL",
+      xColumn: "Stage",
+      yColumn: "Count",
+      size: "md",
+      priority: 96,
+      title: "Deal Count by Stage",
+      aggregation: "sum",
+    },
+    // Stacked Bar — Sum of Units by Stage, split by Won/Lost
+    {
+      id: "demo_stacked_units",
+      chartType: "STACKED_BAR",
+      xColumn: "Stage",
+      yColumn: "Units",
+      groupByColumn: "Status",
+      size: "md",
+      priority: 95,
+      title: "Units by Stage (Won/Lost)",
+    },
+    // Revenue by Territory — Clustered bar chart
+    {
+      id: "demo_rev_territory",
+      chartType: "GROUPED_BAR",
+      xColumn: "Territory",
+      yColumn: "Revenue",
+      groupByColumn: "Status",
+      size: "md",
+      priority: 94,
+      title: "Revenue by Territory",
+    },
+    // Revenue by Segment — Stacked bar
+    {
+      id: "demo_rev_segment",
+      chartType: "STACKED_BAR",
+      xColumn: "Segment",
+      yColumn: "Revenue",
+      groupByColumn: "Status",
+      size: "md",
+      priority: 93,
+      title: "Revenue by Segment",
+    },
+    // Revenue by Product Category — Donut chart
+    {
+      id: "demo_rev_prodcat",
+      chartType: "DONUT",
+      xColumn: "Product Category",
+      yColumn: "Revenue",
+      size: "md",
+      priority: 92,
+      title: "Revenue by Product Category",
+    },
+    // Win Rate by Industry — Horizontal bar chart, sorted descending
+    {
+      id: "demo_wr_industry",
+      chartType: "HORIZONTAL_BAR",
+      xColumn: "Industry",
+      yColumn: "WonNumeric",
+      aggregation: "avg",
+      sortDescending: true,
+      size: "md",
+      priority: 91,
+      title: "Win Rate by Industry",
+    },
+    // Win Rate by Campaign Type — Horizontal bar chart
+    {
+      id: "demo_wr_campaign",
+      chartType: "HORIZONTAL_BAR",
+      xColumn: "CampaignType",
+      yColumn: "WonNumeric",
+      aggregation: "avg",
+      sortDescending: true,
+      size: "md",
+      priority: 90,
+      title: "Win Rate by Campaign Type",
+    },
+    // Win Rate by Experience Level — Clustered bar
+    {
+      id: "demo_wr_experience",
+      chartType: "BAR",
+      xColumn: "Experience Level",
+      yColumn: "WonNumeric",
+      aggregation: "avg",
+      size: "md",
+      priority: 89,
+      title: "Win Rate by Experience Level",
+    },
+    // Revenue Trend Over Time — Monthly line chart (Won deals only)
+    {
+      id: "demo_rev_trend",
+      chartType: "LINE",
+      xColumn: "YearMonth",
+      yColumn: "Revenue",
+      size: "md",
+      priority: 88,
+      title: "Revenue Trend Over Time",
+      filter: {
+        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
+      },
+    },
+    // Deal Velocity — Avg days from Created Date to CloseDate by Stage
+    {
+      id: "demo_velocity",
+      chartType: "BAR",
+      xColumn: "Stage",
+      yColumn: "DealDays",
+      aggregation: "avg",
+      size: "md",
+      priority: 87,
+      title: "Deal Velocity (Avg Days)",
+    },
+    // Win Rate by Quarter — Line chart
+    {
+      id: "demo_wr_quarter",
+      chartType: "LINE",
+      xColumn: "Quarter",
+      yColumn: "WonNumeric",
+      aggregation: "avg",
+      size: "md",
+      priority: 86,
+      title: "Win Rate by Quarter",
+    },
+    // Revenue by Market Maturity — Column chart
+    {
+      id: "demo_rev_maturity",
+      chartType: "BAR",
+      xColumn: "Market Maturity",
+      yColumn: "Revenue",
+      size: "md",
+      priority: 85,
+      title: "Revenue by Market Maturity",
+    },
+    // Top 10 Products by Revenue — Horizontal bar chart (Won deals only)
+    {
+      id: "demo_top_products",
+      chartType: "HORIZONTAL_BAR",
+      xColumn: "Product Name",
+      yColumn: "Revenue",
+      size: "md",
+      priority: 84,
+      title: "Top 10 Products by Revenue",
+      sortDescending: true,
+      filter: {
+        top: 10,
+        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
+      },
+    },
+    // ClosePct vs Revenue Scatter — colored by Segment
+    {
+      id: "demo_scatter",
+      chartType: "SCATTER",
+      xColumn: "ClosePct",
+      yColumn: "Revenue",
+      colorByColumn: "Segment",
+      size: "md",
+      priority: 83,
+      title: "ClosePct vs Revenue",
+    },
+  ];
+}
+
+/* =====================================================
    App Content
 ===================================================== */
 
@@ -421,7 +654,8 @@ function AppContent() {
   const [isInitializing, setIsInitializing] = useState(false);
 
   const { focusScore } = useFocus();
-  const { schema, attributeKeys, attributeTypes, rawData } = useDataset();
+  const { schema, attributeKeys, attributeTypes, rawData, loadDemoDataset } =
+    useDataset();
 
   const {
     recommendations,
@@ -655,6 +889,19 @@ function AppContent() {
     acceptRecommendation(r);
   };
 
+  const handleLoadDemo = async () => {
+    try {
+      setIsInitializing(true);
+      await loadDemoDataset();
+      setViews(getDemoViews());
+      setSidebarMode("FORMAT");
+    } catch (err) {
+      console.error("Failed to load demo dataset:", err);
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
   const initializeDashboard = async () => {
     try {
       if (!rawData || attributeKeys.length === 0) return;
@@ -728,6 +975,7 @@ function AppContent() {
               onAcceptRecommendation={apply}
               onDeclineRecommendation={decline}
               onInitializeDashboard={initializeDashboard}
+              onLoadDemo={handleLoadDemo}
               canInitializeDashboard={
                 Boolean(rawData) && attributeKeys.length > 0
               }

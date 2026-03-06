@@ -17,6 +17,7 @@ export default function DashboardView({
   onAcceptRecommendation,
   onDeclineRecommendation,
   onInitializeDashboard,
+  onLoadDemo,
   canInitializeDashboard = true,
   isInitializingDashboard = false,
   selectedViewId,
@@ -35,6 +36,7 @@ export default function DashboardView({
   onAcceptRecommendation?: (rec: Recommendation) => void;
   onDeclineRecommendation?: (rec: Recommendation) => void;
   onInitializeDashboard?: () => void;
+  onLoadDemo?: () => void;
   canInitializeDashboard?: boolean;
   isInitializingDashboard?: boolean;
   selectedViewId: string | null;
@@ -61,6 +63,16 @@ export default function DashboardView({
           <div className="flex items-center gap-2">
             <Button
               variant="default"
+              size="sm"
+              onClick={onLoadDemo}
+              disabled={isInitializingDashboard}
+            >
+              {isInitializingDashboard
+                ? "Loading..."
+                : "Load Demo Dataset"}
+            </Button>
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => setSidebarMode("STRUCTURE")}
             >
