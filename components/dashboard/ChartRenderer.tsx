@@ -696,10 +696,8 @@ function useTimeFilteredData(): any[] {
    Color palette
 ======================================================= */
 
-// ColorBrewer Set2 (8 muted colors) + 4 extension from Paired
-const GROUP_PALETTE = [
-  "#66c2a5",
-  "#fc8d62",
+// Palette excluding green (#66c2a5) and orange (#fc8d62) — for categories unrelated to Win/Lost
+const GENERAL_PALETTE = [
   "#8da0cb",
   "#e78ac3",
   "#a6d854",
@@ -711,6 +709,30 @@ const GROUP_PALETTE = [
   "#fb9a99",
   "#cab2d6",
 ];
+
+// Reserved category colors — Win/Won get green, Lost/Lose get orange
+const RESERVED_CATEGORY_COLORS: Record<string, string> = {
+  won: "#66c2a5",
+  win: "#66c2a5",
+  lost: "#fc8d62",
+  lose: "#fc8d62",
+};
+
+/** Build a color map for a list of category names, reserving Win/Lost colors */
+function buildCategoryColorMap(categories: string[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  let generalIdx = 0;
+  for (const cat of categories) {
+    const reserved = RESERVED_CATEGORY_COLORS[cat.toLowerCase()];
+    if (reserved) {
+      map[cat] = reserved;
+    } else {
+      map[cat] = GENERAL_PALETTE[generalIdx % GENERAL_PALETTE.length];
+      generalIdx++;
+    }
+  }
+  return map;
+}
 
 // Sequential teal for funnel
 const FUNNEL_PALETTE = [
@@ -769,9 +791,8 @@ export default React.memo(function ChartRenderer({
   const rawData = useTimeFilteredData();
   const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
 
-  const primaryColor = "#66c2a5"; // Set2 teal — single-series charts
+  const primaryColor = "#8da0cb"; // Set2 blue — single-series charts
   const faded = "#cbd5e1";
-  const piePalette = GROUP_PALETTE;
 
   /* ---- All hooks must be called unconditionally (React rules) ---- */
   const isChartView = view.chartType !== "TABLE";
@@ -826,6 +847,11 @@ export default React.memo(function ChartRenderer({
     }));
   }, [visibleData]);
 
+  const pieColorMap = React.useMemo(
+    () => buildCategoryColorMap(pieData.map((d) => d.name)),
+    [pieData]
+  );
+
   const chartConfig = React.useMemo(
     () =>
       ({
@@ -877,6 +903,13 @@ export default React.memo(function ChartRenderer({
     );
   }
 
+  /* ---- HORIZONTAL_BAR with drill-down ---- */
+  if (view.chartType === "HORIZONTAL_BAR" && (view as ChartView).groupByColumn) {
+    return (
+      <HorizontalBarDrillDown view={view as ChartView} height={height} filter={filter} />
+    );
+  }
+
   /* ---- Plain SCATTER with brushing ---- */
   if (view.chartType === "SCATTER") {
     return (
@@ -911,7 +944,7 @@ export default React.memo(function ChartRenderer({
     return (
       <div className="h-full w-full outline-none" style={{ height }} onDoubleClick={() => clearSelection()} onClick={(e) => e.stopPropagation()}>
         <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
-<FunnelChart>
+<FunnelChart margin={{ top: 5, right: 140, bottom: 5, left: 5 }}>
               <Tooltip
                 trigger="hover"
                 formatter={(value: any) => [
@@ -936,6 +969,10 @@ export default React.memo(function ChartRenderer({
                   stroke="none"
                   dataKey="name"
                   fontSize={11}
+                  formatter={(value: any) => {
+                    const str = String(value);
+                    return str.length > 18 ? str.slice(0, 16) + "…" : str;
+                  }}
                 />
                 {funnelData.map((entry, i) => (
                   <Cell
@@ -1025,6 +1062,21 @@ export default React.memo(function ChartRenderer({
                   return [`${valueText} (${ratio.toFixed(1)}%)`, "Value"];
                 }}
               />
+              <Legend
+                content={() => (
+                  <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pt-2" style={{ fontSize: 11 }}>
+                    {pieData.map((entry) => (
+                      <div key={entry.name} className="flex items-center gap-1">
+                        <div
+                          className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                          style={{ backgroundColor: pieColorMap[entry.name] }}
+                        />
+                        <span>{entry.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
               <Pie
                 data={pieData}
                 dataKey="y"
@@ -1047,13 +1099,13 @@ export default React.memo(function ChartRenderer({
                   }
                 }}
               >
-                {pieData.map((entry, index) => (
+                {pieData.map((entry) => (
                   <Cell
-                    key={index}
+                    key={entry.name}
                     fill={
                       hasSelection && !isPointHighlighted(entry)
                         ? faded
-                        : piePalette[index % piePalette.length]
+                        : pieColorMap[entry.name]
                     }
                     stroke="#ffffff"
                     strokeWidth={1}
@@ -1240,13 +1292,13 @@ export default React.memo(function ChartRenderer({
                   }
                 }}
               >
-                {pieData.map((entry, index) => (
+                {pieData.map((entry) => (
                   <Cell
-                    key={index}
+                    key={entry.name}
                     fill={
                       hasSelection && !isPointHighlighted(entry)
                         ? faded
-                        : piePalette[index % piePalette.length]
+                        : pieColorMap[entry.name]
                     }
                     stroke="#ffffff"
                     strokeWidth={1}
@@ -1346,16 +1398,18 @@ function GroupedBarRenderer({
     [rows]
   );
 
+  const groupColorMap = React.useMemo(() => buildCategoryColorMap(groups), [groups]);
+
   const chartConfig = React.useMemo(() => {
     const cfg: ChartConfig = {};
-    groups.forEach((g, i) => {
+    groups.forEach((g) => {
       cfg[g] = {
         label: g,
-        color: GROUP_PALETTE[i % GROUP_PALETTE.length],
+        color: groupColorMap[g],
       };
     });
     return cfg;
-  }, [groups]);
+  }, [groups, groupColorMap]);
 
   if (!rows.length) {
     return (
@@ -1385,11 +1439,11 @@ function GroupedBarRenderer({
               iconSize={10}
               iconType="square"
             />
-            {groups.map((g, i) => (
+            {groups.map((g) => (
               <Bar
                 key={g}
                 dataKey={g}
-                fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
+                fill={groupColorMap[g]}
                 stackId={stacked ? "a" : undefined}
                 radius={stacked ? undefined : [2, 2, 0, 0]}
                 isAnimationActive={false}
@@ -1410,7 +1464,7 @@ function GroupedBarRenderer({
                 {rows.map((row, idx) => (
                   <Cell
                     key={idx}
-                    fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
+                    fill={groupColorMap[g]}
                     opacity={
                       !hasSelection || highlightedXValues.has(String(row.x))
                         ? 1
@@ -1422,6 +1476,193 @@ function GroupedBarRenderer({
             ))}
           </BarChart>
       </ChartContainer>
+    </div>
+  );
+}
+
+/* =======================================================
+   Horizontal Bar with Drill-Down
+======================================================= */
+
+function HorizontalBarDrillDown({
+  view,
+  height,
+  filter,
+}: {
+  view: ChartView;
+  height: number | "100%";
+  filter?: ChartRendererFilter;
+}) {
+  const rawData = useTimeFilteredData();
+  const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
+
+  const [drillCategory, setDrillCategory] = React.useState<string | null>(null);
+
+  const categoryColumn = view.groupByColumn!;
+  const itemColumn = view.xColumn;
+  const yColumn = view.yColumn;
+  const agg = view.aggregation || "sum";
+
+  // Filter raw data by view filter (e.g. Status = Won)
+  const filteredRawData = React.useMemo(
+    () => rawData.filter((row: any) => rowMatchesAttributeFilter(row, filter?.includeByColumn)),
+    [rawData, filter]
+  );
+
+  // Category-level aggregation (top level)
+  const categoryData = React.useMemo(() => {
+    const map = new Map<string, { sum: number; count: number }>();
+    for (const row of filteredRawData) {
+      const cat = getValueByPath(row, categoryColumn);
+      if (cat == null) continue;
+      const key = String(cat);
+      const yRaw = getValueByPath(row, yColumn);
+      const yVal = agg === "count" ? 1 : Number(yRaw);
+      if (Number.isNaN(yVal) && agg !== "count") continue;
+      const existing = map.get(key) ?? { sum: 0, count: 0 };
+      existing.sum += yVal;
+      existing.count += 1;
+      map.set(key, existing);
+    }
+    const result: GenericPoint[] = Array.from(map.entries()).map(([key, { sum, count }]) => {
+      let y: number;
+      if (agg === "avg") y = count > 0 ? sum / count : 0;
+      else if (agg === "count") y = count;
+      else y = sum;
+      return { x: key, y, highlighted: true, xRaw: key, xType: "category" as const };
+    });
+    if (view.sortDescending) result.sort((a, b) => b.y - a.y);
+    return result;
+  }, [filteredRawData, categoryColumn, yColumn, agg, view.sortDescending]);
+
+  // Drill-down: items within the selected category
+  const drillData = React.useMemo(() => {
+    if (!drillCategory) return [];
+    const map = new Map<string, { sum: number; count: number }>();
+    for (const row of filteredRawData) {
+      const cat = String(getValueByPath(row, categoryColumn) ?? "");
+      if (cat !== drillCategory) continue;
+      const item = getValueByPath(row, itemColumn);
+      if (item == null) continue;
+      const key = String(item);
+      const yRaw = getValueByPath(row, yColumn);
+      const yVal = agg === "count" ? 1 : Number(yRaw);
+      if (Number.isNaN(yVal) && agg !== "count") continue;
+      const existing = map.get(key) ?? { sum: 0, count: 0 };
+      existing.sum += yVal;
+      existing.count += 1;
+      map.set(key, existing);
+    }
+    const result: GenericPoint[] = Array.from(map.entries()).map(([key, { sum, count }]) => {
+      let y: number;
+      if (agg === "avg") y = count > 0 ? sum / count : 0;
+      else if (agg === "count") y = count;
+      else y = sum;
+      return { x: key, y, highlighted: true, xRaw: key, xType: "category" as const };
+    });
+    result.sort((a, b) => b.y - a.y);
+    if (filter?.top) result.splice(filter.top);
+    return result;
+  }, [filteredRawData, drillCategory, categoryColumn, itemColumn, yColumn, agg, filter?.top]);
+
+  // Highlighting
+  const highlightedXKeys = React.useMemo(() => {
+    if (!hasSelection) return null;
+    const keys = new Set<any>();
+    for (const row of filteredRawData) {
+      if (rowMatchesSelection(row, selection, rangeFilter, lassoFilter)) {
+        const val = drillCategory
+          ? getValueByPath(row, itemColumn)
+          : getValueByPath(row, categoryColumn);
+        keys.add(val);
+      }
+    }
+    return keys;
+  }, [filteredRawData, selection, rangeFilter, lassoFilter, hasSelection, drillCategory, itemColumn, categoryColumn]);
+
+  const isHighlighted = React.useCallback(
+    (xRaw: any) => {
+      if (!highlightedXKeys) return true;
+      return highlightedXKeys.has(xRaw);
+    },
+    [highlightedXKeys]
+  );
+
+  const displayData = drillCategory ? drillData : categoryData;
+  const primaryColor = "#8da0cb";
+  const faded = "#cbd5e1";
+
+  const chartConfig = React.useMemo(
+    () => ({ y: { label: view.yLabel ?? view.yColumn ?? "" } } satisfies ChartConfig),
+    [view.yLabel, view.yColumn]
+  );
+
+  if (!displayData.length) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
+        No compatible data
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full w-full outline-none flex flex-col" style={{ height }} onDoubleClick={() => clearSelection()} onClick={(e) => e.stopPropagation()}>
+      {drillCategory && (
+        <button
+          className="self-start text-xs text-primary hover:underline px-1 py-0.5 flex items-center gap-1 shrink-0"
+          onClick={(e) => { e.stopPropagation(); setDrillCategory(null); }}
+        >
+          <span>&#8592;</span> Back to categories
+        </button>
+      )}
+      {!drillCategory && (
+        <div className="text-[10px] text-muted-foreground px-1 shrink-0">Click a category to drill down</div>
+      )}
+      <div className="flex-1 min-h-0">
+        <ChartContainer config={chartConfig} className="h-full w-full p-0 aspect-auto">
+          <BarChart data={displayData} layout="vertical">
+            <CartesianGrid horizontal={false} strokeOpacity={0.15} />
+            <XAxis type="number" tickFormatter={formatCompactNumber} />
+            <YAxis
+              dataKey="x"
+              type="category"
+              width={100}
+              tick={{ fontSize: 11 }}
+            />
+            <ChartTooltip content={<ChartTooltipContent />} trigger="hover" />
+            <Bar
+              dataKey="y"
+              isAnimationActive={false}
+              activeBar={false}
+              onClick={(data: any, _idx: any, event: any) => {
+                const clickedX = data?.payload?.xRaw ?? data?.xRaw ?? data?.payload?.x ?? data?.x;
+                if (clickedX === undefined) return;
+                if (!drillCategory) {
+                  // Drill into category
+                  setDrillCategory(String(clickedX));
+                } else {
+                  // Normal cross-filter selection within drill level
+                  const e = event?.nativeEvent ?? event;
+                  if (e?.ctrlKey || e?.metaKey) {
+                    addToSelection(itemColumn, clickedX);
+                  } else {
+                    replaceSelection(itemColumn, clickedX);
+                  }
+                }
+              }}
+            >
+              {displayData.map((entry, index) => (
+                <Cell
+                  key={index}
+                  fill={isHighlighted(entry.xRaw) ? primaryColor : faded}
+                  opacity={!hasSelection || isHighlighted(entry.xRaw) ? 1 : 0.3}
+                  style={{ cursor: "pointer" }}
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ChartContainer>
+      </div>
     </div>
   );
 }
@@ -1462,16 +1703,18 @@ function ColoredScatterRenderer({
     [rawData, view, selection, attributeTypes, filter, rangeFilter, lassoFilter]
   );
 
+  const scatterColorMap = React.useMemo(() => buildCategoryColorMap(groups), [groups]);
+
   const chartConfig = React.useMemo(() => {
     const cfg: ChartConfig = {};
-    groups.forEach((g, i) => {
+    groups.forEach((g) => {
       cfg[g] = {
         label: g,
-        color: GROUP_PALETTE[i % GROUP_PALETTE.length],
+        color: scatterColorMap[g],
       };
     });
     return cfg;
-  }, [groups]);
+  }, [groups, scatterColorMap]);
 
   // Compute data ranges for pixel-to-data conversion
   const dataRange = React.useMemo(() => {
@@ -1609,14 +1852,14 @@ function ColoredScatterRenderer({
               iconSize={10}
               iconType="circle"
             />
-            {groups.map((g, i) => {
+            {groups.map((g) => {
               const groupData = data.filter((d) => d.group === g);
               return (
                 <Scatter
                   key={g}
                   name={g}
                   data={groupData}
-                  fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
+                  fill={scatterColorMap[g]}
                   isAnimationActive={false}
                   onClick={(e: any, _idx: any, event: any) => {
                     if (isDragging.current) return;
@@ -1634,7 +1877,7 @@ function ColoredScatterRenderer({
                   {groupData.map((entry, idx) => (
                     <Cell
                       key={idx}
-                      fill={GROUP_PALETTE[i % GROUP_PALETTE.length]}
+                      fill={scatterColorMap[g]}
                       opacity={!hasSelection || entry.highlighted ? 1 : 0.15}
                       style={{ cursor: "pointer" }}
                     />
@@ -1648,7 +1891,7 @@ function ColoredScatterRenderer({
       {/* Freehand lasso overlay */}
       {lassoSvgPath && (
         <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 10 }}>
-          <path d={lassoSvgPath} fill="rgba(102,194,165,0.1)" stroke="#66c2a5" strokeWidth={1.5} strokeDasharray="4 2" />
+          <path d={lassoSvgPath} fill="rgba(141,160,203,0.1)" stroke="#8da0cb" strokeWidth={1.5} strokeDasharray="4 2" />
         </svg>
       )}
     </div>
@@ -1677,7 +1920,7 @@ function ScatterWithBrush({
   const [lassoPixels, setLassoPixels] = React.useState<Array<{ x: number; y: number }>>([]);
   const isDragging = React.useRef(false);
 
-  const primaryColor = "#66c2a5";
+  const primaryColor = "#8da0cb";
   const faded = "#cbd5e1";
 
   const { data, xType: _xType } = React.useMemo(() => {
@@ -1849,7 +2092,7 @@ function ScatterWithBrush({
       {/* Freehand lasso overlay */}
       {lassoSvgPath && (
         <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 10 }}>
-          <path d={lassoSvgPath} fill="rgba(102,194,165,0.1)" stroke="#66c2a5" strokeWidth={1.5} strokeDasharray="4 2" />
+          <path d={lassoSvgPath} fill="rgba(141,160,203,0.1)" stroke="#8da0cb" strokeWidth={1.5} strokeDasharray="4 2" />
         </svg>
       )}
     </div>

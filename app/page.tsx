@@ -602,18 +602,18 @@ function getDemoViews(): View[] {
       priority: 85,
       title: "Revenue by Market Maturity",
     },
-    // Top 10 Products by Revenue — Horizontal bar chart (Won deals only)
+    // Products by Revenue — Horizontal bar with drill-down by category (Won deals only)
     {
       id: "demo_top_products",
       chartType: "HORIZONTAL_BAR",
       xColumn: "Product Name",
       yColumn: "Revenue",
+      groupByColumn: "Product Category",
       size: "md",
       priority: 84,
-      title: "Top 10 Products by Revenue",
+      title: "Products by Revenue",
       sortDescending: true,
       filter: {
-        top: 10,
         includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
       },
     },
