@@ -4,6 +4,7 @@ import { useRef } from "react";
 import {
   IconBrandGithub,
   IconDashboard,
+  IconDownload,
   IconUpload,
 } from "@tabler/icons-react";
 
@@ -18,7 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useDataset } from "@/context/DatasetContext";
 
-export function SiteHeader() {
+export function SiteHeader({ onSave }: { onSave?: () => void } = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { attributeKeys, uploadDataset } = useDataset();
 
@@ -84,6 +85,18 @@ export function SiteHeader() {
             <span className="text-xs text-muted-foreground">
               {attributeKeys.length} attributes
             </span>
+          )}
+
+          {onSave && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden sm:flex gap-2 text-muted-foreground"
+              onClick={onSave}
+            >
+              <IconDownload className="size-4" />
+              <span>Save Session</span>
+            </Button>
           )}
 
           <Button

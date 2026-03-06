@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { useRecommendation } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
@@ -474,7 +474,7 @@ function getDemoViews(): View[] {
       chartType: "FUNNEL",
       xColumn: "Stage",
       yColumn: "Count",
-      size: "md",
+      size: "lg",
       priority: 96,
       title: "Deal Count by Stage",
       aggregation: "sum",
@@ -676,7 +676,7 @@ function AppContent() {
     triggerRecommendation,
   } = useRecommendation();
 
-  const { logEvent } = useExperimentLogger();
+  const { session: experimentSession, logEvent } = useExperimentLogger();
 
   /* ================= Recommendation SHOWN ================= */
 
@@ -967,10 +967,35 @@ function AppContent() {
     }
   };
 
+  /* ================= Save Dashboard State ================= */
+
+  const saveDashboardState = useCallback(() => {
+    const payload = {
+      savedAt: new Date().toISOString(),
+      views,
+      focusScore,
+      textChats,
+      appliedRecommendations: appliedRecommendations.map(
+        ({ _prevViews, ...rest }) => rest
+      ),
+      experimentSession: experimentSession ?? null,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dashboard-session-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [views, focusScore, textChats, appliedRecommendations, experimentSession]);
+
   return (
     <>
       <SidebarInset className="bg-muted/10">
-        <SiteHeader />
+        <SiteHeader onSave={saveDashboardState} />
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto p-6 md:p-8">
             <DashboardView

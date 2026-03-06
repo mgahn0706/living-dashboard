@@ -33,7 +33,7 @@ import {
 
 const SIZE_CLASS: Record<View["size"], string> = {
   xl: "basis-[49%]",
-  lg: "basis-[24%]",
+  lg: "basis-[32%]",
   md: "basis-[24%]",
   sm: "basis-[24%]",
 };
