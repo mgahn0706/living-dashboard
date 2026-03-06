@@ -710,12 +710,19 @@ const GENERAL_PALETTE = [
   "#cab2d6",
 ];
 
-// Reserved category colors — Win/Won get green, Lost/Lose get orange
+// Reserved category colors — consistent color assignments for known categories
 const RESERVED_CATEGORY_COLORS: Record<string, string> = {
+  // Win/Lost → green / orange
   won: "#66c2a5",
   win: "#66c2a5",
   lost: "#fc8d62",
   lose: "#fc8d62",
+  // Deal stages → sequential green/teal (matching funnel palette)
+  prospecting: "#00796b",
+  qualification: "#26a69a",
+  proposal: "#4db6ac",
+  negotiation: "#80cbc4",
+  "final review": "#b2dfdb",
 };
 
 /** Build a color map for a list of category names, reserving Win/Lost colors */
@@ -1027,13 +1034,13 @@ export default React.memo(function ChartRenderer({
                 }}
               >
                 {visibleData.map((entry, index) => (
-                  <Cell
-                    key={index}
-                    fill={isPointHighlighted(entry) ? primaryColor : faded}
-                    opacity={!hasSelection || isPointHighlighted(entry) ? 1 : 0.3}
-                    style={{ cursor: "pointer" }}
-                  />
-                ))}
+                    <Cell
+                      key={index}
+                      fill={isPointHighlighted(entry) ? primaryColor : faded}
+                      opacity={!hasSelection || isPointHighlighted(entry) ? 1 : 0.3}
+                      style={{ cursor: "pointer" }}
+                    />
+                  ))}
               </Bar>
             </BarChart>
         </ChartContainer>
@@ -1244,13 +1251,13 @@ export default React.memo(function ChartRenderer({
                 }}
               >
                 {visibleData.map((entry, index) => (
-                  <Cell
-                    key={index}
-                    fill={isPointHighlighted(entry) ? primaryColor : faded}
-                    opacity={!hasSelection || isPointHighlighted(entry) ? 1 : 0.3}
-                    style={{ cursor: "pointer" }}
-                  />
-                ))}
+                    <Cell
+                      key={index}
+                      fill={isPointHighlighted(entry) ? primaryColor : faded}
+                      opacity={!hasSelection || isPointHighlighted(entry) ? 1 : 0.3}
+                      style={{ cursor: "pointer" }}
+                    />
+                  ))}
               </Bar>
             </BarChart>
           ) : (
@@ -1589,8 +1596,18 @@ function HorizontalBarDrillDown({
   );
 
   const displayData = drillCategory ? drillData : categoryData;
-  const primaryColor = "#8da0cb";
   const faded = "#cbd5e1";
+
+  // Color map for categories (consistent with donut/pie)
+  const categoryColorMap = React.useMemo(
+    () => buildCategoryColorMap(categoryData.map((d) => String(d.xRaw ?? d.x))),
+    [categoryData]
+  );
+
+  // When drilled down, all bars inherit the parent category color
+  const barFillColor = drillCategory
+    ? (categoryColorMap[drillCategory] ?? "#8da0cb")
+    : null; // null = use per-category colors
 
   const chartConfig = React.useMemo(
     () => ({ y: { label: view.yLabel ?? view.yColumn ?? "" } } satisfies ChartConfig),
@@ -1651,14 +1668,18 @@ function HorizontalBarDrillDown({
                 }
               }}
             >
-              {displayData.map((entry, index) => (
-                <Cell
-                  key={index}
-                  fill={isHighlighted(entry.xRaw) ? primaryColor : faded}
-                  opacity={!hasSelection || isHighlighted(entry.xRaw) ? 1 : 0.3}
-                  style={{ cursor: "pointer" }}
-                />
-              ))}
+              {displayData.map((entry, index) => {
+                const barKey = String(entry.xRaw ?? entry.x);
+                const fillColor = barFillColor ?? (categoryColorMap[barKey] ?? "#8da0cb");
+                return (
+                  <Cell
+                    key={index}
+                    fill={isHighlighted(entry.xRaw) ? fillColor : faded}
+                    opacity={!hasSelection || isHighlighted(entry.xRaw) ? 1 : 0.3}
+                    style={{ cursor: "pointer" }}
+                  />
+                );
+              })}
             </Bar>
           </BarChart>
         </ChartContainer>
