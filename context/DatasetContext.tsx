@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useState } from "react";
 import * as XLSX from "xlsx";
 
 /* =====================================================
@@ -21,6 +21,7 @@ type DatasetContextType = {
   schema: SchemaNode | null;
   resolveAttribute: (attr: string) => any[];
   uploadDataset: (file: File) => Promise<void>;
+  loadDemoDataset: () => Promise<void>;
 };
 
 /* =====================================================
@@ -106,12 +107,38 @@ function parseCSV(text: string): Record<string, any>[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
 
-  const headers = lines[0].split(",").map((h) => h.trim());
+  // Auto-detect delimiter
+  const firstLine = lines[0];
+  const semicolons = (firstLine.match(/;/g) || []).length;
+  const commas = (firstLine.match(/,/g) || []).length;
+  const delimiter = semicolons > commas ? ";" : ",";
+  const europeanDecimal = delimiter === ";";
+
+  const headers = firstLine.split(delimiter).map((h) => h.trim());
 
   return lines.slice(1).map((line) => {
-    const values = line.split(",").map((v) => v.trim());
+    const values = line.split(delimiter).map((v) => {
+      let s = v.trim();
+      // Strip CSV quoting
+      if (s.startsWith('"') && s.endsWith('"')) {
+        s = s.slice(1, -1).replace(/""/g, '"');
+      }
+      return s;
+    });
+
     const row: Record<string, any> = {};
-    headers.forEach((h, i) => (row[h] = values[i]));
+    headers.forEach((h, i) => {
+      const raw = values[i] ?? "";
+      if (raw !== "" && /^-?\d[\d.,]*$/.test(raw)) {
+        const numCandidate = europeanDecimal ? raw.replace(",", ".") : raw;
+        const n = Number(numCandidate);
+        if (!Number.isNaN(n)) {
+          row[h] = n;
+          return;
+        }
+      }
+      row[h] = raw;
+    });
     return row;
   });
 }
@@ -170,6 +197,33 @@ function detectPrimitiveType(values: any[]): PrimitiveType {
    Provider
 ===================================================== */
 
+function addDemoComputedColumns(rows: Record<string, any>[]): Record<string, any>[] {
+  return rows.map((row) => {
+    const won = row.Status === "Won" ? 1 : 0;
+    const created = new Date(row["Created Date"]);
+    const closed = new Date(row.CloseDate);
+    const dealDays = Math.max(
+      0,
+      Math.round((closed.getTime() - created.getTime()) / (1000 * 60 * 60 * 24))
+    );
+    const closeDate = closed;
+    const q = Math.ceil((closeDate.getMonth() + 1) / 3);
+    const yearMonth = row.CloseDate ? String(row.CloseDate).slice(0, 7) : "";
+    const quarter = !Number.isNaN(closeDate.getTime())
+      ? `${closeDate.getFullYear()}-Q${q}`
+      : "";
+
+    return {
+      ...row,
+      WonNumeric: won,
+      Count: 1,
+      DealDays: dealDays,
+      YearMonth: yearMonth,
+      Quarter: quarter,
+    };
+  });
+}
+
 export function DatasetProvider({ children }: { children: React.ReactNode }) {
   const [rawData, setRawData] = useState<any>(null);
   const [attributeKeys, setAttributeKeys] = useState<string[]>([]);
@@ -178,21 +232,7 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
   >({});
   const [schema, setSchema] = useState<SchemaNode | null>(null);
 
-  const uploadDataset = async (file: File) => {
-    const text = await file.text();
-    let data: any;
-
-    if (file.name.endsWith(".json")) {
-      data = JSON.parse(text);
-    } else if (file.name.endsWith(".csv")) {
-      data = parseCSV(text);
-    } else if (file.name.endsWith(".xlsx")) {
-      const buffer = await file.arrayBuffer();
-      data = parseXLSX(buffer);
-    } else {
-      throw new Error("Unsupported file type");
-    }
-
+  const ingestData = (data: any) => {
     if (typeof data !== "object" || data === null) {
       throw new Error("Invalid data");
     }
@@ -210,15 +250,38 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
     setAttributeKeys(flatKeys);
     setAttributeTypes(typeMap);
     setSchema(hierarchicalSchema);
-
-    console.log("Dataset loaded");
-    console.log("Attributes:", flatKeys);
-    console.log("Attribute types:", typeMap);
-    console.log("Schema:", hierarchicalSchema);
   };
 
-  const resolveAttribute = (attr: string) =>
-    getValuesByAttribute(rawData, attr);
+  const uploadDataset = async (file: File) => {
+    const text = await file.text();
+    let data: any;
+
+    if (file.name.endsWith(".json")) {
+      data = JSON.parse(text);
+    } else if (file.name.endsWith(".csv")) {
+      data = parseCSV(text);
+    } else if (file.name.endsWith(".xlsx")) {
+      const buffer = await file.arrayBuffer();
+      data = parseXLSX(buffer);
+    } else {
+      throw new Error("Unsupported file type");
+    }
+
+    ingestData(data);
+  };
+
+  const loadDemoDataset = async () => {
+    const res = await fetch("/data/Revenue.csv");
+    const text = await res.text();
+    const parsed = parseCSV(text);
+    const enriched = addDemoComputedColumns(parsed);
+    ingestData(enriched);
+  };
+
+  const resolveAttribute = useCallback(
+    (attr: string) => getValuesByAttribute(rawData, attr),
+    [rawData]
+  );
 
   return (
     <DatasetContext.Provider
@@ -229,6 +292,7 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
         schema,
         resolveAttribute,
         uploadDataset,
+        loadDemoDataset,
       }}
     >
       {children}

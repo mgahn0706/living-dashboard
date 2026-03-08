@@ -2,7 +2,18 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { BarChart3, LineChart, Table2, ScatterChart, PieChart } from "lucide-react";
+import {
+  BarChart3,
+  BarChartHorizontal,
+  LineChart,
+  Table2,
+  ScatterChart,
+  PieChart,
+  Gauge,
+  Layers,
+  BarChart2,
+  GitPullRequestArrow,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { SidebarContent, SidebarHeader } from "@/components/ui/sidebar";
@@ -24,15 +35,19 @@ export type NewViewPayload =
   | {
       chartType: "TABLE";
       columns: string[];
-      size: "sm" | "md" | "lg";
+      size: "sm" | "md" | "lg" | "xl";
       title: string;
     }
   | {
-      chartType: "BAR" | "LINE" | "SCATTER" | "PIE";
+      chartType: Exclude<ChartType, "TABLE">;
       xColumn: string;
       yColumn: string;
-      size: "sm" | "md" | "lg";
+      size: "sm" | "md" | "lg" | "xl";
       title: string;
+      groupByColumn?: string;
+      aggregation?: "sum" | "avg" | "count";
+      colorByColumn?: string;
+      sortDescending?: boolean;
     };
 
 /* =====================================================
@@ -45,8 +60,14 @@ const CHART_BUTTONS: {
   label: string;
 }[] = [
   { type: "BAR", icon: <BarChart3 />, label: "Bar Chart" },
+  { type: "HORIZONTAL_BAR", icon: <BarChartHorizontal />, label: "Horizontal Bar" },
+  { type: "STACKED_BAR", icon: <Layers />, label: "Stacked Bar" },
+  { type: "GROUPED_BAR", icon: <BarChart2 />, label: "Grouped Bar" },
   { type: "LINE", icon: <LineChart />, label: "Line Chart" },
-  { type: "PIE", icon: <PieChart />, label: "Pie Chart" },
+  { type: "PIE", icon: <PieChart />, label: "Pie / Donut" },
+  { type: "DONUT", icon: <PieChart />, label: "Donut Chart" },
+  { type: "FUNNEL", icon: <GitPullRequestArrow />, label: "Funnel Chart" },
+  { type: "KPI", icon: <Gauge />, label: "KPI Card" },
   { type: "TABLE", icon: <Table2 />, label: "Table" },
   { type: "SCATTER", icon: <ScatterChart />, label: "Scatter Plot" },
 ];
@@ -61,10 +82,22 @@ function chartHint(chartType: ChartType) {
       return "Best for number × number (trend over time).";
     case "BAR":
       return "Best for categorical × number comparisons.";
+    case "HORIZONTAL_BAR":
+      return "Horizontal bars for ranked category comparisons.";
+    case "STACKED_BAR":
+      return "Stacked bars for part-to-whole by category.";
+    case "GROUPED_BAR":
+      return "Clustered bars to compare groups side by side.";
     case "SCATTER":
       return "Requires number × number (correlation analysis).";
     case "PIE":
       return "Best for part-to-whole by category.";
+    case "DONUT":
+      return "Part-to-whole with center space for context.";
+    case "KPI":
+      return "Single metric card (sum, avg, or count).";
+    case "FUNNEL":
+      return "Stage-based flow visualization.";
     case "TABLE":
       return "Select multiple attributes to inspect raw values.";
     default:
@@ -78,10 +111,10 @@ function isChartTypeAvailable(
   numericLikeCount: number
 ) {
   if (chartType === "TABLE") return attributeKeys.length > 0;
-
+  if (chartType === "KPI") return numericLikeCount >= 1;
   if (chartType === "SCATTER") return numericLikeCount >= 2;
 
-  // BAR/LINE/PIE need at least one numeric metric and one dimension.
+  // BAR/LINE/PIE/HORIZONTAL_BAR/STACKED_BAR/GROUPED_BAR/FUNNEL/DONUT
   return numericLikeCount >= 1 && attributeKeys.length >= 2;
 }
 
@@ -92,17 +125,16 @@ function isSelectionCompatible(
   isNumericLike: (attr: string) => boolean
 ) {
   if (chartType === "TABLE") return true;
+  if (chartType === "KPI") return !!yAttr && isNumericLike(yAttr);
   if (!xAttr || !yAttr) return false;
   if (xAttr === yAttr) return false;
 
-  const xIsNumeric = isNumericLike(xAttr);
   const yIsNumeric = isNumericLike(yAttr);
 
   if (chartType === "SCATTER") {
-    return xIsNumeric && yIsNumeric;
+    return isNumericLike(xAttr) && yIsNumeric;
   }
 
-  // BAR / LINE / PIE
   return yIsNumeric;
 }
 
@@ -179,22 +211,22 @@ export default function ChartCreatorSidebar({
 
       <SidebarContent className="flex flex-col gap-4 p-4">
         {/* Chart type buttons */}
-        <div className="flex gap-1">
+        <div className="grid grid-cols-4 gap-1">
           {CHART_BUTTONS.map((c) => (
             <Tooltip key={c.type}>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon"
+                  size="sm"
                   onClick={() => handleToggle(c.type)}
                   disabled={!isTypeAvailable(c.type)}
-                  className={
+                  className={`flex items-center justify-center p-0 h-8 w-8 ${
                     selectedType === c.type
                       ? "bg-accent text-accent-foreground"
                       : ""
-                  }
+                  }`}
                 >
-                  {c.icon}
+                  <span className="size-4 shrink-0">{c.icon}</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{c.label}</TooltipContent>
@@ -249,7 +281,7 @@ function ChartConfigPanel({
   const [yAttr, setYAttr] = useState<string | null>(null);
   const [tableAttrs, setTableAttrs] = useState<string[]>([]);
   const [title, setTitle] = useState("");
-  const [size, setSize] = useState<"sm" | "md" | "lg">("md");
+  const [size, setSize] = useState<"sm" | "md" | "lg" | "xl">("md");
 
   /* ===== prefill form (column-based) ===== */
   useEffect(() => {
@@ -301,8 +333,18 @@ function ChartConfigPanel({
           return numericCount / filtered.length >= 0.7;
         });
 
-  const xLabel = chartType === "PIE" ? "Category" : "Select X";
-  const yLabel = chartType === "PIE" ? "Value" : "Select Y";
+  const xLabel =
+    chartType === "PIE" || chartType === "DONUT"
+      ? "Category"
+      : chartType === "KPI"
+      ? "(unused)"
+      : "Select X";
+  const yLabel =
+    chartType === "PIE" || chartType === "DONUT"
+      ? "Value"
+      : chartType === "KPI"
+      ? "Metric"
+      : "Select Y";
 
   return (
     <div className="p-3 space-y-4 text-sm">
