@@ -69,17 +69,6 @@ export type PreviewState =
   | { type: "ADD"; view: View }
   | null;
 
-/* =======================================================
-   Utils
-======================================================= */
-
-function formatFocus(score: number) {
-  const pct = Math.round(score * 100);
-  if (pct >= 1000) return `High (${pct}%)`;
-  if (pct >= 500) return `Med (${pct}%)`;
-  return `Low (${pct}%)`;
-}
-
 function toDistinctStringOptions(values: any[], limit = 120) {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -144,7 +133,6 @@ export default React.memo(function ViewCard({
   view,
   isSelected,
   preview = null,
-  focusScore,
   recommendation = null,
   onRecommendationHover,
   onRecommendationLeave,
@@ -158,7 +146,6 @@ export default React.memo(function ViewCard({
   view: View;
   isSelected: boolean;
   preview?: PreviewState;
-  focusScore: number;
   recommendation?: Recommendation | null;
   onRecommendationHover?: (rec: Recommendation) => void;
   onRecommendationLeave?: () => void;
@@ -497,9 +484,6 @@ export default React.memo(function ViewCard({
             <ChartRenderer view={view} filter={view.filter} height="100%" />
           </CardContent>
 
-          <div className="px-3 pb-2 pt-1 text-right text-[10px] text-muted-foreground/60">
-            Focus {formatFocus(focusScore)}
-          </div>
         </div>
 
         {/* Preview overlays */}

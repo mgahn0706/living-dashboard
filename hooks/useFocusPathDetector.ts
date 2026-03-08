@@ -59,6 +59,7 @@ type FocusDetectorConfig = {
   idleDecayAcceleration: number; // >1 : longer idle → faster decay
 
   /* ===== safety clamp ===== */
+  initialFocusScore: number; // initial baseline (e.g., medium)
   minimumFocusScore: number; // usually 0
 };
 
@@ -118,6 +119,7 @@ export function useFocusPathDetector(
       idleDecayAcceleration: 1.2,
 
       /* ===== safety ===== */
+      initialFocusScore: 1000,
       minimumFocusScore: 0,
     };
 
@@ -152,11 +154,12 @@ export function useFocusPathDetector(
   const safeEmit = useCallback(
     (viewId: string, delta: number) => {
       const min = configuration.minimumFocusScore;
+      const initial = Math.max(min, configuration.initialFocusScore);
 
       const current =
         focusEstimateRef.current[viewId] != null
           ? focusEstimateRef.current[viewId]
-          : min;
+          : initial;
 
       // Cap negative delta so (current + delta) never goes below min.
       let cappedDelta = delta;
@@ -188,7 +191,10 @@ export function useFocusPathDetector(
 
       // Ensure estimate exists
       if (focusEstimateRef.current[viewId] == null) {
-        focusEstimateRef.current[viewId] = configuration.minimumFocusScore;
+        focusEstimateRef.current[viewId] = Math.max(
+          configuration.minimumFocusScore,
+          configuration.initialFocusScore
+        );
       }
 
       /* ---------- dwell tracking ---------- */
@@ -277,7 +283,10 @@ export function useFocusPathDetector(
 
       // Ensure estimate exists
       if (focusEstimateRef.current[viewId] == null) {
-        focusEstimateRef.current[viewId] = configuration.minimumFocusScore;
+        focusEstimateRef.current[viewId] = Math.max(
+          configuration.minimumFocusScore,
+          configuration.initialFocusScore
+        );
       }
 
       let delta = configuration.clickFocusGain;
@@ -320,7 +329,10 @@ export function useFocusPathDetector(
 
         // Ensure estimate exists
         if (focusEstimateRef.current[viewId] == null) {
-          focusEstimateRef.current[viewId] = configuration.minimumFocusScore;
+          focusEstimateRef.current[viewId] = Math.max(
+            configuration.minimumFocusScore,
+            configuration.initialFocusScore
+          );
         }
 
         // Base long-term decay (half-life ~ focusHalfLifeSeconds)

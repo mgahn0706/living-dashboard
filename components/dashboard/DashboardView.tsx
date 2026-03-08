@@ -46,8 +46,7 @@ export default function DashboardView({
   onSelect: (viewId: string) => void;
   onApplyFilter?: (viewId: string, filter: View["filter"] | undefined) => void;
 }) {
-  const { focusScore, reportPointerInteraction, reportClickInteraction } =
-    useFocus();
+  const { reportPointerInteraction, reportClickInteraction } = useFocus();
 
   const sortedViews = [...views].sort((a, b) => b.priority - a.priority);
 
@@ -111,7 +110,6 @@ export default function DashboardView({
         <ViewCard
           key={view.id}
           view={view}
-          focusScore={focusScore[view.id] ?? 0}
           isSelected={selectedViewId === view.id}
           preview={previewMap[view.id] ?? null}
           recommendation={recommendationsByViewId[view.id] ?? null}
@@ -136,7 +134,6 @@ export default function DashboardView({
       {addPreview && (
         <ViewCard
           view={addPreview}
-          focusScore={0}
           preview={{ type: "ADD", view: addPreview }}
           isSelected={false}
           recommendation={newContentRecommendation}
