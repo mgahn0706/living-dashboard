@@ -1,7 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import { Recommendation, View } from "@/types/dashboard";
-import { useFocus } from "@/context/FocusContext";
+import { INITIAL_FOCUS_SCORE, useFocus } from "@/context/FocusContext";
 import ViewCard, { PreviewState } from "./ViewCard";
 import { Button } from "../ui/button";
 import { ArrowRight } from "lucide-react";
@@ -46,9 +47,38 @@ export default function DashboardView({
   onSelect: (viewId: string) => void;
   onApplyFilter?: (viewId: string, filter: View["filter"] | undefined) => void;
 }) {
-  const { reportPointerInteraction, reportClickInteraction } = useFocus();
+  const { focusScore, reportPointerInteraction, reportClickInteraction } =
+    useFocus();
 
   const sortedViews = [...views].sort((a, b) => b.priority - a.priority);
+  const focusIntensityByViewId = useMemo(() => {
+    const scored = views.map((view) => ({
+      id: view.id,
+      score: focusScore[view.id] ?? INITIAL_FOCUS_SCORE,
+    }));
+
+    if (scored.length === 0) return {} as Record<string, number>;
+
+    const values = scored.map((item) => item.score);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+    const map: Record<string, number> = {};
+
+    if (range < 0.001) {
+      scored.forEach((item) => {
+        map[item.id] = 0.2;
+      });
+      return map;
+    }
+
+    scored.forEach((item) => {
+      const normalized = (item.score - min) / range;
+      map[item.id] = Math.max(0, Math.min(1, normalized));
+    });
+
+    return map;
+  }, [views, focusScore]);
 
   /* =======================================================
      Empty State
@@ -110,6 +140,7 @@ export default function DashboardView({
         <ViewCard
           key={view.id}
           view={view}
+          focusIntensity={focusIntensityByViewId[view.id] ?? 0.2}
           isSelected={selectedViewId === view.id}
           preview={previewMap[view.id] ?? null}
           recommendation={recommendationsByViewId[view.id] ?? null}
@@ -134,6 +165,7 @@ export default function DashboardView({
       {addPreview && (
         <ViewCard
           view={addPreview}
+          focusIntensity={0.2}
           preview={{ type: "ADD", view: addPreview }}
           isSelected={false}
           recommendation={newContentRecommendation}

@@ -131,6 +131,7 @@ function buildFilterFromDraft(draft: {
 
 export default React.memo(function ViewCard({
   view,
+  focusIntensity,
   isSelected,
   preview = null,
   recommendation = null,
@@ -144,6 +145,7 @@ export default React.memo(function ViewCard({
   onApplyFilter,
 }: {
   view: View;
+  focusIntensity: number;
   isSelected: boolean;
   preview?: PreviewState;
   recommendation?: Recommendation | null;
@@ -157,6 +159,15 @@ export default React.memo(function ViewCard({
   onApplyFilter?: (viewId: string, filter: ViewFilter | undefined) => void;
 }) {
   const isEditing = isSelected;
+  const normalizedFocus = Number.isFinite(focusIntensity)
+    ? Math.max(0, Math.min(1, focusIntensity))
+    : 0.2;
+  const borderOpacity = 0.08 + normalizedFocus * 0.34;
+  const borderWidth = 1 + normalizedFocus * 1.2;
+  const glowOpacity = 0.02 + normalizedFocus * 0.12;
+  const borderColor = `rgba(59, 130, 246, ${borderOpacity.toFixed(3)})`;
+  const borderGlow = `0 0 0 ${borderWidth.toFixed(2)}px rgba(59, 130, 246, ${glowOpacity.toFixed(3)})`;
+  const baseShadow = "0 1px 2px rgba(0, 0, 0, 0.08)";
   const { attributeKeys, resolveAttribute } = useDataset();
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [draft, setDraft] = React.useState({
@@ -217,6 +228,10 @@ export default React.memo(function ViewCard({
       <Card
         onPointerMove={onPointerMove}
         onClick={onCardClick}
+        style={{
+          borderColor,
+          boxShadow: `${borderGlow}, ${baseShadow}`,
+        }}
         className={cn(
           view.chartType === "KPI" ? KPI_SIZE_CLASS[view.size] : SIZE_CLASS[view.size],
           "relative overflow-hidden transition-all cursor-pointer",
