@@ -1380,7 +1380,7 @@ function KPIRenderer({
 }
 
 /* =======================================================
-   Range Bar Renderer (timeline / Gantt)
+   Range Bar Renderer (Gantt / timeline)
 ======================================================= */
 
 function RangeBarRenderer({
@@ -1394,8 +1394,23 @@ function RangeBarRenderer({
 }) {
   const rawData = useTimeFilteredData();
   const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [dims, setDims] = React.useState({ w: 400, h: 300 });
 
-  const chartData = React.useMemo(() => {
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setDims({ w: entry.contentRect.width, h: entry.contentRect.height });
+      }
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // Parse individual deals
+  const deals = React.useMemo(() => {
     if (!Array.isArray(rawData) || !view.x2Column) return [];
 
     let data = rawData;
@@ -1409,9 +1424,7 @@ function RangeBarRenderer({
       category: string;
       start: number;
       end: number;
-      duration: [number, number];
       highlighted: boolean;
-      raw: any;
     }> = [];
 
     for (const row of data) {
@@ -1430,50 +1443,34 @@ function RangeBarRenderer({
         category,
         start: startTs,
         end: endTs,
-        duration: [startTs, endTs],
         highlighted: rowMatchesSelection(row, selection, rangeFilter, lassoFilter),
-        raw: row,
       });
     }
 
     return items;
   }, [rawData, view, filter, selection, rangeFilter, lassoFilter]);
 
-  // Group by category and compute aggregated ranges
-  const aggregatedData = React.useMemo(() => {
-    const grouped = new Map<string, { starts: number[]; ends: number[]; highlighted: boolean }>();
-
-    for (const item of chartData) {
-      if (!grouped.has(item.category)) {
-        grouped.set(item.category, { starts: [item.start], ends: [item.end], highlighted: item.highlighted });
-      } else {
-        const entry = grouped.get(item.category)!;
-        entry.starts.push(item.start);
-        entry.ends.push(item.end);
-        entry.highlighted = entry.highlighted || item.highlighted;
-      }
+  // Group by category
+  const groups = React.useMemo(() => {
+    const map = new Map<string, typeof deals>();
+    for (const deal of deals) {
+      if (!map.has(deal.category)) map.set(deal.category, []);
+      map.get(deal.category)!.push(deal);
     }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, items]) => ({
+        name,
+        deals: items.sort((a, b) => a.start - b.start),
+      }));
+  }, [deals]);
 
-    return Array.from(grouped.entries()).map(([category, { starts, ends, highlighted }]) => {
-      const minStart = Math.min(...starts);
-      const maxEnd = Math.max(...ends);
-      const avgDurationDays = starts.reduce((sum, s, i) => sum + (ends[i] - s), 0) / starts.length / (1000 * 60 * 60 * 24);
-      return {
-        category,
-        duration: [minStart, maxEnd] as [number, number],
-        avgDays: Math.round(avgDurationDays),
-        count: starts.length,
-        highlighted,
-      };
-    });
-  }, [chartData]);
-
-  const categoryColorMap = React.useMemo(
-    () => buildCategoryColorMap(aggregatedData.map((d) => d.category)),
-    [aggregatedData]
+  const colorMap = React.useMemo(
+    () => buildCategoryColorMap(groups.map((g) => g.name)),
+    [groups]
   );
 
-  if (!aggregatedData.length) {
+  if (!groups.length) {
     return (
       <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
         No compatible data
@@ -1481,71 +1478,157 @@ function RangeBarRenderer({
     );
   }
 
-  // Compute time domain
-  const allStarts = aggregatedData.map((d) => d.duration[0]);
-  const allEnds = aggregatedData.map((d) => d.duration[1]);
-  const domainMin = Math.min(...allStarts);
-  const domainMax = Math.max(...allEnds);
+  // Layout
+  const margin = { top: 10, right: 20, bottom: 28, left: 90 };
+  const plotW = Math.max(100, dims.w - margin.left - margin.right);
+  const plotH = Math.max(50, dims.h - margin.top - margin.bottom);
+
+  // Time domain
+  const allTimes = deals.flatMap((d) => [d.start, d.end]);
+  const tMin = Math.min(...allTimes);
+  const tMax = Math.max(...allTimes);
+  const tRange = tMax - tMin || 1;
+  const xScale = (ts: number) => ((ts - tMin) / tRange) * plotW;
+
+  // Y layout — each stage gets a swim lane
+  const rowH = plotH / groups.length;
+  const maxBarsPerRow = 25;
+
+  // X axis ticks
+  const numTicks = Math.max(2, Math.min(8, Math.floor(plotW / 80)));
+  const xTicks: number[] = [];
+  for (let i = 0; i <= numTicks; i++) {
+    xTicks.push(tMin + (tRange * i) / numTicks);
+  }
 
   return (
-    <div className="h-full w-full outline-none" style={{ height }} onDoubleClick={() => clearSelection()} onClick={(e) => e.stopPropagation()}>
-      <ChartContainer config={{}} className="h-full w-full p-0 aspect-auto">
-        <BarChart
-          data={aggregatedData}
-          layout="vertical"
-          margin={{ top: 5, right: 30, bottom: 5, left: 10 }}
-        >
-          <CartesianGrid horizontal={false} strokeOpacity={0.15} />
-          <XAxis
-            type="number"
-            domain={[domainMin, domainMax]}
-            scale="time"
-            tickFormatter={formatDateTick}
-            tick={{ fontSize: 10 }}
+    <div
+      ref={containerRef}
+      className="h-full w-full outline-none"
+      style={{ height }}
+      onDoubleClick={() => clearSelection()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <svg width={dims.w} height={dims.h}>
+        {/* Grid lines */}
+        {xTicks.map((tick) => (
+          <line
+            key={tick}
+            x1={margin.left + xScale(tick)}
+            y1={margin.top}
+            x2={margin.left + xScale(tick)}
+            y2={margin.top + plotH}
+            stroke="#e5e7eb"
+            strokeOpacity={0.4}
           />
-          <YAxis
-            type="category"
-            dataKey="category"
-            tick={{ fontSize: 11 }}
-            width={100}
-          />
-          <Tooltip
-            trigger="hover"
-            formatter={(_value: any, _name: any, item: any) => {
-              const d = item?.payload;
-              if (!d) return ["", ""];
-              const startDate = new Date(d.duration[0]).toLocaleDateString();
-              const endDate = new Date(d.duration[1]).toLocaleDateString();
-              return [`${startDate} → ${endDate} (avg ${d.avgDays}d, ${d.count} deals)`, d.category];
-            }}
-          />
-          <Bar
-            dataKey="duration"
-            isAnimationActive={false}
-            activeBar={false}
-            onClick={(data: any, _idx: any, event: any) => {
-              const clicked = data?.payload?.category ?? data?.category;
-              if (clicked !== undefined) {
-                const e = event?.nativeEvent ?? event;
-                if (e?.ctrlKey || e?.metaKey) {
-                  addToSelection(view.yColumn, clicked);
-                } else {
-                  replaceSelection(view.yColumn, clicked);
-                }
-              }
-            }}
-            style={{ cursor: "pointer" }}
+        ))}
+
+        {/* X axis tick labels */}
+        {xTicks.map((tick) => (
+          <text
+            key={`lbl-${tick}`}
+            x={margin.left + xScale(tick)}
+            y={margin.top + plotH + 16}
+            textAnchor="middle"
+            fontSize={10}
+            fill="#6b7280"
           >
-            {aggregatedData.map((entry, idx) => (
-              <Cell
-                key={idx}
-                fill={categoryColorMap[entry.category]}
-                opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
-              />
-            ))}
-          </Bar>
-        </BarChart>
-      </ChartContainer>
+            {new Date(tick).toLocaleDateString(undefined, { month: "short", year: "2-digit" })}
+          </text>
+        ))}
+
+        {/* Stage swim lanes */}
+        {groups.map((group, gi) => {
+          const laneY = margin.top + gi * rowH;
+
+          // Sample deals if there are too many
+          const sample =
+            group.deals.length > maxBarsPerRow
+              ? group.deals.filter(
+                  (_, i) =>
+                    i %
+                      Math.ceil(group.deals.length / maxBarsPerRow) ===
+                    0
+                ).slice(0, maxBarsPerRow)
+              : group.deals;
+
+          const barH = Math.max(
+            2,
+            Math.min(6, (rowH - 4) / Math.max(1, sample.length))
+          );
+          const gap = Math.max(
+            0.5,
+            Math.min(1, (rowH - 4 - sample.length * barH) / Math.max(1, sample.length))
+          );
+
+          return (
+            <g key={group.name}>
+              {/* Row separator */}
+              {gi > 0 && (
+                <line
+                  x1={margin.left}
+                  y1={laneY}
+                  x2={margin.left + plotW}
+                  y2={laneY}
+                  stroke="#e5e7eb"
+                  strokeOpacity={0.3}
+                />
+              )}
+
+              {/* Category label */}
+              <text
+                x={margin.left - 8}
+                y={laneY + rowH / 2}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fontSize={11}
+                fill="#374151"
+              >
+                {group.name.length > 12
+                  ? group.name.slice(0, 12) + "\u2026"
+                  : group.name}
+              </text>
+
+              {/* Individual deal bars */}
+              {sample.map((deal, di) => {
+                const x = margin.left + xScale(deal.start);
+                const w = Math.max(2, xScale(deal.end) - xScale(deal.start));
+                const y = laneY + 2 + di * (barH + gap);
+                const durationDays = Math.round(
+                  (deal.end - deal.start) / (1000 * 60 * 60 * 24)
+                );
+
+                return (
+                  <rect
+                    key={di}
+                    x={x}
+                    y={y}
+                    width={w}
+                    height={barH}
+                    rx={1}
+                    fill={colorMap[group.name]}
+                    opacity={
+                      !hasSelection || deal.highlighted ? 0.85 : 0.15
+                    }
+                    style={{ cursor: "pointer" }}
+                    onClick={(e) => {
+                      if (e.ctrlKey || e.metaKey) {
+                        addToSelection(view.yColumn, group.name);
+                      } else {
+                        replaceSelection(view.yColumn, group.name);
+                      }
+                    }}
+                  >
+                    <title>
+                      {`${group.name}: ${new Date(deal.start).toLocaleDateString()} → ${new Date(deal.end).toLocaleDateString()} (${durationDays}d)`}
+                    </title>
+                  </rect>
+                );
+              })}
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
