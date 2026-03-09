@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { useRecommendation } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
@@ -32,6 +32,9 @@ import { SelectionProvider } from "@/context/SelectionContext";
 import { TimeFilterProvider } from "@/context/TimeFilterContext";
 
 import { useExperimentLogger } from "@/hooks/useExperimentLogger";
+
+const AUTO_SAVE_INTERVAL_MS = 60_000;
+const AUTO_SAVE_STORAGE_KEY = "ld_dashboard_autosave_session";
 
 /* =====================================================
    Types / guards
@@ -664,6 +667,7 @@ function AppContent() {
     "en-US"
   );
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false);
 
   const { focusScore } = useFocus();
   const { schema, attributeKeys, attributeTypes, rawData, loadDemoDataset } =
@@ -981,21 +985,32 @@ function AppContent() {
       experimentSession: experimentSession ?? null,
     };
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `dashboard-session-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    localStorage.setItem(AUTO_SAVE_STORAGE_KEY, JSON.stringify(payload));
   }, [views, focusScore, textChats, appliedRecommendations, experimentSession]);
+
+  const saveDashboardStateRef = useRef(saveDashboardState);
+
+  useEffect(() => {
+    saveDashboardStateRef.current = saveDashboardState;
+  }, [saveDashboardState]);
+
+  useEffect(() => {
+    if (!isAutoSaveEnabled) return;
+
+    const intervalId = window.setInterval(() => {
+      saveDashboardStateRef.current();
+    }, AUTO_SAVE_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [isAutoSaveEnabled]);
 
   return (
     <>
       <SidebarInset className="bg-muted/10">
-        <SiteHeader onSave={saveDashboardState} />
+        <SiteHeader
+          isAutoSaveEnabled={isAutoSaveEnabled}
+          onAutoSaveToggle={setIsAutoSaveEnabled}
+        />
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto p-6 md:p-8">
             <DashboardView

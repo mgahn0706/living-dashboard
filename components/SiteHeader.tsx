@@ -4,13 +4,14 @@ import { useRef } from "react";
 import {
   IconBrandGithub,
   IconDashboard,
-  IconDownload,
+  IconDeviceFloppy,
   IconUpload,
 } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Toggle } from "@/components/ui/toggle";
 import {
   Tooltip,
   TooltipContent,
@@ -19,7 +20,15 @@ import {
 } from "@/components/ui/tooltip";
 import { useDataset } from "@/context/DatasetContext";
 
-export function SiteHeader({ onSave }: { onSave?: () => void } = {}) {
+interface SiteHeaderProps {
+  isAutoSaveEnabled?: boolean;
+  onAutoSaveToggle?: (enabled: boolean) => void;
+}
+
+export function SiteHeader({
+  isAutoSaveEnabled = false,
+  onAutoSaveToggle,
+}: SiteHeaderProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { attributeKeys, uploadDataset } = useDataset();
 
@@ -87,16 +96,17 @@ export function SiteHeader({ onSave }: { onSave?: () => void } = {}) {
             </span>
           )}
 
-          {onSave && (
-            <Button
-              variant="ghost"
+          {onAutoSaveToggle && (
+            <Toggle
               size="sm"
+              pressed={isAutoSaveEnabled}
+              onPressedChange={onAutoSaveToggle}
+              aria-label="Toggle auto save"
               className="hidden sm:flex gap-2 text-muted-foreground"
-              onClick={onSave}
             >
-              <IconDownload className="size-4" />
-              <span>Save Session</span>
-            </Button>
+              <IconDeviceFloppy className="size-4" />
+              <span>Auto Save (1m)</span>
+            </Toggle>
           )}
 
           <Button
