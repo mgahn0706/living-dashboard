@@ -441,17 +441,19 @@ function getDemoViews(): View[] {
         includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
       },
     },
-    // KPI 3: Overall Win Rate %
+    // KPI 3: Total Won Deals
     {
       id: "demo_kpi_winrate",
       chartType: "KPI",
       xColumn: "",
-      yColumn: "WonNumeric",
+      yColumn: "Revenue",
       size: "sm",
       priority: 98,
-      title: "Overall Win Rate %",
-      aggregation: "avg",
-      yLabel: "%",
+      title: "Total Won Deals",
+      aggregation: "count",
+      filter: {
+        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
+      },
     },
     // KPI 4: Avg Deal Size
     {
@@ -468,15 +470,15 @@ function getDemoViews(): View[] {
         includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
       },
     },
-    // Funnel Chart — Deal count by Stage
+    // Funnel Chart — Revenue by Stage
     {
       id: "demo_funnel",
       chartType: "FUNNEL",
       xColumn: "Stage",
-      yColumn: "Count",
+      yColumn: "Revenue",
       size: "lg",
       priority: 96,
-      title: "Deal Count by Stage",
+      title: "Revenue by Stage",
       aggregation: "sum",
     },
     // Stacked Bar — Sum of Units by Stage, split by Won/Lost
@@ -533,46 +535,47 @@ function getDemoViews(): View[] {
       priority: 92,
       title: "Revenue by Product Category",
     },
-    // Win Rate by Industry — Horizontal bar chart, sorted descending
+    // Won vs Lost by Industry — Stacked bar chart
     {
       id: "demo_wr_industry",
-      chartType: "HORIZONTAL_BAR",
+      chartType: "STACKED_BAR",
       xColumn: "Industry",
-      yColumn: "WonNumeric",
-      aggregation: "avg",
-      sortDescending: true,
+      yColumn: "Revenue",
+      groupByColumn: "Status",
+      aggregation: "count",
       size: "md",
       priority: 91,
-      title: "Win Rate by Industry",
+      title: "Won vs Lost by Industry",
     },
-    // Win Rate by Campaign Type — Horizontal bar chart
+    // Won vs Lost by Campaign Type — Stacked bar chart
     {
       id: "demo_wr_campaign",
-      chartType: "HORIZONTAL_BAR",
+      chartType: "STACKED_BAR",
       xColumn: "CampaignType",
-      yColumn: "WonNumeric",
-      aggregation: "avg",
-      sortDescending: true,
+      yColumn: "Revenue",
+      groupByColumn: "Status",
+      aggregation: "count",
       size: "md",
       priority: 90,
-      title: "Win Rate by Campaign Type",
+      title: "Won vs Lost by Campaign Type",
     },
-    // Win Rate by Experience Level — Clustered bar
+    // Won vs Lost by Experience Level — Grouped bar
     {
       id: "demo_wr_experience",
-      chartType: "BAR",
+      chartType: "GROUPED_BAR",
       xColumn: "Experience Level",
-      yColumn: "WonNumeric",
-      aggregation: "avg",
+      yColumn: "Revenue",
+      groupByColumn: "Status",
+      aggregation: "count",
       size: "md",
       priority: 89,
-      title: "Win Rate by Experience Level",
+      title: "Won vs Lost by Experience Level",
     },
-    // Revenue Trend Over Time — Monthly line chart (Won deals only)
+    // Revenue Trend Over Time — Line chart by CloseDate (Won deals only)
     {
       id: "demo_rev_trend",
       chartType: "LINE",
-      xColumn: "YearMonth",
+      xColumn: "CloseDate",
       yColumn: "Revenue",
       size: "md",
       priority: 88,
@@ -581,27 +584,16 @@ function getDemoViews(): View[] {
         includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
       },
     },
-    // Deal Velocity — Avg days from Created Date to CloseDate by Stage
+    // Deal Duration Timeline — Range bar by Stage
     {
       id: "demo_velocity",
-      chartType: "BAR",
-      xColumn: "Stage",
-      yColumn: "DealDays",
-      aggregation: "avg",
+      chartType: "RANGE_BAR",
+      xColumn: "Created Date",
+      x2Column: "CloseDate",
+      yColumn: "Stage",
       size: "md",
       priority: 87,
-      title: "Deal Velocity (Avg Days)",
-    },
-    // Win Rate by Quarter — Line chart
-    {
-      id: "demo_wr_quarter",
-      chartType: "LINE",
-      xColumn: "Quarter",
-      yColumn: "WonNumeric",
-      aggregation: "avg",
-      size: "md",
-      priority: 86,
-      title: "Win Rate by Quarter",
+      title: "Deal Duration Timeline",
     },
     // Revenue by Market Maturity — Column chart
     {

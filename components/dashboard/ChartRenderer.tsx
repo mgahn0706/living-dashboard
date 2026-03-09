@@ -901,6 +901,13 @@ export default React.memo(function ChartRenderer({
     );
   }
 
+  /* ---- RANGE_BAR ---- */
+  if (view.chartType === "RANGE_BAR" && (view as ChartView).x2Column) {
+    return (
+      <RangeBarRenderer view={view as ChartView} height={height} filter={filter} />
+    );
+  }
+
   /* ---- STACKED_BAR / GROUPED_BAR ---- */
   if (
     (view.chartType === "STACKED_BAR" || view.chartType === "GROUPED_BAR") &&
@@ -969,7 +976,7 @@ export default React.memo(function ChartRenderer({
                 trigger="hover"
                 formatter={(value: any) => [
                   formatCompactNumber(Number(value)),
-                  "Count",
+                  chartView?.yColumn ?? "Value",
                 ]}
               />
               <Funnel
@@ -1368,6 +1375,177 @@ function KPIRenderer({
           of {formatKPIValue(total, view.yLabel)} total
         </span>
       )}
+    </div>
+  );
+}
+
+/* =======================================================
+   Range Bar Renderer (timeline / Gantt)
+======================================================= */
+
+function RangeBarRenderer({
+  view,
+  height,
+  filter,
+}: {
+  view: ChartView;
+  height: number | "100%";
+  filter?: ChartRendererFilter;
+}) {
+  const rawData = useTimeFilteredData();
+  const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
+
+  const chartData = React.useMemo(() => {
+    if (!Array.isArray(rawData) || !view.x2Column) return [];
+
+    let data = rawData;
+    if (filter?.includeByColumn) {
+      data = data.filter((row) =>
+        rowMatchesAttributeFilter(row, filter.includeByColumn)
+      );
+    }
+
+    const items: Array<{
+      category: string;
+      start: number;
+      end: number;
+      duration: [number, number];
+      highlighted: boolean;
+      raw: any;
+    }> = [];
+
+    for (const row of data) {
+      const startRaw = getValueByPath(row, view.xColumn);
+      const endRaw = getValueByPath(row, view.x2Column);
+      const category = String(getValueByPath(row, view.yColumn) ?? "");
+
+      if (startRaw == null || endRaw == null || !category) continue;
+
+      const startTs = Date.parse(String(startRaw));
+      const endTs = Date.parse(String(endRaw));
+
+      if (Number.isNaN(startTs) || Number.isNaN(endTs)) continue;
+
+      items.push({
+        category,
+        start: startTs,
+        end: endTs,
+        duration: [startTs, endTs],
+        highlighted: rowMatchesSelection(row, selection, rangeFilter, lassoFilter),
+        raw: row,
+      });
+    }
+
+    return items;
+  }, [rawData, view, filter, selection, rangeFilter, lassoFilter]);
+
+  // Group by category and compute aggregated ranges
+  const aggregatedData = React.useMemo(() => {
+    const grouped = new Map<string, { starts: number[]; ends: number[]; highlighted: boolean }>();
+
+    for (const item of chartData) {
+      if (!grouped.has(item.category)) {
+        grouped.set(item.category, { starts: [item.start], ends: [item.end], highlighted: item.highlighted });
+      } else {
+        const entry = grouped.get(item.category)!;
+        entry.starts.push(item.start);
+        entry.ends.push(item.end);
+        entry.highlighted = entry.highlighted || item.highlighted;
+      }
+    }
+
+    return Array.from(grouped.entries()).map(([category, { starts, ends, highlighted }]) => {
+      const minStart = Math.min(...starts);
+      const maxEnd = Math.max(...ends);
+      const avgDurationDays = starts.reduce((sum, s, i) => sum + (ends[i] - s), 0) / starts.length / (1000 * 60 * 60 * 24);
+      return {
+        category,
+        duration: [minStart, maxEnd] as [number, number],
+        avgDays: Math.round(avgDurationDays),
+        count: starts.length,
+        highlighted,
+      };
+    });
+  }, [chartData]);
+
+  const categoryColorMap = React.useMemo(
+    () => buildCategoryColorMap(aggregatedData.map((d) => d.category)),
+    [aggregatedData]
+  );
+
+  if (!aggregatedData.length) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
+        No compatible data
+      </div>
+    );
+  }
+
+  // Compute time domain
+  const allStarts = aggregatedData.map((d) => d.duration[0]);
+  const allEnds = aggregatedData.map((d) => d.duration[1]);
+  const domainMin = Math.min(...allStarts);
+  const domainMax = Math.max(...allEnds);
+
+  return (
+    <div className="h-full w-full outline-none" style={{ height }} onDoubleClick={() => clearSelection()} onClick={(e) => e.stopPropagation()}>
+      <ChartContainer config={{}} className="h-full w-full p-0 aspect-auto">
+        <BarChart
+          data={aggregatedData}
+          layout="vertical"
+          margin={{ top: 5, right: 30, bottom: 5, left: 10 }}
+        >
+          <CartesianGrid horizontal={false} strokeOpacity={0.15} />
+          <XAxis
+            type="number"
+            domain={[domainMin, domainMax]}
+            scale="time"
+            tickFormatter={formatDateTick}
+            tick={{ fontSize: 10 }}
+          />
+          <YAxis
+            type="category"
+            dataKey="category"
+            tick={{ fontSize: 11 }}
+            width={100}
+          />
+          <Tooltip
+            trigger="hover"
+            formatter={(_value: any, _name: any, item: any) => {
+              const d = item?.payload;
+              if (!d) return ["", ""];
+              const startDate = new Date(d.duration[0]).toLocaleDateString();
+              const endDate = new Date(d.duration[1]).toLocaleDateString();
+              return [`${startDate} → ${endDate} (avg ${d.avgDays}d, ${d.count} deals)`, d.category];
+            }}
+          />
+          <Bar
+            dataKey="duration"
+            isAnimationActive={false}
+            activeBar={false}
+            onClick={(data: any, _idx: any, event: any) => {
+              const clicked = data?.payload?.category ?? data?.category;
+              if (clicked !== undefined) {
+                const e = event?.nativeEvent ?? event;
+                if (e?.ctrlKey || e?.metaKey) {
+                  addToSelection(view.yColumn, clicked);
+                } else {
+                  replaceSelection(view.yColumn, clicked);
+                }
+              }
+            }}
+            style={{ cursor: "pointer" }}
+          >
+            {aggregatedData.map((entry, idx) => (
+              <Cell
+                key={idx}
+                fill={categoryColorMap[entry.category]}
+                opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ChartContainer>
     </div>
   );
 }

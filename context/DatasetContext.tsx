@@ -197,33 +197,6 @@ function detectPrimitiveType(values: any[]): PrimitiveType {
    Provider
 ===================================================== */
 
-function addDemoComputedColumns(rows: Record<string, any>[]): Record<string, any>[] {
-  return rows.map((row) => {
-    const won = row.Status === "Won" ? 1 : 0;
-    const created = new Date(row["Created Date"]);
-    const closed = new Date(row.CloseDate);
-    const dealDays = Math.max(
-      0,
-      Math.round((closed.getTime() - created.getTime()) / (1000 * 60 * 60 * 24))
-    );
-    const closeDate = closed;
-    const q = Math.ceil((closeDate.getMonth() + 1) / 3);
-    const yearMonth = row.CloseDate ? String(row.CloseDate).slice(0, 7) : "";
-    const quarter = !Number.isNaN(closeDate.getTime())
-      ? `${closeDate.getFullYear()}-Q${q}`
-      : "";
-
-    return {
-      ...row,
-      WonNumeric: won,
-      Count: 1,
-      DealDays: dealDays,
-      YearMonth: yearMonth,
-      Quarter: quarter,
-    };
-  });
-}
-
 export function DatasetProvider({ children }: { children: React.ReactNode }) {
   const [rawData, setRawData] = useState<any>(null);
   const [attributeKeys, setAttributeKeys] = useState<string[]>([]);
@@ -274,8 +247,7 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
     const res = await fetch("/data/Revenue.csv");
     const text = await res.text();
     const parsed = parseCSV(text);
-    const enriched = addDemoComputedColumns(parsed);
-    ingestData(enriched);
+    ingestData(parsed);
   };
 
   const resolveAttribute = useCallback(
