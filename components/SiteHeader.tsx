@@ -4,14 +4,13 @@ import { useRef } from "react";
 import {
   IconBrandGithub,
   IconDashboard,
-  IconDeviceFloppy,
   IconUpload,
 } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Toggle } from "@/components/ui/toggle";
+import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
@@ -97,16 +96,14 @@ export function SiteHeader({
           )}
 
           {onAutoSaveToggle && (
-            <Toggle
-              size="sm"
-              pressed={isAutoSaveEnabled}
-              onPressedChange={onAutoSaveToggle}
-              aria-label="Toggle auto save"
-              className="hidden sm:flex gap-2 text-muted-foreground"
-            >
-              <IconDeviceFloppy className="size-4" />
+            <label className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
               <span>Auto Save (1m)</span>
-            </Toggle>
+              <Switch
+                checked={isAutoSaveEnabled}
+                onCheckedChange={onAutoSaveToggle}
+                aria-label="Toggle auto save"
+              />
+            </label>
           )}
 
           <Button
