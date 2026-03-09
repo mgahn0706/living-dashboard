@@ -30,6 +30,7 @@ import { IconSparkles } from "@tabler/icons-react";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 import { SelectionProvider } from "@/context/SelectionContext";
 import { TimeFilterProvider } from "@/context/TimeFilterContext";
+import { CategoryFilterProvider, useCategoryFilter } from "@/context/CategoryFilterContext";
 
 import { useExperimentLogger } from "@/hooks/useExperimentLogger";
 
@@ -658,8 +659,9 @@ function AppContent() {
   const [isInitializing, setIsInitializing] = useState(false);
 
   const { focusScore } = useFocus();
-  const { schema, attributeKeys, attributeTypes, rawData, loadDemoDataset } =
+  const { schema, attributeKeys, attributeTypes, rawData, loadDemoDataset, resolveAttribute } =
     useDataset();
+  const { addFilter: addCategoryFilter } = useCategoryFilter();
 
   const {
     recommendations,
@@ -899,6 +901,8 @@ function AppContent() {
       await loadDemoDataset();
       setViews(getDemoViews());
       setSidebarMode("FORMAT");
+      // Pre-add Status filter with all values selected
+      addCategoryFilter("Status", ["Won", "Lost"]);
     } catch (err) {
       console.error("Failed to load demo dataset:", err);
     } finally {
@@ -1167,7 +1171,9 @@ export default function Page() {
         <FocusProvider>
           <DatasetProvider>
             <TimeFilterProvider>
-              <AppContent />
+              <CategoryFilterProvider>
+                <AppContent />
+              </CategoryFilterProvider>
             </TimeFilterProvider>
           </DatasetProvider>
         </FocusProvider>

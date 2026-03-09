@@ -40,6 +40,7 @@ import MapRenderer from "./MapRenderer";
 import { useDataset } from "@/context/DatasetContext";
 import { useSelection, type RangeFilter, type LassoFilter } from "@/context/SelectionContext";
 import { useTimeFilter } from "@/context/TimeFilterContext";
+import { useCategoryFilter } from "@/context/CategoryFilterContext";
 import { formatCompactNumber } from "@/lib/utils";
 
 /* =======================================================
@@ -677,20 +678,36 @@ function buildColoredScatterSeries(
 function useTimeFilteredData(): any[] {
   const { rawData } = useDataset();
   const { timeFilter } = useTimeFilter();
+  const { categoryFilters } = useCategoryFilter();
 
   return React.useMemo(() => {
     if (!Array.isArray(rawData)) return [];
-    if (!timeFilter) return rawData;
+    let data = rawData;
 
-    const { column, min, max } = timeFilter;
-    return rawData.filter((row: any) => {
-      const val = getValueByPath(row, column);
-      if (val == null || val === "") return false;
-      const ts = Date.parse(String(val));
-      if (Number.isNaN(ts)) return false;
-      return ts >= min && ts <= max;
-    });
-  }, [rawData, timeFilter]);
+    // Apply time filter
+    if (timeFilter) {
+      const { column, min, max } = timeFilter;
+      data = data.filter((row: any) => {
+        const val = getValueByPath(row, column);
+        if (val == null || val === "") return false;
+        const ts = Date.parse(String(val));
+        if (Number.isNaN(ts)) return false;
+        return ts >= min && ts <= max;
+      });
+    }
+
+    // Apply category filters
+    for (const cf of categoryFilters) {
+      if (cf.selectedValues.size === 0) continue;
+      data = data.filter((row: any) => {
+        const val = getValueByPath(row, cf.column);
+        if (val == null) return false;
+        return cf.selectedValues.has(String(val));
+      });
+    }
+
+    return data;
+  }, [rawData, timeFilter, categoryFilters]);
 }
 
 /* =======================================================
