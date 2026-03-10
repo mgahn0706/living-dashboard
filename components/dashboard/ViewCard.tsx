@@ -162,12 +162,15 @@ export default React.memo(function ViewCard({
   const normalizedFocus = Number.isFinite(focusIntensity)
     ? Math.max(0, Math.min(1, focusIntensity))
     : 0.2;
-  const borderOpacity = 0.08 + normalizedFocus * 0.34;
-  const borderWidth = 1 + normalizedFocus * 1.2;
-  const glowOpacity = 0.02 + normalizedFocus * 0.12;
+  const borderOpacity = 0.1 + normalizedFocus * 0.18;
   const borderColor = `rgba(59, 130, 246, ${borderOpacity.toFixed(3)})`;
-  const borderGlow = `0 0 0 ${borderWidth.toFixed(2)}px rgba(59, 130, 246, ${glowOpacity.toFixed(3)})`;
   const baseShadow = "0 1px 2px rgba(0, 0, 0, 0.08)";
+  const contentBlurPx = isEditing ? 0 : (1 - normalizedFocus) * 4;
+  const contentOpacity = isEditing ? 1 : 0.62 + normalizedFocus * 0.38;
+  const contentSaturate = 0.78 + normalizedFocus * 0.22;
+  const contentContrast = 0.88 + normalizedFocus * 0.12;
+  const contentScale = isEditing ? 1 : 0.992 + normalizedFocus * 0.008;
+  const contentMaskOpacity = isEditing ? 0 : (1 - normalizedFocus) * 0.18;
   const { attributeKeys, resolveAttribute } = useDataset();
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [draft, setDraft] = React.useState({
@@ -230,7 +233,7 @@ export default React.memo(function ViewCard({
         onClick={onCardClick}
         style={{
           borderColor,
-          boxShadow: `${borderGlow}, ${baseShadow}`,
+          boxShadow: baseShadow,
         }}
         className={cn(
           view.chartType === "KPI" ? KPI_SIZE_CLASS[view.size] : SIZE_CLASS[view.size],
@@ -493,10 +496,24 @@ export default React.memo(function ViewCard({
           <CardContent
             className={cn(
               view.chartType === "KPI" ? KPI_HEIGHT[view.size] : CHART_HEIGHT[view.size],
-              "flex p-0 overflow-hidden"
+              "relative flex p-0 overflow-hidden"
             )}
           >
-            <ChartRenderer view={view} filter={view.filter} height="100%" />
+            <div
+              className="relative size-full origin-center transition-[filter,opacity,transform] duration-300 ease-out"
+              style={{
+                filter: `blur(${contentBlurPx.toFixed(2)}px) saturate(${contentSaturate.toFixed(3)}) contrast(${contentContrast.toFixed(3)})`,
+                opacity: contentOpacity,
+                transform: `scale(${contentScale.toFixed(3)})`,
+              }}
+            >
+              <ChartRenderer view={view} filter={view.filter} height="100%" />
+            </div>
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 bg-background transition-opacity duration-300 ease-out"
+              style={{ opacity: contentMaskOpacity }}
+            />
           </CardContent>
 
         </div>
