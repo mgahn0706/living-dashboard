@@ -25,7 +25,7 @@ type FocusContextValue = {
 };
 
 const FocusContext = createContext<FocusContextValue | null>(null);
-export const INITIAL_FOCUS_SCORE = 1000;
+export const INITIAL_FOCUS_SCORE = 10_000_000;
 
 /* =======================================================
    Provider

@@ -8,6 +8,9 @@ import { Button } from "../ui/button";
 import { ArrowRight } from "lucide-react";
 import TimeSlider from "./TimeSlider";
 
+const FOCUS_STABLE_RANGE = 100;
+const MIN_VISIBLE_FOCUS_INTENSITY = 0.85;
+
 export default function DashboardView({
   views = [],
   previewMap = {},
@@ -65,16 +68,19 @@ export default function DashboardView({
     const range = max - min;
     const map: Record<string, number> = {};
 
-    if (range < 0.001) {
+    if (range < FOCUS_STABLE_RANGE) {
       scored.forEach((item) => {
-        map[item.id] = 0.2;
+        map[item.id] = 1;
       });
       return map;
     }
 
     scored.forEach((item) => {
       const normalized = (item.score - min) / range;
-      map[item.id] = Math.max(0, Math.min(1, normalized));
+      map[item.id] =
+        MIN_VISIBLE_FOCUS_INTENSITY +
+        Math.max(0, Math.min(1, normalized)) *
+          (1 - MIN_VISIBLE_FOCUS_INTENSITY);
     });
 
     return map;
