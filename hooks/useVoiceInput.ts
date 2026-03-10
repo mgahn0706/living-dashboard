@@ -17,6 +17,7 @@ export type UseVoiceInputReturn = {
   start: () => void;
   stop: () => void;
   clearConversation: () => void;
+  restoreConversation: (items: VoiceUtterance[]) => void;
 };
 
 /* ===================== Hook ===================== */
@@ -170,6 +171,22 @@ export default function useVoiceInput({
     setPartial("");
   };
 
+  const restoreConversation = (items: VoiceUtterance[]) => {
+    setConversation(
+      Array.isArray(items)
+        ? items.filter(
+            (item) =>
+              item &&
+              typeof item.id === "string" &&
+              typeof item.text === "string" &&
+              typeof item.lang === "string" &&
+              typeof item.timestamp === "number"
+          )
+        : []
+    );
+    setPartial("");
+  };
+
   /* ===================== Return ===================== */
 
   return {
@@ -180,5 +197,6 @@ export default function useVoiceInput({
     start,
     stop,
     clearConversation,
+    restoreConversation,
   };
 }

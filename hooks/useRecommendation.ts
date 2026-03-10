@@ -116,12 +116,43 @@ export function useRecommendation() {
     setRecs((prev) => prev.filter((r) => getRecommendationKey(r) !== key));
   }, []);
 
+  const restoreHistory = useCallback(
+    ({
+      llmReplies,
+      dismissedRecommendationIds,
+    }: {
+      llmReplies?: string[];
+      dismissedRecommendationIds?: string[];
+    }) => {
+      if (Array.isArray(llmReplies)) {
+        setLlmReplies(llmReplies.filter((reply) => typeof reply === "string"));
+      }
+
+      if (Array.isArray(dismissedRecommendationIds)) {
+        setDismissedKeys(
+          new Set(
+            dismissedRecommendationIds.filter((id) => typeof id === "string")
+          )
+        );
+      }
+
+      setRecs((prev) =>
+        prev.filter(
+          (r) =>
+            !dismissedRecommendationIds?.includes(getRecommendationKey(r))
+        )
+      );
+    },
+    []
+  );
+
   return {
     recommendations: recs,
     llmReplies,
     triggerRecommendation, // ✅ mutateAsync equivalent
     acceptRecommendation,
     isLoading,
+    restoreHistory,
 
     resetAccepted: () => {
       setDismissedKeys(new Set());
