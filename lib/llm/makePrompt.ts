@@ -1,4 +1,8 @@
 import { VoiceUtterance } from "@/hooks/useVoiceInput";
+import {
+  buildRecentRequestMessages,
+  summarizeRecentRequest,
+} from "@/lib/recommendation/requestSummary";
 
 export function makePrompt({
   views,
@@ -13,6 +17,10 @@ export function makePrompt({
   textChats: string[];
   dataSchema?: any;
 }) {
+  const recentRequestSummary = summarizeRecentRequest(
+    buildRecentRequestMessages({ conversation, textChats })
+  );
+
   return {
     role: "system",
     content: `
@@ -151,6 +159,7 @@ export function makePrompt({
   - comparison language
   - filtering requests
   - temporal or categorical grouping intent
+  - the most recent explicit user request and treat it as highest-priority intent
   
   ━━━━━━━━━━━━━━━━━━━━━━━━
   📏 STABILITY RULES
@@ -188,6 +197,12 @@ export function makePrompt({
     .slice(-5)
     .map((u) => `- ${u.text}`)
     .join("\n")}
+  
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+  🧭 RECENT REQUEST SUMMARY
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+  
+  ${recentRequestSummary}
   
   ━━━━━━━━━━━━━━━━━━━━━━━━
   💬 TEXT CHAT

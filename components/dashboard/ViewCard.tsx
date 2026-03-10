@@ -584,7 +584,7 @@ function RecommendationBanner({
             onClick={(e) => e.stopPropagation()}
           >
             <IconSparkles className="size-3" />
-            <span>Recommendation</span>
+            <span>AI recommendation</span>
           </button>
         </HoverCardTrigger>
 
@@ -599,8 +599,11 @@ function RecommendationBanner({
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide opacity-70">
-            Recommendation
+          <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide opacity-80">
+            <span>AI recommendation</span>
+            <span className="rounded-full border border-current/20 px-1.5 py-0.5 text-[10px]">
+              {recommendation.type.replace("_", " ")}
+            </span>
           </div>
           <div className="font-medium text-sm leading-snug">
             {recommendation.title}

@@ -32,6 +32,11 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import {
+  buildRecentRequestMessages,
+  summarizeRecentRequest,
+  type RecentRequestMessage,
+} from "@/lib/recommendation/requestSummary";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -41,13 +46,7 @@ import {
    Types
 ======================================================= */
 
-type UnifiedMessage = {
-  id: string;
-  source: "voice" | "text";
-  text: string;
-  timestamp: number;
-  lang?: string;
-};
+type UnifiedMessage = RecentRequestMessage;
 
 /* ===================== Live Transcript ===================== */
 
@@ -141,6 +140,20 @@ function ConversationTimeline({ messages }: { messages: UnifiedMessage[] }) {
   );
 }
 
+function RecentRequestSummaryCard({ summary }: { summary: string }) {
+  return (
+    <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
+        <IconSparkles className="size-3" />
+        <span>Recent request summary</span>
+      </div>
+      <div className="mt-1 text-[11px] leading-snug text-foreground/90">
+        {summary}
+      </div>
+    </div>
+  );
+}
+
 /* ===================== Chat Input ===================== */
 
 function ChatInputBar({
@@ -229,23 +242,15 @@ export default function RecommendationSidebar({
       : "Speak now…";
 
   const unifiedMessages: UnifiedMessage[] = useMemo(() => {
-    const voiceMsgs = conversation.map((v) => ({
-      id: v.id,
-      source: "voice" as const,
-      text: v.text,
-      timestamp: v.timestamp,
-      lang: v.lang,
-    }));
-
-    const textMsgs = textChats.map((t, i) => ({
-      id: `text-${i}`,
-      source: "text" as const,
-      text: t,
-      timestamp: Date.now() - i,
-    }));
-
-    return [...voiceMsgs, ...textMsgs];
+    return buildRecentRequestMessages({
+      conversation,
+      textChats,
+    });
   }, [conversation, textChats]);
+  const recentRequestSummary = useMemo(
+    () => summarizeRecentRequest(unifiedMessages),
+    [unifiedMessages]
+  );
 
   return (
     <>
@@ -302,6 +307,8 @@ export default function RecommendationSidebar({
               </button>
             )}
 
+            <RecentRequestSummaryCard summary={recentRequestSummary} />
+
             <AnimatePresence>
               {history.map((r) => {
                 const icon =
@@ -331,13 +338,18 @@ export default function RecommendationSidebar({
                       </div>
 
                       <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                            AI recommendation
+                          </span>
+                          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                            {r.type.replace("_", " ")}
+                          </span>
+                        </div>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 break-words font-medium leading-snug">
                             {r.title}
                           </div>
-                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/60">
-                            {r.type.replace("_", " ")}
-                          </span>
                         </div>
                         <div className="mt-1 break-words text-[11px] text-muted-foreground">
                           {r.reason}
@@ -362,7 +374,7 @@ export default function RecommendationSidebar({
         <Collapsible defaultOpen>
           <div className="border-t bg-background/95 backdrop-blur px-3 py-2">
             <CollapsibleTrigger className="group flex w-full items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
-              <span>Chat log</span>
+              <span>Chat log and request context</span>
               <IconChevronDown className="size-3 transition-transform group-data-[state=open]:rotate-180" />
             </CollapsibleTrigger>
           </div>
