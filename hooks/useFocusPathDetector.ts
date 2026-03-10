@@ -55,6 +55,12 @@ type FocusDetectorConfig = {
    */
   decayLambdaPerSecond?: number;
 
+  /**
+   * Delay before idle decay acceleration kicks in.
+   * Keeps the current focus view visually stable for a short idle window.
+   */
+  idleDecayGracePeriodMilliseconds: number;
+
   /* ===== dramatic decay ===== */
   idleDecayAcceleration: number; // >1 : longer idle → faster decay
 
@@ -114,6 +120,7 @@ export function useFocusPathDetector(
       /* ===== decay defaults (longer context memory) ===== */
       decayIntervalMilliseconds: 200,
       focusHalfLifeSeconds: 180, // ~3 minutes half-life for longer context
+      idleDecayGracePeriodMilliseconds: 45_000, // ~45s before blur starts to noticeably build
 
       /* ===== dramatic decay ===== */
       idleDecayAcceleration: 1.2,
@@ -338,15 +345,17 @@ export function useFocusPathDetector(
         // Base long-term decay (half-life ~ focusHalfLifeSeconds)
         let lambda = baseLambdaPerSecond;
 
-        // Accelerate decay only when the user is "meaningfully idle" on this view
-        if (idleTimeMs > configuration.idleMinimumDurationMilliseconds) {
+        // Hold focus steady for a while, then ramp decay after sustained idle.
+        if (idleTimeMs > configuration.idleDecayGracePeriodMilliseconds) {
+          const acceleratedIdleMs =
+            idleTimeMs - configuration.idleDecayGracePeriodMilliseconds;
           const idleFactor =
-            idleTimeMs / configuration.idleMinimumDurationMilliseconds;
+            acceleratedIdleMs / configuration.idleMinimumDurationMilliseconds;
 
           // Make decay faster as idle grows (dramatic decay)
           lambda = Math.pow(
             lambda,
-            Math.pow(idleFactor, configuration.idleDecayAcceleration)
+            Math.pow(Math.max(1, idleFactor), configuration.idleDecayAcceleration)
           );
         }
 

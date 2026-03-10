@@ -141,14 +141,30 @@ function ConversationTimeline({ messages }: { messages: UnifiedMessage[] }) {
 }
 
 function RecentRequestSummaryCard({ summary }: { summary: string }) {
+  const hasSummary = summary !== "No recent explicit request.";
+
   return (
-    <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
-        <IconSparkles className="size-3" />
-        <span>Recent request summary</span>
-      </div>
-      <div className="mt-1 text-[11px] leading-snug text-foreground/90">
-        {summary}
+    <div className="px-3 py-2">
+      <div className="flex justify-end">
+        <div
+          className={cn(
+            "max-w-[85%] rounded-2xl px-3 py-2 text-[11px] leading-snug shadow-sm",
+            hasSummary
+              ? "border border-emerald-500/25 bg-emerald-500/12 text-foreground"
+              : "border border-border/60 bg-muted/60 text-muted-foreground"
+          )}
+        >
+          <div
+            className={cn(
+              "flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em]",
+              hasSummary ? "text-emerald-700" : "text-muted-foreground"
+            )}
+          >
+            <IconMessageDots className="size-3" />
+            <span>Recent request summary</span>
+          </div>
+          <div className="mt-1">{summary}</div>
+        </div>
       </div>
     </div>
   );
@@ -307,8 +323,6 @@ export default function RecommendationSidebar({
               </button>
             )}
 
-            <RecentRequestSummaryCard summary={recentRequestSummary} />
-
             <AnimatePresence>
               {history.map((r) => {
                 const icon =
@@ -380,6 +394,7 @@ export default function RecommendationSidebar({
           </div>
 
           <CollapsibleContent>
+            <RecentRequestSummaryCard summary={recentRequestSummary} />
             <ConversationTimeline messages={unifiedMessages} />
           </CollapsibleContent>
         </Collapsible>
