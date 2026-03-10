@@ -675,6 +675,7 @@ function AppContent() {
 
   const {
     recommendations,
+    llmReplies,
     acceptRecommendation,
     isLoading,
     triggerRecommendation,
@@ -979,6 +980,7 @@ function AppContent() {
       views,
       focusScore,
       textChats,
+      llmReplies,
       appliedRecommendations: appliedRecommendations.map(
         ({ _prevViews, ...rest }) => rest
       ),
@@ -986,7 +988,7 @@ function AppContent() {
     };
 
     localStorage.setItem(AUTO_SAVE_STORAGE_KEY, JSON.stringify(payload));
-  }, [views, focusScore, textChats, appliedRecommendations, experimentSession]);
+  }, [views, focusScore, textChats, llmReplies, appliedRecommendations, experimentSession]);
 
   const saveDashboardStateRef = useRef(saveDashboardState);
 
@@ -1112,6 +1114,7 @@ function AppContent() {
           <RecommendationSidebar
             language={language}
             history={appliedRecommendations}
+            llmReplies={llmReplies}
             onUndoLatest={undoLatestRecommendation}
             voice={voice}
             textChats={textChats}

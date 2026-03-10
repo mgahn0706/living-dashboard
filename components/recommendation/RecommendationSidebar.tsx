@@ -33,7 +33,6 @@ import {
 import { cn } from "@/lib/utils";
 import {
   buildRecentRequestMessages,
-  summarizeRecentRequest,
   type RecentRequestMessage,
 } from "@/lib/recommendation/requestSummary";
 import {
@@ -140,31 +139,27 @@ function ConversationTimeline({ messages }: { messages: UnifiedMessage[] }) {
   );
 }
 
-function RecentRequestSummaryCard({ summary }: { summary: string }) {
-  const hasSummary = summary !== "No recent explicit request.";
-
+function AssistantReplyFeed({ replies }: { replies: string[] }) {
   return (
     <div className="px-3 py-2">
-      <div className="flex justify-end">
-        <div
-          className={cn(
-            "max-w-[85%] rounded-2xl px-3 py-2 text-[11px] leading-snug shadow-sm",
-            hasSummary
-              ? "border border-emerald-500/25 bg-emerald-500/12 text-foreground"
-              : "border border-border/60 bg-muted/60 text-muted-foreground"
-          )}
-        >
-          <div
-            className={cn(
-              "flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em]",
-              hasSummary ? "text-emerald-700" : "text-muted-foreground"
-            )}
-          >
-            <IconMessageDots className="size-3" />
-            <span>Recent request summary</span>
+      <div className="flex flex-col gap-2">
+        {replies.length === 0 && (
+          <div className="text-[10px] text-muted-foreground/60">
+            No AI reply yet
           </div>
-          <div className="mt-1">{summary}</div>
-        </div>
+        )}
+
+        {replies.slice(-3).map((reply, index) => (
+          <div key={`${index}-${reply.slice(0, 24)}`} className="flex justify-start">
+            <div className="max-w-[88%] rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] leading-snug text-foreground shadow-sm">
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-700">
+                <IconSparkles className="size-3" />
+                <span>Assistant</span>
+              </div>
+              <div className="mt-1 whitespace-pre-wrap">{reply}</div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -231,6 +226,7 @@ function ChatInputBar({
 
 export default function RecommendationSidebar({
   history = [],
+  llmReplies = [],
   voice,
   language,
   isGenerating = false,
@@ -240,6 +236,7 @@ export default function RecommendationSidebar({
   onSendTextChat,
 }: {
   history?: Recommendation[];
+  llmReplies?: string[];
   voice: UseVoiceInputReturn;
   language: "en-US" | "ko-KR" | "ja-JP";
   isGenerating?: boolean;
@@ -263,11 +260,6 @@ export default function RecommendationSidebar({
       textChats,
     });
   }, [conversation, textChats]);
-  const recentRequestSummary = useMemo(
-    () => summarizeRecentRequest(unifiedMessages),
-    [unifiedMessages]
-  );
-
   return (
     <>
       {" "}
@@ -388,13 +380,13 @@ export default function RecommendationSidebar({
         <Collapsible defaultOpen>
           <div className="border-t bg-background/95 backdrop-blur px-3 py-2">
             <CollapsibleTrigger className="group flex w-full items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
-              <span>Chat log and request context</span>
+              <span>Chat log</span>
               <IconChevronDown className="size-3 transition-transform group-data-[state=open]:rotate-180" />
             </CollapsibleTrigger>
           </div>
 
           <CollapsibleContent>
-            <RecentRequestSummaryCard summary={recentRequestSummary} />
+            <AssistantReplyFeed replies={llmReplies} />
             <ConversationTimeline messages={unifiedMessages} />
           </CollapsibleContent>
         </Collapsible>
