@@ -25,6 +25,7 @@ type FocusContextValue = {
 };
 
 const FocusContext = createContext<FocusContextValue | null>(null);
+export const INITIAL_FOCUS_SCORE = 10_000_000;
 
 /* =======================================================
    Provider
@@ -37,7 +38,7 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     (viewId, delta) => {
       setFocusScore((previous) => ({
         ...previous,
-        [viewId]: (previous[viewId] ?? 0) + delta,
+        [viewId]: (previous[viewId] ?? INITIAL_FOCUS_SCORE) + delta,
       }));
     }
   );

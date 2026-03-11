@@ -69,17 +69,6 @@ export type PreviewState =
   | { type: "ADD"; view: View }
   | null;
 
-/* =======================================================
-   Utils
-======================================================= */
-
-function formatFocus(score: number) {
-  const pct = Math.round(score * 100);
-  if (pct >= 1000) return `High (${pct}%)`;
-  if (pct >= 500) return `Med (${pct}%)`;
-  return `Low (${pct}%)`;
-}
-
 function toDistinctStringOptions(values: any[], limit = 120) {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -142,9 +131,9 @@ function buildFilterFromDraft(draft: {
 
 export default React.memo(function ViewCard({
   view,
+  focusIntensity,
   isSelected,
   preview = null,
-  focusScore,
   recommendation = null,
   onRecommendationHover,
   onRecommendationLeave,
@@ -156,9 +145,9 @@ export default React.memo(function ViewCard({
   onApplyFilter,
 }: {
   view: View;
+  focusIntensity: number;
   isSelected: boolean;
   preview?: PreviewState;
-  focusScore: number;
   recommendation?: Recommendation | null;
   onRecommendationHover?: (rec: Recommendation) => void;
   onRecommendationLeave?: () => void;
@@ -170,6 +159,18 @@ export default React.memo(function ViewCard({
   onApplyFilter?: (viewId: string, filter: ViewFilter | undefined) => void;
 }) {
   const isEditing = isSelected;
+  const normalizedFocus = Number.isFinite(focusIntensity)
+    ? Math.max(0, Math.min(1, focusIntensity))
+    : 0.2;
+  const borderOpacity = 0.1 + normalizedFocus * 0.18;
+  const borderColor = `rgba(59, 130, 246, ${borderOpacity.toFixed(3)})`;
+  const baseShadow = "0 1px 2px rgba(0, 0, 0, 0.08)";
+  const contentBlurPx = isEditing ? 0 : (1 - normalizedFocus) * 4;
+  const contentOpacity = isEditing ? 1 : 0.62 + normalizedFocus * 0.38;
+  const contentSaturate = 0.78 + normalizedFocus * 0.22;
+  const contentContrast = 0.88 + normalizedFocus * 0.12;
+  const contentScale = isEditing ? 1 : 0.992 + normalizedFocus * 0.008;
+  const contentMaskOpacity = isEditing ? 0 : (1 - normalizedFocus) * 0.18;
   const { attributeKeys, resolveAttribute } = useDataset();
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [draft, setDraft] = React.useState({
@@ -230,6 +231,10 @@ export default React.memo(function ViewCard({
       <Card
         onPointerMove={onPointerMove}
         onClick={onCardClick}
+        style={{
+          borderColor,
+          boxShadow: baseShadow,
+        }}
         className={cn(
           view.chartType === "KPI" ? KPI_SIZE_CLASS[view.size] : SIZE_CLASS[view.size],
           "relative overflow-hidden transition-all cursor-pointer",
@@ -491,15 +496,26 @@ export default React.memo(function ViewCard({
           <CardContent
             className={cn(
               view.chartType === "KPI" ? KPI_HEIGHT[view.size] : CHART_HEIGHT[view.size],
-              "flex p-0 overflow-hidden"
+              "relative flex p-0 overflow-hidden"
             )}
           >
-            <ChartRenderer view={view} filter={view.filter} height="100%" />
+            <div
+              className="relative size-full origin-center transition-[filter,opacity,transform] duration-300 ease-out"
+              style={{
+                filter: `blur(${contentBlurPx.toFixed(2)}px) saturate(${contentSaturate.toFixed(3)}) contrast(${contentContrast.toFixed(3)})`,
+                opacity: contentOpacity,
+                transform: `scale(${contentScale.toFixed(3)})`,
+              }}
+            >
+              <ChartRenderer view={view} filter={view.filter} height="100%" />
+            </div>
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 bg-background transition-opacity duration-300 ease-out"
+              style={{ opacity: contentMaskOpacity }}
+            />
           </CardContent>
 
-          <div className="px-3 pb-2 pt-1 text-right text-[10px] text-muted-foreground/60">
-            Focus {formatFocus(focusScore)}
-          </div>
         </div>
 
         {/* Preview overlays */}
@@ -568,7 +584,7 @@ function RecommendationBanner({
             onClick={(e) => e.stopPropagation()}
           >
             <IconSparkles className="size-3" />
-            <span>Recommendation</span>
+            <span>AI recommendation</span>
           </button>
         </HoverCardTrigger>
 
@@ -583,8 +599,11 @@ function RecommendationBanner({
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide opacity-70">
-            Recommendation
+          <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide opacity-80">
+            <span>AI recommendation</span>
+            <span className="rounded-full border border-current/20 px-1.5 py-0.5 text-[10px]">
+              {recommendation.type.replace("_", " ")}
+            </span>
           </div>
           <div className="font-medium text-sm leading-snug">
             {recommendation.title}

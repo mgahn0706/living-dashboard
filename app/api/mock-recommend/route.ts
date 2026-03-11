@@ -35,6 +35,22 @@ type Recommendation = {
   reason: string;
 };
 
+function buildAssistantReply(recommendations: Recommendation[]) {
+  if (recommendations.length === 0) {
+    return "I am not recommending a dashboard change right now because the current layout does not show a strong enough mismatch with the recent request.";
+  }
+
+  const recent = recommendations.slice(0, 2);
+
+  if (recent.length === 1) {
+    const [item] = recent;
+    return `I recommend ${item.title.toLowerCase()} because ${item.reason.charAt(0).toLowerCase()}${item.reason.slice(1)}`;
+  }
+
+  const [first, second] = recent;
+  return `I recommend ${first.title.toLowerCase()} because ${first.reason.charAt(0).toLowerCase()}${first.reason.slice(1)} I also recommend ${second.title.toLowerCase()} because ${second.reason.charAt(0).toLowerCase()}${second.reason.slice(1)}`;
+}
+
 /* ===================== Utilities ===================== */
 
 function softIncludes(text: string, keywords: string[]) {
@@ -250,5 +266,8 @@ export async function POST(req: Request) {
   /* 3️⃣ Simulate LLM latency */
   await new Promise((r) => setTimeout(r, 400 + Math.random() * 600));
 
-  return NextResponse.json(recommendations);
+  return NextResponse.json({
+    reply: buildAssistantReply(recommendations),
+    recommendations,
+  });
 }

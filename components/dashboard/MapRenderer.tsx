@@ -1,12 +1,6 @@
 "use client";
 
 import React from "react";
-import {
-  ComposableMap,
-  Geographies,
-  Geography,
-  Marker,
-} from "react-simple-maps";
 import { ChartView } from "@/types/dashboard";
 import { useDataset } from "@/context/DatasetContext";
 import { useSelection } from "@/context/SelectionContext";
@@ -73,7 +67,32 @@ const COUNTRY_COORDS: Record<string, [number, number]> = {
   Taiwan: [121, 24],
 };
 
-const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+const MAP_WIDTH = 800;
+const MAP_HEIGHT = 450;
+const MAP_PADDING = 24;
+const MAX_LATITUDE = 82;
+
+function clampLatitude(latitude: number): number {
+  return Math.max(-MAX_LATITUDE, Math.min(MAX_LATITUDE, latitude));
+}
+
+function mercatorY(latitude: number): number {
+  const latRad = (clampLatitude(latitude) * Math.PI) / 180;
+  return Math.log(Math.tan(Math.PI / 4 + latRad / 2));
+}
+
+const MERCATOR_MIN_Y = mercatorY(-MAX_LATITUDE);
+const MERCATOR_MAX_Y = mercatorY(MAX_LATITUDE);
+
+function projectCoordinates([longitude, latitude]: [number, number]): [number, number] {
+  const x =
+    MAP_PADDING + ((longitude + 180) / 360) * (MAP_WIDTH - MAP_PADDING * 2);
+  const yRatio =
+    (MERCATOR_MAX_Y - mercatorY(latitude)) /
+    (MERCATOR_MAX_Y - MERCATOR_MIN_Y);
+  const y = MAP_PADDING + yRatio * (MAP_HEIGHT - MAP_PADDING * 2);
+  return [x, y];
+}
 
 /* =======================================================
    Filter helpers (duplicated minimally from ChartRenderer)
@@ -118,6 +137,7 @@ type ChartRendererFilter = {
 type BubbleData = {
   country: string;
   coords: [number, number];
+  projected: [number, number];
   value: number;
 };
 
@@ -240,7 +260,7 @@ export default function MapRenderer({
       if (agg === "avg") value = count > 0 ? sum / count : 0;
       else if (agg === "count") value = count;
       else value = sum;
-      result.push({ country, coords, value });
+      result.push({ country, coords, projected: projectCoordinates(coords), value });
     }
 
     return result;
@@ -323,6 +343,9 @@ export default function MapRenderer({
 
   const bubbleColor = "#8da0cb"; // primaryColor
   const fadedColor = "#cbd5e1";
+  const gridColor = "#d7dee7";
+  const surfaceColor = "#f7f9fc";
+  const frameColor = "#e2e8f0";
 
   if (!bubbleData.length) {
     return (
@@ -339,42 +362,63 @@ export default function MapRenderer({
       onDoubleClick={() => clearSelection()}
       onClick={(e) => e.stopPropagation()}
     >
-      <ComposableMap
-        projection="geoMercator"
-        projectionConfig={{
-          scale: 120,
-          center: [10, 20],
-        }}
-        width={800}
-        height={450}
-        style={{ width: "100%", height: "100%" }}
+      <svg
+        viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
+        className="h-full w-full"
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="World map bubble chart"
       >
-        <Geographies geography={GEO_URL}>
-          {({ geographies }: { geographies: any[] }) =>
-            geographies.map((geo) => (
-              <Geography
-                key={geo.rsmKey}
-                geography={geo}
-                fill="#e8e8e8"
-                stroke="#d0d0d0"
-                strokeWidth={0.5}
-                style={{
-                  default: { outline: "none" },
-                  hover: { outline: "none", fill: "#ddd" },
-                  pressed: { outline: "none" },
-                }}
-              />
-            ))
-          }
-        </Geographies>
+        <rect
+          x={MAP_PADDING}
+          y={MAP_PADDING}
+          width={MAP_WIDTH - MAP_PADDING * 2}
+          height={MAP_HEIGHT - MAP_PADDING * 2}
+          rx={24}
+          fill={surfaceColor}
+          stroke={frameColor}
+        />
+
+        {[-60, -30, 0, 30, 60].map((latitude) => {
+          const [, y] = projectCoordinates([0, latitude]);
+          return (
+            <line
+              key={`lat-${latitude}`}
+              x1={MAP_PADDING}
+              x2={MAP_WIDTH - MAP_PADDING}
+              y1={y}
+              y2={y}
+              stroke={gridColor}
+              strokeDasharray="4 6"
+            />
+          );
+        })}
+
+        {[-120, -60, 0, 60, 120].map((longitude) => {
+          const [x] = projectCoordinates([longitude, 0]);
+          return (
+            <line
+              key={`lon-${longitude}`}
+              x1={x}
+              x2={x}
+              y1={MAP_PADDING}
+              y2={MAP_HEIGHT - MAP_PADDING}
+              stroke={gridColor}
+              strokeDasharray="4 6"
+            />
+          );
+        })}
+
+        <text x={MAP_PADDING + 10} y={MAP_PADDING + 20} fontSize="13" fill="#64748b">
+          Lat/Lon reference grid
+        </text>
 
         {bubbleData.map((d) => {
           const isHighlighted = !highlightedCountries || highlightedCountries.has(d.country);
           const r = scale(d.value);
           return (
-            <Marker
+            <g
               key={d.country}
-              coordinates={d.coords}
               onClick={(e: React.MouseEvent) => {
                 e.stopPropagation();
                 if (e.ctrlKey || e.metaKey) {
@@ -392,18 +436,22 @@ export default function MapRenderer({
                 });
               }}
               onMouseLeave={() => setTooltip(null)}
+              style={{ cursor: "pointer" }}
             >
               <circle
+                cx={d.projected[0]}
+                cy={d.projected[1]}
                 r={r}
                 fill={isHighlighted ? bubbleColor : fadedColor}
                 fillOpacity={isHighlighted ? 0.7 : 0.25}
                 stroke={isHighlighted ? bubbleColor : fadedColor}
                 strokeWidth={1}
                 strokeOpacity={0.8}
-                style={{ cursor: "pointer" }}
               />
               {r > 12 && (
                 <text
+                  x={d.projected[0]}
+                  y={d.projected[1]}
                   textAnchor="middle"
                   dominantBaseline="central"
                   style={{
@@ -416,10 +464,10 @@ export default function MapRenderer({
                   {formatCompactNumber(d.value)}
                 </text>
               )}
-            </Marker>
+            </g>
           );
         })}
-      </ComposableMap>
+      </svg>
 
       {/* Tooltip */}
       {tooltip && (

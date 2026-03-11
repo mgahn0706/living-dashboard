@@ -34,12 +34,27 @@ export async function POST(req: Request) {
       parsed = JSON.parse(text);
     } catch {
       console.error("LLM returned invalid JSON:", text);
-      return NextResponse.json([], { status: 200 });
+      return NextResponse.json(
+        { reply: "", recommendations: [] },
+        { status: 200 }
+      );
     }
 
-    return NextResponse.json(parsed);
+    if (Array.isArray(parsed)) {
+      return NextResponse.json({ reply: "", recommendations: parsed });
+    }
+
+    return NextResponse.json({
+      reply: typeof parsed?.reply === "string" ? parsed.reply : "",
+      recommendations: Array.isArray(parsed?.recommendations)
+        ? parsed.recommendations
+        : [],
+    });
   } catch (err) {
     console.error("Recommendation API error:", err);
-    return NextResponse.json([], { status: 500 });
+    return NextResponse.json(
+      { reply: "", recommendations: [] },
+      { status: 500 }
+    );
   }
 }

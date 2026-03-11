@@ -32,6 +32,10 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import {
+  buildRecentRequestMessages,
+  type RecentRequestMessage,
+} from "@/lib/recommendation/requestSummary";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -41,13 +45,7 @@ import {
    Types
 ======================================================= */
 
-type UnifiedMessage = {
-  id: string;
-  source: "voice" | "text";
-  text: string;
-  timestamp: number;
-  lang?: string;
-};
+type UnifiedMessage = RecentRequestMessage;
 
 /* ===================== Live Transcript ===================== */
 
@@ -141,6 +139,32 @@ function ConversationTimeline({ messages }: { messages: UnifiedMessage[] }) {
   );
 }
 
+function AssistantReplyFeed({ replies }: { replies: string[] }) {
+  return (
+    <div className="px-3 py-2">
+      <div className="flex flex-col gap-2">
+        {replies.length === 0 && (
+          <div className="text-[10px] text-muted-foreground/60">
+            No AI reply yet
+          </div>
+        )}
+
+        {replies.slice(-3).map((reply, index) => (
+          <div key={`${index}-${reply.slice(0, 24)}`} className="flex justify-start">
+            <div className="max-w-[88%] rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] leading-snug text-foreground shadow-sm">
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-700">
+                <IconSparkles className="size-3" />
+                <span>Assistant</span>
+              </div>
+              <div className="mt-1 whitespace-pre-wrap">{reply}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ===================== Chat Input ===================== */
 
 function ChatInputBar({
@@ -202,6 +226,7 @@ function ChatInputBar({
 
 export default function RecommendationSidebar({
   history = [],
+  llmReplies = [],
   voice,
   language,
   isGenerating = false,
@@ -211,6 +236,7 @@ export default function RecommendationSidebar({
   onSendTextChat,
 }: {
   history?: Recommendation[];
+  llmReplies?: string[];
   voice: UseVoiceInputReturn;
   language: "en-US" | "ko-KR" | "ja-JP";
   isGenerating?: boolean;
@@ -229,24 +255,11 @@ export default function RecommendationSidebar({
       : "Speak now…";
 
   const unifiedMessages: UnifiedMessage[] = useMemo(() => {
-    const voiceMsgs = conversation.map((v) => ({
-      id: v.id,
-      source: "voice" as const,
-      text: v.text,
-      timestamp: v.timestamp,
-      lang: v.lang,
-    }));
-
-    const textMsgs = textChats.map((t, i) => ({
-      id: `text-${i}`,
-      source: "text" as const,
-      text: t,
-      timestamp: Date.now() - i,
-    }));
-
-    return [...voiceMsgs, ...textMsgs];
+    return buildRecentRequestMessages({
+      conversation,
+      textChats,
+    });
   }, [conversation, textChats]);
-
   return (
     <>
       {" "}
@@ -331,13 +344,18 @@ export default function RecommendationSidebar({
                       </div>
 
                       <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                            AI recommendation
+                          </span>
+                          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                            {r.type.replace("_", " ")}
+                          </span>
+                        </div>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 break-words font-medium leading-snug">
                             {r.title}
                           </div>
-                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/60">
-                            {r.type.replace("_", " ")}
-                          </span>
                         </div>
                         <div className="mt-1 break-words text-[11px] text-muted-foreground">
                           {r.reason}
@@ -368,6 +386,7 @@ export default function RecommendationSidebar({
           </div>
 
           <CollapsibleContent>
+            <AssistantReplyFeed replies={llmReplies} />
             <ConversationTimeline messages={unifiedMessages} />
           </CollapsibleContent>
         </Collapsible>

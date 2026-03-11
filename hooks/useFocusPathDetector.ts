@@ -55,10 +55,17 @@ type FocusDetectorConfig = {
    */
   decayLambdaPerSecond?: number;
 
+  /**
+   * Delay before idle decay acceleration kicks in.
+   * Keeps the current focus view visually stable for a short idle window.
+   */
+  idleDecayGracePeriodMilliseconds: number;
+
   /* ===== dramatic decay ===== */
   idleDecayAcceleration: number; // >1 : longer idle → faster decay
 
   /* ===== safety clamp ===== */
+  initialFocusScore: number; // initial baseline (e.g., medium)
   minimumFocusScore: number; // usually 0
 };
 
@@ -113,11 +120,13 @@ export function useFocusPathDetector(
       /* ===== decay defaults (longer context memory) ===== */
       decayIntervalMilliseconds: 200,
       focusHalfLifeSeconds: 180, // ~3 minutes half-life for longer context
+      idleDecayGracePeriodMilliseconds: 45_000, // ~45s before blur starts to noticeably build
 
       /* ===== dramatic decay ===== */
       idleDecayAcceleration: 1.2,
 
       /* ===== safety ===== */
+      initialFocusScore: 1000,
       minimumFocusScore: 0,
     };
 
@@ -152,11 +161,12 @@ export function useFocusPathDetector(
   const safeEmit = useCallback(
     (viewId: string, delta: number) => {
       const min = configuration.minimumFocusScore;
+      const initial = Math.max(min, configuration.initialFocusScore);
 
       const current =
         focusEstimateRef.current[viewId] != null
           ? focusEstimateRef.current[viewId]
-          : min;
+          : initial;
 
       // Cap negative delta so (current + delta) never goes below min.
       let cappedDelta = delta;
@@ -188,7 +198,10 @@ export function useFocusPathDetector(
 
       // Ensure estimate exists
       if (focusEstimateRef.current[viewId] == null) {
-        focusEstimateRef.current[viewId] = configuration.minimumFocusScore;
+        focusEstimateRef.current[viewId] = Math.max(
+          configuration.minimumFocusScore,
+          configuration.initialFocusScore
+        );
       }
 
       /* ---------- dwell tracking ---------- */
@@ -277,7 +290,10 @@ export function useFocusPathDetector(
 
       // Ensure estimate exists
       if (focusEstimateRef.current[viewId] == null) {
-        focusEstimateRef.current[viewId] = configuration.minimumFocusScore;
+        focusEstimateRef.current[viewId] = Math.max(
+          configuration.minimumFocusScore,
+          configuration.initialFocusScore
+        );
       }
 
       let delta = configuration.clickFocusGain;
@@ -320,21 +336,26 @@ export function useFocusPathDetector(
 
         // Ensure estimate exists
         if (focusEstimateRef.current[viewId] == null) {
-          focusEstimateRef.current[viewId] = configuration.minimumFocusScore;
+          focusEstimateRef.current[viewId] = Math.max(
+            configuration.minimumFocusScore,
+            configuration.initialFocusScore
+          );
         }
 
         // Base long-term decay (half-life ~ focusHalfLifeSeconds)
         let lambda = baseLambdaPerSecond;
 
-        // Accelerate decay only when the user is "meaningfully idle" on this view
-        if (idleTimeMs > configuration.idleMinimumDurationMilliseconds) {
+        // Hold focus steady for a while, then ramp decay after sustained idle.
+        if (idleTimeMs > configuration.idleDecayGracePeriodMilliseconds) {
+          const acceleratedIdleMs =
+            idleTimeMs - configuration.idleDecayGracePeriodMilliseconds;
           const idleFactor =
-            idleTimeMs / configuration.idleMinimumDurationMilliseconds;
+            acceleratedIdleMs / configuration.idleMinimumDurationMilliseconds;
 
           // Make decay faster as idle grows (dramatic decay)
           lambda = Math.pow(
             lambda,
-            Math.pow(idleFactor, configuration.idleDecayAcceleration)
+            Math.pow(Math.max(1, idleFactor), configuration.idleDecayAcceleration)
           );
         }
 
