@@ -15,13 +15,6 @@ function getRecommendationKey(r: Recommendation) {
   return r.id;
 }
 
-type RecommendationApiResponse =
-  | Recommendation[]
-  | {
-      reply?: string;
-      recommendations?: Recommendation[];
-    };
-
 /* ===================== Hook ===================== */
 
 export function useRecommendation() {
@@ -33,6 +26,8 @@ export function useRecommendation() {
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [llmReplies, setLlmReplies] = useState<LlmReply[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  /** Partial text streamed from the LLM (visible during generation). */
+  const [streamingText, setStreamingText] = useState("");
 
   const lastCallRef = useRef<number>(0);
   const COOLDOWN = 0; // ms
@@ -60,6 +55,7 @@ export function useRecommendation() {
 
       lastCallRef.current = now;
       setIsLoading(true);
+      setStreamingText("");
 
       try {
         const prompt = makePrompt({
@@ -77,30 +73,64 @@ export function useRecommendation() {
           body: JSON.stringify({ prompt, views }),
         });
 
-        const data: RecommendationApiResponse = await res.json();
+        if (!res.ok || !res.body) {
+          console.error("Recommend API returned", res.status);
+          return;
+        }
 
-        const recommendations = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.recommendations)
-          ? data.recommendations
+        // Read the streamed text incrementally
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          fullText += chunk;
+          setStreamingText(fullText);
+        }
+
+        console.log("LLM Response:", fullText);
+
+        // Parse the completed JSON
+        const text = fullText.trim();
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          console.error("LLM returned invalid JSON:", text);
+          return;
+        }
+
+        const recommendations = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed?.recommendations)
+          ? parsed.recommendations
           : [];
 
         const reply =
-          typeof data === "object" &&
-          data !== null &&
-          !Array.isArray(data) &&
-          typeof data.reply === "string"
-            ? data.reply.trim()
+          typeof parsed === "object" &&
+          parsed !== null &&
+          !Array.isArray(parsed) &&
+          typeof parsed.reply === "string"
+            ? parsed.reply.trim()
             : "";
 
         setRecs(
-          recommendations.filter((r) => !dismissedKeys.has(getRecommendationKey(r)))
+          recommendations.filter(
+            (r: Recommendation) => !dismissedKeys.has(getRecommendationKey(r))
+          )
         );
         if (reply) {
-          setLlmReplies((prev) => [...prev, { text: reply, timestamp: Date.now() }]);
+          setLlmReplies((prev) => [
+            ...prev,
+            { text: reply, timestamp: Date.now() },
+          ]);
         }
       } finally {
         setIsLoading(false);
+        setStreamingText("");
       }
     },
     [dismissedKeys]
@@ -166,6 +196,7 @@ export function useRecommendation() {
     triggerRecommendation, // ✅ mutateAsync equivalent
     acceptRecommendation,
     isLoading,
+    streamingText,
     restoreHistory,
 
     resetAccepted: () => {

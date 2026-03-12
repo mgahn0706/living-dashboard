@@ -9,7 +9,9 @@ export async function POST(req: Request) {
   try {
     const { prompt } = await req.json();
 
-    const response = await client.responses.create({
+    console.log("INPUT PROMPT:", prompt.content);
+
+    const stream = await client.responses.create({
       model: "gpt-4.1-mini",
       input: [
         {
@@ -19,36 +21,34 @@ export async function POST(req: Request) {
       ],
       temperature: 0.2,
       max_output_tokens: 2000,
+      stream: true,
     });
 
-    console.log("INPUT PROMPT:", prompt.content);
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const event of stream) {
+            if (
+              event.type === "response.output_text.delta" &&
+              typeof event.delta === "string"
+            ) {
+              controller.enqueue(encoder.encode(event.delta));
+            }
+          }
+        } catch (err) {
+          console.error("Stream error:", err);
+        } finally {
+          controller.close();
+        }
+      },
+    });
 
-    const text = response.output_text?.trim() ?? "";
-
-    console.log("LLM Response:", response.output_text);
-
-    // --- Strict JSON guard ---
-    let parsed;
-
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      console.error("LLM returned invalid JSON:", text);
-      return NextResponse.json(
-        { reply: "", recommendations: [] },
-        { status: 200 }
-      );
-    }
-
-    if (Array.isArray(parsed)) {
-      return NextResponse.json({ reply: "", recommendations: parsed });
-    }
-
-    return NextResponse.json({
-      reply: typeof parsed?.reply === "string" ? parsed.reply : "",
-      recommendations: Array.isArray(parsed?.recommendations)
-        ? parsed.recommendations
-        : [],
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+      },
     });
   } catch (err) {
     console.error("Recommendation API error:", err);

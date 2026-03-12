@@ -404,6 +404,7 @@ export default function RecommendationSidebar({
   voice,
   language,
   isGenerating = false,
+  streamingText = "",
   textChats = [],
   viewTitles = {},
   onChangeLanguage,
@@ -419,6 +420,7 @@ export default function RecommendationSidebar({
   voice: UseVoiceInputReturn;
   language: "en-US" | "ko-KR" | "ja-JP";
   isGenerating?: boolean;
+  streamingText?: string;
   textChats?: string[];
   viewTitles?: Record<string, string>;
   onUndoLatest?: () => void;
@@ -548,9 +550,43 @@ export default function RecommendationSidebar({
           <ScrollArea className="h-full p-4">
             <div className="flex flex-col gap-3 pr-1">
               {isGenerating && !isListening && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <IconSparkles className="size-4 animate-pulse text-primary" />
-                  Analyzing discussion context…
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-primary">
+                    <IconSparkles className="size-4 animate-pulse" />
+                    {streamingText
+                      ? "Generating suggestions…"
+                      : "Analyzing discussion context…"}
+                  </div>
+
+                  {/* Streaming text preview */}
+                  {streamingText ? (
+                    <div className="text-[11px] text-muted-foreground font-mono leading-relaxed max-h-24 overflow-hidden relative">
+                      <div className="whitespace-pre-wrap break-all">
+                        {streamingText.slice(-200)}
+                      </div>
+                      <span className="inline-block w-1.5 h-3.5 bg-primary/60 animate-pulse ml-0.5 align-middle" />
+                      <div className="absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-primary/5 to-transparent pointer-events-none" />
+                    </div>
+                  ) : (
+                    /* Skeleton placeholder cards */
+                    <div className="space-y-2">
+                      {[1, 2, 3].map((i) => (
+                        <div
+                          key={i}
+                          className="rounded-md border bg-background/60 p-2.5 space-y-2 animate-pulse"
+                          style={{ animationDelay: `${i * 150}ms` }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="h-5 w-5 rounded-md bg-muted" />
+                            <div className="h-3 w-20 rounded bg-muted" />
+                            <div className="ml-auto h-3 w-12 rounded bg-muted" />
+                          </div>
+                          <div className="h-3 w-full rounded bg-muted" />
+                          <div className="h-3 w-3/4 rounded bg-muted" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

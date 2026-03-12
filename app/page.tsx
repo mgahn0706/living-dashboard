@@ -707,6 +707,7 @@ function AppContent() {
     llmReplies,
     acceptRecommendation,
     isLoading,
+    streamingText,
     triggerRecommendation,
     restoreHistory,
     resetAccepted,
@@ -1413,6 +1414,7 @@ function AppContent() {
             voice={voice}
             textChats={textChats}
             isGenerating={isLoading}
+            streamingText={streamingText}
             onChangeLanguage={(lang) => setLanguage(lang)}
             onSendTextChat={(msg) => {
               logEvent("text_chat", { length: msg.length });
