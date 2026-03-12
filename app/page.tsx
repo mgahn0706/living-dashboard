@@ -27,6 +27,7 @@ import ChartCreatorSidebar from "@/components/chartCreator/chartCreatorSidebar";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Edit, Plus } from "lucide-react";
 import { IconSparkles } from "@tabler/icons-react";
+import { getRecColor } from "@/components/recommendation/RecommendationSidebar";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 import { SelectionProvider } from "@/context/SelectionContext";
 import { TimeFilterProvider } from "@/context/TimeFilterContext";
@@ -685,6 +686,9 @@ function AppContent() {
   const [isInitializing, setIsInitializing] = useState(false);
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false);
   const [hasSavedDashboardState, setHasSavedDashboardState] = useState(false);
+  const [appliedRecColorByViewId, setAppliedRecColorByViewId] = useState<
+    Record<string, string>
+  >({});
 
   const { focusScore, restoreFocusScore } = useFocus();
   const {
@@ -870,18 +874,29 @@ function AppContent() {
   const modifyRecommendationsByViewId = useMemo(() => {
     const map: Record<string, Recommendation> = {};
     activeRecommendations.forEach((r) => {
-      if (
-        r.type !== "MODIFY_CONTENT" &&
-        r.type !== "MODIFY_FILTER" &&
-        r.type !== "REMOVE_CONTENT"
-      )
-        return;
+      if (r.type === "NEW_CONTENT") return;
       const targetId = getRecommendationTargetViewId(r);
       if (!targetId) return;
       if (!map[targetId]) map[targetId] = r;
     });
     return map;
   }, [activeRecommendations]);
+
+  const recommendationOrderMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    activeRecommendations.forEach((r, idx) => {
+      map[r.id] = idx + 1;
+    });
+    return map;
+  }, [activeRecommendations]);
+
+  const viewTitlesMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    views.forEach((v) => {
+      map[v.id] = v.title || v.id;
+    });
+    return map;
+  }, [views]);
 
   const newContentRecommendation = useMemo(
     () => activeRecommendations.find((r) => r.type === "NEW_CONTENT") ?? null,
@@ -992,6 +1007,25 @@ function AppContent() {
       }
     });
 
+    // Track color for "Applied" badge on the chart card (auto-fades after 10s)
+    const targetId = getRecommendationTargetViewId(r);
+    if (targetId) {
+      const orderIdx = recommendationOrderMap[r.id];
+      const color =
+        orderIdx != null ? getRecColor(orderIdx - 1) : "#3b82f6";
+      setAppliedRecColorByViewId((prev) => ({
+        ...prev,
+        [targetId]: color,
+      }));
+      setTimeout(() => {
+        setAppliedRecColorByViewId((prev) => {
+          const next = { ...prev };
+          delete next[targetId];
+          return next;
+        });
+      }, 10_000);
+    }
+
     acceptRecommendation(r);
   };
 
@@ -1002,6 +1036,10 @@ function AppContent() {
       setViews(latest._prevViews);
       return prev.slice(1);
     });
+  };
+
+  const applyAll = () => {
+    activeRecommendations.forEach((r) => apply(r));
   };
 
   const decline = (r: Recommendation) => {
@@ -1274,9 +1312,9 @@ function AppContent() {
               isAddMode={sidebarMode === "STRUCTURE"}
               setSidebarMode={setSidebarMode}
               recommendationsByViewId={modifyRecommendationsByViewId}
+              recommendationOrderMap={recommendationOrderMap}
+              appliedRecColorByViewId={appliedRecColorByViewId}
               newContentRecommendation={newContentRecommendation}
-              onRecommendationHover={(r) => setHoveredRec(r)}
-              onRecommendationLeave={() => setHoveredRec(null)}
               onAcceptRecommendation={apply}
               onDeclineRecommendation={decline}
               onInitializeDashboard={initializeDashboard}
@@ -1367,9 +1405,11 @@ function AppContent() {
             history={appliedRecommendations}
             activeRecommendations={activeRecommendations}
             llmReplies={llmReplies}
+            viewTitles={viewTitlesMap}
             onUndoLatest={undoLatestRecommendation}
             onAcceptRecommendation={apply}
             onDeclineRecommendation={decline}
+            onAcceptAllRecommendations={applyAll}
             voice={voice}
             textChats={textChats}
             isGenerating={isLoading}

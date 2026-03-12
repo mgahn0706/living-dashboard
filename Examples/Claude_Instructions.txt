@@ -1,0 +1,5 @@
+The following changes need to be implemented:
+1. The AI recommendation on the dashboard should be ordered. Currently, the order is only visible in the side pain but not on the visualizations present in the dashboard. This should be fixed.
+2. The visualizations that are being recommended should be enlarged a bit and should have a darker glowing pulsating effect than what they have. The dashboard should scroll to the point of the first recommended visual, and then second and then third..if present.
+3. Also, the visuals that are shrinking should have a burning edge (like burning paper) effect on the visual boundary to indicate their decay.
+4. The AI should be able to offer recommendation on interactive events as well, not just basic filtering. For example, we have a drill-down visual in the dashboard, so the AI should be able to recommend drill-intreractivity as well, if the question is such.

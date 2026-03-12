@@ -31,9 +31,9 @@ export default function DashboardView({
   previewMap = {},
   addPreview = null,
   recommendationsByViewId = {},
+  recommendationOrderMap = {},
+  appliedRecColorByViewId = {},
   newContentRecommendation = null,
-  onRecommendationHover,
-  onRecommendationLeave,
   onAcceptRecommendation,
   onDeclineRecommendation,
   onInitializeDashboard,
@@ -50,9 +50,9 @@ export default function DashboardView({
   previewMap?: Record<string, PreviewState>;
   addPreview?: View | null;
   recommendationsByViewId?: Record<string, Recommendation>;
+  recommendationOrderMap?: Record<string, number>;
+  appliedRecColorByViewId?: Record<string, string>;
   newContentRecommendation?: Recommendation | null;
-  onRecommendationHover?: (rec: Recommendation) => void;
-  onRecommendationLeave?: () => void;
   onAcceptRecommendation?: (rec: Recommendation) => void;
   onDeclineRecommendation?: (rec: Recommendation) => void;
   onInitializeDashboard?: () => void;
@@ -180,12 +180,15 @@ export default function DashboardView({
           focusIntensity={focusIntensityByViewId[view.id] ?? 0.2}
           flexBasis={sizingByViewId[view.id]?.flexBasis ?? "32%"}
           heightPx={sizingByViewId[view.id]?.heightPx ?? 260}
-          hasActiveRecommendation={!!recommendationsByViewId[view.id]}
           isSelected={selectedViewId === view.id}
           preview={previewMap[view.id] ?? null}
+          appliedRecColor={appliedRecColorByViewId[view.id]}
           recommendation={recommendationsByViewId[view.id] ?? null}
-          onRecommendationHover={onRecommendationHover}
-          onRecommendationLeave={onRecommendationLeave}
+          recommendationIndex={
+            recommendationsByViewId[view.id]
+              ? recommendationOrderMap[recommendationsByViewId[view.id].id]
+              : undefined
+          }
           onAcceptRecommendation={onAcceptRecommendation}
           onDeclineRecommendation={onDeclineRecommendation}
           onPointerMove={(e) =>
@@ -211,8 +214,11 @@ export default function DashboardView({
           preview={{ type: "ADD", view: addPreview }}
           isSelected={false}
           recommendation={newContentRecommendation}
-          onRecommendationHover={onRecommendationHover}
-          onRecommendationLeave={onRecommendationLeave}
+          recommendationIndex={
+            newContentRecommendation
+              ? recommendationOrderMap[newContentRecommendation.id]
+              : undefined
+          }
           onAcceptRecommendation={onAcceptRecommendation}
           onDeclineRecommendation={onDeclineRecommendation}
         />

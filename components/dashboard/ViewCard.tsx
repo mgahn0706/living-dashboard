@@ -21,11 +21,7 @@ import {
   IconSparkles,
   IconX,
 } from "@tabler/icons-react";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
+import { getRecColor, getActionLabel } from "@/components/recommendation/RecommendationSidebar";
 
 /* =======================================================
    Layout constants
@@ -108,27 +104,25 @@ export default React.memo(function ViewCard({
   heightPx = 260,
   isSelected,
   preview = null,
+  appliedRecColor,
   recommendation = null,
-  onRecommendationHover,
-  onRecommendationLeave,
+  recommendationIndex,
   onAcceptRecommendation,
   onDeclineRecommendation,
   onPointerMove,
   onCardClick,
   onEditClick,
   onApplyFilter,
-  hasActiveRecommendation = false,
 }: {
   view: View;
   focusIntensity: number;
   flexBasis?: string;
   heightPx?: number;
   isSelected: boolean;
-  hasActiveRecommendation?: boolean;
   preview?: PreviewState;
+  appliedRecColor?: string;
   recommendation?: Recommendation | null;
-  onRecommendationHover?: (rec: Recommendation) => void;
-  onRecommendationLeave?: () => void;
+  recommendationIndex?: number;
   onAcceptRecommendation?: (rec: Recommendation) => void;
   onDeclineRecommendation?: (rec: Recommendation) => void;
   onPointerMove?: React.PointerEventHandler<HTMLDivElement>;
@@ -143,6 +137,10 @@ export default React.memo(function ViewCard({
   const borderOpacity = 0.1 + normalizedFocus * 0.18;
   const borderColor = `rgba(59, 130, 246, ${borderOpacity.toFixed(3)})`;
   const baseShadow = "0 1px 2px rgba(0, 0, 0, 0.08)";
+  const recColor =
+    recommendation && recommendationIndex != null
+      ? getRecColor(recommendationIndex - 1)
+      : undefined;
   const contentOpacity = isEditing ? 1 : 0.6 + normalizedFocus * 0.4;
   const { attributeKeys, resolveAttribute } = useDataset();
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
@@ -199,15 +197,6 @@ export default React.memo(function ViewCard({
             transform: scale(1.015);
           }
         }
-        @keyframes recommendationPulse {
-          0%,
-          100% {
-            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
-          }
-          50% {
-            box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.15);
-          }
-        }
       `}</style>
 
       <Card
@@ -216,25 +205,24 @@ export default React.memo(function ViewCard({
         onClick={onCardClick}
         style={{
           borderColor,
-          boxShadow: baseShadow,
+          boxShadow:
+            !isEditing && recColor
+              ? `0 0 0 2px ${recColor}33, 0 4px 24px ${recColor}22`
+              : baseShadow,
           flexBasis,
         }}
         className={cn(
           "relative overflow-hidden transition-all duration-300 ease-out cursor-pointer",
           "hover:ring-1 hover:ring-ring",
           isEditing &&
-            "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]",
-          !isEditing &&
-            hasActiveRecommendation &&
-            "ring-2 ring-blue-400 animate-[recommendationPulse_2s_ease-in-out_infinite]"
+            "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]"
         )}
       >
         {recommendation && (
           <RecommendationBanner
             recommendation={recommendation}
+            orderIndex={recommendationIndex}
             onAccept={onAcceptRecommendation}
-            onHover={onRecommendationHover}
-            onLeave={onRecommendationLeave}
             onDecline={onDeclineRecommendation}
           />
         )}
@@ -260,6 +248,18 @@ export default React.memo(function ViewCard({
               </CardTitle>
 
               <div className="flex items-center gap-1">
+                {appliedRecColor && !recommendation && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={{
+                      backgroundColor: `${appliedRecColor}15`,
+                      color: appliedRecColor,
+                    }}
+                  >
+                    <IconCheck className="size-3" />
+                    Applied
+                  </span>
+                )}
                 {canManualFilter && (
                   <Popover.Root
                     open={isFilterOpen}
@@ -512,108 +512,65 @@ export default React.memo(function ViewCard({
    Recommendation Banner
 ======================================================= */
 
-const REC_STYLES: Record<Recommendation["type"], string> = {
-  MODIFY_CONTENT:
-    "border-sky-200/70 bg-gradient-to-br from-sky-50/90 to-sky-100/60 text-sky-900 shadow-[0_10px_25px_rgba(14,116,144,0.18)] dark:border-sky-900/60 dark:from-sky-950/50 dark:to-sky-900/25 dark:text-sky-100",
-  MODIFY_FILTER:
-    "border-cyan-200/70 bg-gradient-to-br from-cyan-50/90 to-cyan-100/60 text-cyan-900 shadow-[0_10px_25px_rgba(8,145,178,0.18)] dark:border-cyan-900/60 dark:from-cyan-950/50 dark:to-cyan-900/25 dark:text-cyan-100",
-  NEW_CONTENT:
-    "border-emerald-200/70 bg-gradient-to-br from-emerald-50/90 to-emerald-100/60 text-emerald-900 shadow-[0_10px_25px_rgba(16,185,129,0.16)] dark:border-emerald-900/60 dark:from-emerald-950/50 dark:to-emerald-900/25 dark:text-emerald-100",
-  REORDER:
-    "border-amber-200/70 bg-gradient-to-br from-amber-50/90 to-amber-100/60 text-amber-900 shadow-[0_10px_25px_rgba(245,158,11,0.16)] dark:border-amber-900/60 dark:from-amber-950/50 dark:to-amber-900/25 dark:text-amber-100",
-  RESIZE:
-    "border-violet-200/70 bg-gradient-to-br from-violet-50/90 to-violet-100/60 text-violet-900 shadow-[0_10px_25px_rgba(139,92,246,0.16)] dark:border-violet-900/60 dark:from-violet-950/50 dark:to-violet-900/25 dark:text-violet-100",
-  REMOVE_CONTENT:
-    "border-rose-200/70 bg-gradient-to-br from-rose-50/90 to-rose-100/60 text-rose-900 shadow-[0_10px_25px_rgba(244,63,94,0.16)] dark:border-rose-900/60 dark:from-rose-950/50 dark:to-rose-900/25 dark:text-rose-100",
-};
-
 function RecommendationBanner({
   recommendation,
+  orderIndex,
   onAccept,
-  onHover,
-  onLeave,
   onDecline,
 }: {
   recommendation: Recommendation;
+  orderIndex?: number;
   onAccept?: (rec: Recommendation) => void;
-  onHover?: (rec: Recommendation) => void;
-  onLeave?: () => void;
   onDecline?: (rec: Recommendation) => void;
 }) {
+  const color =
+    orderIndex != null ? getRecColor(orderIndex - 1) : "#3b82f6";
+
   return (
-    <div className="absolute right-3 top-3 z-20">
-      <HoverCard
-        openDelay={120}
-        onOpenChange={(open) => {
-          if (open) onHover?.(recommendation);
-          else onLeave?.();
-        }}
+    <div
+      className="relative z-20 flex items-center gap-2 px-3 py-1.5 text-xs border-b"
+      style={{
+        borderLeftWidth: "3px",
+        borderLeftColor: color,
+        backgroundColor: `${color}0a`,
+        borderBottomColor: `${color}20`,
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <IconSparkles className="size-3.5" style={{ color }} />
+      <span className="font-semibold text-[11px]">
+        AI Suggestion{orderIndex != null ? ` #${orderIndex}` : ""}
+      </span>
+      <span
+        className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+        style={{ backgroundColor: `${color}15`, color }}
       >
-        <HoverCardTrigger asChild>
-          <button
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide shadow-sm backdrop-blur-sm",
-              "transition-colors",
-              REC_STYLES[recommendation.type]
-            )}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <IconSparkles className="size-3" />
-            <span>AI recommendation</span>
-          </button>
-        </HoverCardTrigger>
+        {getActionLabel(recommendation)}
+      </span>
 
-        <HoverCardContent
-          align="start"
-          side="right"
-          sideOffset={12}
-          className={cn(
-            "w-80 text-xs leading-relaxed",
-            "border px-3 py-2 shadow-lg backdrop-blur-sm",
-            REC_STYLES[recommendation.type]
-          )}
-          onClick={(e) => e.stopPropagation()}
+      <div className="ml-auto flex items-center gap-1">
+        <button
+          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ backgroundColor: color }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAccept?.(recommendation);
+          }}
         >
-          <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide opacity-80">
-            <span>AI recommendation</span>
-            <span className="rounded-full border border-current/20 px-1.5 py-0.5 text-[10px]">
-              {recommendation.type.replace("_", " ")}
-            </span>
-          </div>
-          <div className="font-medium text-sm leading-snug">
-            {recommendation.title}
-          </div>
-          <div className="mt-1 text-muted-foreground">
-            {recommendation.reason}
-          </div>
-
-          <div className="mt-2 flex items-center justify-end gap-1">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-7 px-2 text-xs"
-              onClick={(e) => {
-                e.stopPropagation();
-                onAccept?.(recommendation);
-              }}
-            >
-              Apply
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDecline?.(recommendation);
-              }}
-              aria-label="Decline recommendation"
-            >
-              <IconX className="size-3" />
-            </Button>
-          </div>
-        </HoverCardContent>
-      </HoverCard>
+          <IconCheck className="size-3" />
+          Apply
+        </button>
+        <button
+          className="rounded p-0.5 text-muted-foreground hover:text-destructive transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDecline?.(recommendation);
+          }}
+          aria-label="Dismiss"
+        >
+          <IconX className="size-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
