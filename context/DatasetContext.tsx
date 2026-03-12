@@ -22,6 +22,7 @@ type DatasetContextType = {
   resolveAttribute: (attr: string) => any[];
   uploadDataset: (file: File) => Promise<void>;
   loadDemoDataset: () => Promise<void>;
+  restoreDataset: (data: unknown) => void;
 };
 
 /* =====================================================
@@ -265,6 +266,7 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
         resolveAttribute,
         uploadDataset,
         loadDemoDataset,
+        restoreDataset: ingestData,
       }}
     >
       {children}

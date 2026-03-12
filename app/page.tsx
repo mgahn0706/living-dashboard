@@ -33,6 +33,7 @@ import { TimeFilterProvider } from "@/context/TimeFilterContext";
 import { CategoryFilterProvider, useCategoryFilter } from "@/context/CategoryFilterContext";
 
 import { useExperimentLogger } from "@/hooks/useExperimentLogger";
+import type { ExperimentSession } from "@/hooks/useExperimentLogger";
 import type { VoiceUtterance } from "@/hooks/useVoiceInput";
 
 const AUTO_SAVE_INTERVAL_MS = 60_000;
@@ -71,6 +72,13 @@ type SavedDashboardState = {
   voiceConversation?: VoiceUtterance[];
   language?: "en-US" | "ko-KR" | "ja-JP";
   experimentSession?: unknown;
+};
+
+type DashboardStateFile = {
+  version: 1;
+  exportedAt: string;
+  dataset?: unknown;
+  dashboard: SavedDashboardState;
 };
 
 function getValueByPath(row: any, path: string) {
@@ -676,9 +684,17 @@ function AppContent() {
   );
   const [isInitializing, setIsInitializing] = useState(false);
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false);
+  const [hasSavedDashboardState, setHasSavedDashboardState] = useState(false);
 
-  const { focusScore } = useFocus();
-  const { schema, attributeKeys, attributeTypes, rawData, loadDemoDataset, resolveAttribute } =
+  const { focusScore, restoreFocusScore } = useFocus();
+  const {
+    schema,
+    attributeKeys,
+    attributeTypes,
+    rawData,
+    loadDemoDataset,
+    restoreDataset,
+  } =
     useDataset();
   const { addFilter: addCategoryFilter } = useCategoryFilter();
 
@@ -689,9 +705,14 @@ function AppContent() {
     isLoading,
     triggerRecommendation,
     restoreHistory,
+    resetAccepted,
   } = useRecommendation();
 
-  const { session: experimentSession, logEvent } = useExperimentLogger();
+  const {
+    session: experimentSession,
+    logEvent,
+    restoreSession,
+  } = useExperimentLogger();
 
   /* ================= Recommendation SHOWN ================= */
 
@@ -735,56 +756,83 @@ function AppContent() {
     },
   });
 
-  useEffect(() => {
-    if (hasRestoredAutoSaveRef.current) return;
-    hasRestoredAutoSaveRef.current = true;
-
-    const stored = localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
-    if (!stored) return;
-
-    try {
-      const parsed = JSON.parse(stored) as SavedDashboardState;
+  const restoreDashboardState = useCallback(
+    (parsed: SavedDashboardState) => {
       const restoredViews = Array.isArray(parsed.views) ? parsed.views : [];
 
-      if (restoredViews.length > 0) {
-        setViews(restoredViews);
-      }
+      setViews(restoredViews);
+      setSelectedViewId(null);
+      setSidebarMode("FORMAT");
+      setHoveredRec(null);
+      setShownRecIds(new Set());
 
-      if (Array.isArray(parsed.textChats)) {
-        setTextChats(parsed.textChats.filter((item) => typeof item === "string"));
-      }
+      setTextChats(
+        Array.isArray(parsed.textChats)
+          ? parsed.textChats.filter((item) => typeof item === "string")
+          : []
+      );
 
-      if (Array.isArray(parsed.appliedRecommendations)) {
-        setAppliedRecommendations(
-          parsed.appliedRecommendations.map((rec) => ({
-            ...rec,
-            _prevViews: restoredViews,
-          }))
-        );
-      }
+      setAppliedRecommendations(
+        Array.isArray(parsed.appliedRecommendations)
+          ? parsed.appliedRecommendations.map((rec) => ({
+              ...rec,
+              _prevViews: restoredViews,
+            }))
+          : []
+      );
 
-      if (Array.isArray(parsed.acceptedRecommendationIds)) {
-        setAcceptedRecommendationIds(
-          parsed.acceptedRecommendationIds.filter((id) => typeof id === "string")
-        );
-      }
+      const restoredAcceptedIds = Array.isArray(parsed.acceptedRecommendationIds)
+        ? parsed.acceptedRecommendationIds.filter((id) => typeof id === "string")
+        : [];
+      setAcceptedRecommendationIds(restoredAcceptedIds);
 
       if (parsed.language === "en-US" || parsed.language === "ko-KR" || parsed.language === "ja-JP") {
         setLanguage(parsed.language);
+      } else {
+        setLanguage("en-US");
       }
 
-      if (Array.isArray(parsed.voiceConversation)) {
-        voice.restoreConversation(parsed.voiceConversation);
+      if (
+        parsed.focusScore &&
+        typeof parsed.focusScore === "object" &&
+        !Array.isArray(parsed.focusScore)
+      ) {
+        restoreFocusScore(parsed.focusScore);
+      } else {
+        restoreFocusScore({});
       }
 
+      voice.restoreConversation(
+        Array.isArray(parsed.voiceConversation) ? parsed.voiceConversation : []
+      );
+
+      resetAccepted();
       restoreHistory({
-        llmReplies: parsed.llmReplies,
-        dismissedRecommendationIds: parsed.acceptedRecommendationIds,
+        llmReplies: Array.isArray(parsed.llmReplies) ? parsed.llmReplies : [],
+        dismissedRecommendationIds: restoredAcceptedIds,
       });
-    } catch {
-      console.warn("Failed to restore auto-saved dashboard session.");
-    }
-  }, [restoreHistory, voice]);
+
+      const nextExperimentSession =
+        parsed.experimentSession &&
+        typeof parsed.experimentSession === "object" &&
+        !Array.isArray(parsed.experimentSession)
+          ? (parsed.experimentSession as ExperimentSession)
+          : null;
+      restoreSession(nextExperimentSession);
+    },
+    [
+      resetAccepted,
+      restoreFocusScore,
+      restoreHistory,
+      restoreSession,
+      voice,
+    ]
+  );
+
+  useEffect(() => {
+    const stored = localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
+    setHasSavedDashboardState(Boolean(stored));
+  }, []);
 
   /* ================= PREVIEW ================= */
 
@@ -1054,6 +1102,7 @@ function AppContent() {
     };
 
     localStorage.setItem(AUTO_SAVE_STORAGE_KEY, JSON.stringify(payload));
+    setHasSavedDashboardState(true);
   }, [
     views,
     focusScore,
@@ -1067,7 +1116,6 @@ function AppContent() {
   ]);
 
   const saveDashboardStateRef = useRef(saveDashboardState);
-  const hasRestoredAutoSaveRef = useRef(false);
 
   useEffect(() => {
     saveDashboardStateRef.current = saveDashboardState;
@@ -1107,6 +1155,103 @@ function AppContent() {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }, [activeRecommendations]);
+  const exportDashboardState = useCallback(() => {
+    const payload: DashboardStateFile = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      dataset: rawData ?? null,
+      dashboard: {
+        savedAt: new Date().toISOString(),
+        views,
+        focusScore,
+        textChats,
+        llmReplies,
+        voiceConversation: voice.conversation,
+        language,
+        appliedRecommendations: appliedRecommendations.map(
+          ({ _prevViews, ...rest }) => rest
+        ),
+        acceptedRecommendationIds,
+        experimentSession: experimentSession ?? null,
+      },
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const timestamp = payload.exportedAt.replace(/[:.]/g, "-");
+
+    a.href = url;
+    a.download = `living-dashboard-state-${timestamp}.json`;
+    a.click();
+
+    URL.revokeObjectURL(url);
+  }, [
+    acceptedRecommendationIds,
+    appliedRecommendations,
+    experimentSession,
+    focusScore,
+    language,
+    llmReplies,
+    rawData,
+    textChats,
+    views,
+    voice.conversation,
+  ]);
+
+  const importDashboardState = useCallback(
+    async (file: File) => {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+
+      if (!parsed || typeof parsed !== "object") {
+        throw new Error("Invalid dashboard state payload");
+      }
+
+      const importedDashboard =
+        "dashboard" in parsed &&
+        parsed.dashboard &&
+        typeof parsed.dashboard === "object"
+          ? parsed.dashboard
+          : parsed;
+
+      const importedDataset =
+        "dataset" in parsed ? parsed.dataset : undefined;
+
+      if (
+        importedDataset !== undefined &&
+        importedDataset !== null
+      ) {
+        restoreDataset(importedDataset);
+      }
+
+      restoreDashboardState(importedDashboard as SavedDashboardState);
+      localStorage.setItem(
+        AUTO_SAVE_STORAGE_KEY,
+        JSON.stringify(importedDashboard)
+      );
+      setHasSavedDashboardState(true);
+    },
+    [restoreDashboardState, restoreDataset]
+  );
+
+  const loadSavedDashboardState = useCallback(() => {
+    const stored = localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
+    if (!stored) {
+      setHasSavedDashboardState(false);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(stored) as SavedDashboardState;
+      restoreDashboardState(parsed);
+    } catch {
+      console.warn("Failed to restore auto-saved dashboard session.");
+      setHasSavedDashboardState(false);
+    }
+  }, [restoreDashboardState]);
 
   return (
     <>
@@ -1114,6 +1259,10 @@ function AppContent() {
         <SiteHeader
           isAutoSaveEnabled={isAutoSaveEnabled}
           onAutoSaveToggle={setIsAutoSaveEnabled}
+          onExportDashboardState={exportDashboardState}
+          onImportDashboardState={importDashboardState}
+          hasSavedDashboardState={hasSavedDashboardState}
+          onLoadSavedDashboardState={loadSavedDashboardState}
         />
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto p-6 md:p-8">

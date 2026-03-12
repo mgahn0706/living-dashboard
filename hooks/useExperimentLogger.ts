@@ -169,6 +169,18 @@ export function useExperimentLogger() {
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
+  const restoreSession = useCallback((nextSession: ExperimentSession | null) => {
+    setSession(nextSession);
+    startTimeRef.current = nextSession?.meta.sessionStartTime ?? null;
+
+    if (nextSession) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
+      return;
+    }
+
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
+
   /* =========================================================
      Helper Metrics
   ========================================================= */
@@ -198,6 +210,7 @@ export function useExperimentLogger() {
     endSession,
     downloadSession,
     clearSession,
+    restoreSession,
     getTotalDurationSeconds,
     getEventCount,
   };
