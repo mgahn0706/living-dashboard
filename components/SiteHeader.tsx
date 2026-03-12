@@ -25,6 +25,8 @@ interface SiteHeaderProps {
   onAutoSaveToggle?: (enabled: boolean) => void;
   onExportDashboardState?: () => void;
   onImportDashboardState?: (file: File) => Promise<void>;
+  hasSavedDashboardState?: boolean;
+  onLoadSavedDashboardState?: () => void;
 }
 
 export function SiteHeader({
@@ -32,6 +34,8 @@ export function SiteHeader({
   onAutoSaveToggle,
   onExportDashboardState,
   onImportDashboardState,
+  hasSavedDashboardState = false,
+  onLoadSavedDashboardState,
 }: SiteHeaderProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stateFileInputRef = useRef<HTMLInputElement>(null);
@@ -141,6 +145,17 @@ export function SiteHeader({
             >
               <IconDownload className="size-4" />
               <span>Export State</span>
+            </Button>
+          )}
+
+          {hasDataset && hasSavedDashboardState && onLoadSavedDashboardState && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden sm:flex gap-2 text-muted-foreground"
+              onClick={onLoadSavedDashboardState}
+            >
+              <span>Load Saved View</span>
             </Button>
           )}
 

@@ -690,6 +690,7 @@ function AppContent() {
   );
   const [isInitializing, setIsInitializing] = useState(false);
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false);
+  const [hasSavedDashboardState, setHasSavedDashboardState] = useState(false);
 
   const { focusScore, restoreFocusScore } = useFocus();
   const {
@@ -834,19 +835,9 @@ function AppContent() {
   );
 
   useEffect(() => {
-    if (hasRestoredAutoSaveRef.current) return;
-    hasRestoredAutoSaveRef.current = true;
-
     const stored = localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
-    if (!stored) return;
-
-    try {
-      const parsed = JSON.parse(stored) as SavedDashboardState;
-      restoreDashboardState(parsed);
-    } catch {
-      console.warn("Failed to restore auto-saved dashboard session.");
-    }
-  }, [restoreDashboardState]);
+    setHasSavedDashboardState(Boolean(stored));
+  }, []);
 
   /* ================= PREVIEW ================= */
 
@@ -1114,6 +1105,7 @@ function AppContent() {
     };
 
     localStorage.setItem(AUTO_SAVE_STORAGE_KEY, JSON.stringify(payload));
+    setHasSavedDashboardState(true);
   }, [
     views,
     focusScore,
@@ -1127,7 +1119,6 @@ function AppContent() {
   ]);
 
   const saveDashboardStateRef = useRef(saveDashboardState);
-  const hasRestoredAutoSaveRef = useRef(false);
 
   useEffect(() => {
     saveDashboardStateRef.current = saveDashboardState;
@@ -1232,9 +1223,26 @@ function AppContent() {
         AUTO_SAVE_STORAGE_KEY,
         JSON.stringify(importedDashboard)
       );
+      setHasSavedDashboardState(true);
     },
     [restoreDashboardState, restoreDataset]
   );
+
+  const loadSavedDashboardState = useCallback(() => {
+    const stored = localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
+    if (!stored) {
+      setHasSavedDashboardState(false);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(stored) as SavedDashboardState;
+      restoreDashboardState(parsed);
+    } catch {
+      console.warn("Failed to restore auto-saved dashboard session.");
+      setHasSavedDashboardState(false);
+    }
+  }, [restoreDashboardState]);
 
   return (
     <>
@@ -1244,6 +1252,8 @@ function AppContent() {
           onAutoSaveToggle={setIsAutoSaveEnabled}
           onExportDashboardState={exportDashboardState}
           onImportDashboardState={importDashboardState}
+          hasSavedDashboardState={hasSavedDashboardState}
+          onLoadSavedDashboardState={loadSavedDashboardState}
         />
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto p-6 md:p-8">
