@@ -31,34 +31,6 @@ import {
    Layout constants
 ======================================================= */
 
-const SIZE_CLASS: Record<View["size"], string> = {
-  xl: "basis-[49%]",
-  lg: "basis-[32%]",
-  md: "basis-[24%]",
-  sm: "basis-[24%]",
-};
-
-const KPI_SIZE_CLASS: Record<View["size"], string> = {
-  xl: "basis-[11.5%]",
-  lg: "basis-[11.5%]",
-  md: "basis-[11.5%]",
-  sm: "basis-[11.5%]",
-};
-
-const CHART_HEIGHT: Record<View["size"], string> = {
-  xl: "h-[400px]",
-  lg: "h-[260px]",
-  md: "h-[210px]",
-  sm: "h-[170px]",
-};
-
-const KPI_HEIGHT: Record<View["size"], string> = {
-  xl: "h-[120px]",
-  lg: "h-[120px]",
-  md: "h-[100px]",
-  sm: "h-[80px]",
-};
-
 /* =======================================================
    Preview Types
 ======================================================= */
@@ -132,6 +104,8 @@ function buildFilterFromDraft(draft: {
 export default React.memo(function ViewCard({
   view,
   focusIntensity,
+  flexBasis = "32%",
+  heightPx = 260,
   isSelected,
   preview = null,
   recommendation = null,
@@ -143,10 +117,14 @@ export default React.memo(function ViewCard({
   onCardClick,
   onEditClick,
   onApplyFilter,
+  hasActiveRecommendation = false,
 }: {
   view: View;
   focusIntensity: number;
+  flexBasis?: string;
+  heightPx?: number;
   isSelected: boolean;
+  hasActiveRecommendation?: boolean;
   preview?: PreviewState;
   recommendation?: Recommendation | null;
   onRecommendationHover?: (rec: Recommendation) => void;
@@ -165,12 +143,7 @@ export default React.memo(function ViewCard({
   const borderOpacity = 0.1 + normalizedFocus * 0.18;
   const borderColor = `rgba(59, 130, 246, ${borderOpacity.toFixed(3)})`;
   const baseShadow = "0 1px 2px rgba(0, 0, 0, 0.08)";
-  const contentBlurPx = isEditing ? 0 : (1 - normalizedFocus) * 4;
-  const contentOpacity = isEditing ? 1 : 0.62 + normalizedFocus * 0.38;
-  const contentSaturate = 0.78 + normalizedFocus * 0.22;
-  const contentContrast = 0.88 + normalizedFocus * 0.12;
-  const contentScale = isEditing ? 1 : 0.992 + normalizedFocus * 0.008;
-  const contentMaskOpacity = isEditing ? 0 : (1 - normalizedFocus) * 0.18;
+  const contentOpacity = isEditing ? 1 : 0.6 + normalizedFocus * 0.4;
   const { attributeKeys, resolveAttribute } = useDataset();
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [draft, setDraft] = React.useState({
@@ -226,21 +199,34 @@ export default React.memo(function ViewCard({
             transform: scale(1.015);
           }
         }
+        @keyframes recommendationPulse {
+          0%,
+          100% {
+            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+          }
+          50% {
+            box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.15);
+          }
+        }
       `}</style>
 
       <Card
+        data-view-id={view.id}
         onPointerMove={onPointerMove}
         onClick={onCardClick}
         style={{
           borderColor,
           boxShadow: baseShadow,
+          flexBasis,
         }}
         className={cn(
-          view.chartType === "KPI" ? KPI_SIZE_CLASS[view.size] : SIZE_CLASS[view.size],
-          "relative overflow-hidden transition-all cursor-pointer",
+          "relative overflow-hidden transition-all duration-300 ease-out cursor-pointer",
           "hover:ring-1 hover:ring-ring",
           isEditing &&
-            "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]"
+            "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]",
+          !isEditing &&
+            hasActiveRecommendation &&
+            "ring-2 ring-blue-400 animate-[recommendationPulse_2s_ease-in-out_infinite]"
         )}
       >
         {recommendation && (
@@ -494,39 +480,28 @@ export default React.memo(function ViewCard({
 
           {/* Content */}
           <CardContent
-            className={cn(
-              view.chartType === "KPI" ? KPI_HEIGHT[view.size] : CHART_HEIGHT[view.size],
-              "relative flex p-0 overflow-hidden"
-            )}
+            className="relative flex p-0 overflow-hidden transition-[height] duration-300 ease-out"
+            style={{ height: `${heightPx}px` }}
           >
             <div
-              className="relative size-full origin-center transition-[filter,opacity,transform] duration-300 ease-out"
-              style={{
-                filter: `blur(${contentBlurPx.toFixed(2)}px) saturate(${contentSaturate.toFixed(3)}) contrast(${contentContrast.toFixed(3)})`,
-                opacity: contentOpacity,
-                transform: `scale(${contentScale.toFixed(3)})`,
-              }}
+              className="relative size-full transition-opacity duration-300 ease-out"
+              style={{ opacity: contentOpacity }}
             >
               <ChartRenderer view={view} filter={view.filter} height="100%" />
             </div>
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 bg-background transition-opacity duration-300 ease-out"
-              style={{ opacity: contentMaskOpacity }}
-            />
           </CardContent>
 
         </div>
 
         {/* Preview overlays */}
         {preview?.type === "MODIFY" && (
-          <ModifyOverlay view={preview.view} size={view.size} />
+          <ModifyOverlay view={preview.view} heightPx={heightPx} />
         )}
 
         {preview?.type === "REMOVE" && <RemoveOverlay />}
 
         {preview?.type === "ADD" && (
-          <AddOverlay view={preview.view} size={view.size} />
+          <AddOverlay view={preview.view} heightPx={heightPx} />
         )}
       </Card>
     </>
@@ -647,7 +622,7 @@ function RecommendationBanner({
    MODIFY overlay
 ======================================================= */
 
-function ModifyOverlay({ view, size }: { view: View; size: View["size"] }) {
+function ModifyOverlay({ view, heightPx }: { view: View; heightPx: number }) {
   return (
     <div className="absolute inset-0 z-10 pointer-events-none">
       <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
@@ -663,10 +638,8 @@ function ModifyOverlay({ view, size }: { view: View; size: View["size"] }) {
         </CardHeader>
 
         <CardContent
-          className={cn(
-            view.chartType === "KPI" ? KPI_HEIGHT[size] : CHART_HEIGHT[size],
-            "flex p-0 overflow-hidden"
-          )}
+          className="flex p-0 overflow-hidden"
+          style={{ height: `${heightPx}px` }}
         >
           <ChartRenderer view={view} filter={view.filter} height="100%" />
         </CardContent>
@@ -693,7 +666,7 @@ function RemoveOverlay() {
    ADD overlay
 ======================================================= */
 
-function AddOverlay({ view, size }: { view: View; size: View["size"] }) {
+function AddOverlay({ view, heightPx }: { view: View; heightPx: number }) {
   return (
     <div className="absolute inset-0 z-10 pointer-events-none">
       <div className="absolute inset-0 bg-background/70 backdrop-blur-sm" />
@@ -709,10 +682,8 @@ function AddOverlay({ view, size }: { view: View; size: View["size"] }) {
         </CardHeader>
 
         <CardContent
-          className={cn(
-            view.chartType === "KPI" ? KPI_HEIGHT[size] : CHART_HEIGHT[size],
-            "flex p-0 overflow-hidden"
-          )}
+          className="flex p-0 overflow-hidden"
+          style={{ height: `${heightPx}px` }}
         >
           <ChartRenderer view={view} filter={view.filter} height="100%" />
         </CardContent>

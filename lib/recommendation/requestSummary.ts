@@ -2,7 +2,7 @@ import { VoiceUtterance } from "@/hooks/useVoiceInput";
 
 export type RecentRequestMessage = {
   id: string;
-  source: "voice" | "text";
+  source: "voice" | "text" | "assistant";
   text: string;
   timestamp: number;
   lang?: string;

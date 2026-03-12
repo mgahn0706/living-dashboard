@@ -12,7 +12,19 @@ import { ArrowRight, Plus, X } from "lucide-react";
 import TimeSlider from "./TimeSlider";
 
 const FOCUS_STABLE_RANGE = 100;
-const MIN_VISIBLE_FOCUS_INTENSITY = 0.85;
+const MIN_VISIBLE_FOCUS_INTENSITY = 0.25;
+
+/* Continuous sizing ranges driven by focus intensity.
+   max ~32% → ~3 cards per row at full focus; min ~16% → thumbnail.
+   Heights kept compact for a commercial dashboard feel. */
+const CHART_BASIS = { min: 16, max: 32 };
+const CHART_HEIGHT = { min: 100, max: 260 };
+const KPI_BASIS = { min: 8, max: 11.5 };
+const KPI_HEIGHT = { min: 56, max: 100 };
+
+function lerp(min: number, max: number, t: number) {
+  return min + t * (max - min);
+}
 
 export default function DashboardView({
   views = [],
@@ -89,6 +101,21 @@ export default function DashboardView({
     return map;
   }, [views, focusScore]);
 
+  const sizingByViewId = useMemo(() => {
+    const map: Record<string, { flexBasis: string; heightPx: number }> = {};
+    views.forEach((view) => {
+      const t = focusIntensityByViewId[view.id] ?? 0.25;
+      const isKpi = view.chartType === "KPI";
+      const basis = isKpi ? KPI_BASIS : CHART_BASIS;
+      const height = isKpi ? KPI_HEIGHT : CHART_HEIGHT;
+      map[view.id] = {
+        flexBasis: `${lerp(basis.min, basis.max, t).toFixed(1)}%`,
+        heightPx: Math.round(lerp(height.min, height.max, t)),
+      };
+    });
+    return map;
+  }, [views, focusIntensityByViewId]);
+
   /* =======================================================
      Empty State
   ======================================================= */
@@ -151,6 +178,9 @@ export default function DashboardView({
           key={view.id}
           view={view}
           focusIntensity={focusIntensityByViewId[view.id] ?? 0.2}
+          flexBasis={sizingByViewId[view.id]?.flexBasis ?? "32%"}
+          heightPx={sizingByViewId[view.id]?.heightPx ?? 260}
+          hasActiveRecommendation={!!recommendationsByViewId[view.id]}
           isSelected={selectedViewId === view.id}
           preview={previewMap[view.id] ?? null}
           recommendation={recommendationsByViewId[view.id] ?? null}
@@ -176,6 +206,8 @@ export default function DashboardView({
         <ViewCard
           view={addPreview}
           focusIntensity={0.2}
+          flexBasis="32%"
+          heightPx={260}
           preview={{ type: "ADD", view: addPreview }}
           isSelected={false}
           recommendation={newContentRecommendation}

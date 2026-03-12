@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
-import { useRecommendation } from "@/hooks/useRecommendation";
+import { useRecommendation, type LlmReply } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
 import type {
   ChartType,
@@ -65,7 +65,7 @@ type SavedDashboardState = {
   views?: View[];
   focusScore?: Record<string, number>;
   textChats?: string[];
-  llmReplies?: string[];
+  llmReplies?: (string | LlmReply)[];
   appliedRecommendations?: Recommendation[];
   acceptedRecommendationIds?: string[];
   voiceConversation?: VoiceUtterance[];
@@ -1095,6 +1095,19 @@ function AppContent() {
     return () => window.removeEventListener("pagehide", persistOnPageHide);
   }, [isAutoSaveEnabled]);
 
+  /* Auto-scroll to first recommendation target when new recommendations arrive */
+  useEffect(() => {
+    if (activeRecommendations.length === 0) return;
+    const first = activeRecommendations.find((r) => r.targetViewId);
+    if (!first?.targetViewId) return;
+    const el = document.querySelector(
+      `[data-view-id="${first.targetViewId}"]`
+    );
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [activeRecommendations]);
+
   return (
     <>
       <SidebarInset className="bg-muted/10">
@@ -1203,8 +1216,11 @@ function AppContent() {
           <RecommendationSidebar
             language={language}
             history={appliedRecommendations}
+            activeRecommendations={activeRecommendations}
             llmReplies={llmReplies}
             onUndoLatest={undoLatestRecommendation}
+            onAcceptRecommendation={apply}
+            onDeclineRecommendation={decline}
             voice={voice}
             textChats={textChats}
             isGenerating={isLoading}

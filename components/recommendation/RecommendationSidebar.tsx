@@ -1,8 +1,8 @@
 "use client";
 
 import { Recommendation } from "@/types/dashboard";
+import { Button } from "@/components/ui/button";
 import {
-  Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
@@ -16,13 +16,8 @@ import {
   IconPlayerStop,
   IconMessageDots,
   IconChevronDown,
-} from "@tabler/icons-react";
-
-import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
-
-import { useState, useMemo } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import {
+  IconCheck,
+  IconX,
   IconArrowsDownUp,
   IconResize,
   IconPlus,
@@ -30,6 +25,12 @@ import {
   IconFilter,
   IconTrash,
 } from "@tabler/icons-react";
+
+import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
+import type { LlmReply } from "@/hooks/useRecommendation";
+
+import { useState, useMemo, useRef, useEffect } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import {
   buildRecentRequestMessages,
@@ -42,10 +43,25 @@ import {
 } from "@/components/ui/collapsible";
 
 /* =======================================================
-   Types
+   Recommendation type icon helper
 ======================================================= */
 
-type UnifiedMessage = RecentRequestMessage;
+function recIcon(type: Recommendation["type"]) {
+  switch (type) {
+    case "REORDER":
+      return <IconArrowsDownUp className="size-4" />;
+    case "RESIZE":
+      return <IconResize className="size-4" />;
+    case "NEW_CONTENT":
+      return <IconPlus className="size-4" />;
+    case "MODIFY_FILTER":
+      return <IconFilter className="size-4" />;
+    case "MODIFY_CONTENT":
+      return <IconPencil className="size-4" />;
+    default:
+      return <IconTrash className="size-4" />;
+  }
+}
 
 /* ===================== Live Transcript ===================== */
 
@@ -77,89 +93,112 @@ function LiveTranscript({
   );
 }
 
-/* ===================== Conversation Timeline ===================== */
+/* ===================== Unified Chat Log ===================== */
 
-function ConversationTimeline({ messages }: { messages: UnifiedMessage[] }) {
-  const sorted = useMemo(
-    () => [...messages].sort((a, b) => a.timestamp - b.timestamp),
-    [messages]
-  );
+type ChatEntry =
+  | { kind: "user"; msg: RecentRequestMessage }
+  | { kind: "assistant"; reply: LlmReply };
+
+function ChatLog({
+  userMessages,
+  assistantReplies,
+}: {
+  userMessages: RecentRequestMessage[];
+  assistantReplies: LlmReply[];
+}) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const entries = useMemo<ChatEntry[]>(() => {
+    const all: ChatEntry[] = [
+      ...userMessages.map((msg) => ({ kind: "user" as const, msg })),
+      ...assistantReplies.map((reply) => ({
+        kind: "assistant" as const,
+        reply,
+      })),
+    ];
+    return all.sort((a, b) => {
+      const tA = a.kind === "user" ? a.msg.timestamp : a.reply.timestamp;
+      const tB = b.kind === "user" ? b.msg.timestamp : b.reply.timestamp;
+      return tA - tB;
+    });
+  }, [userMessages, assistantReplies]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [entries.length]);
 
   return (
-    <div className="bg-background/95 backdrop-blur px-3 py-2 max-h-40 overflow-y-auto">
-      <div className="flex flex-col gap-1">
-        {sorted.length === 0 && (
+    <div className="bg-background/95 backdrop-blur px-3 py-2 max-h-52 overflow-y-auto">
+      <div className="flex flex-col gap-1.5">
+        {entries.length === 0 && (
           <div className="text-[10px] text-muted-foreground/60">
             No conversation yet
           </div>
         )}
 
-        {sorted.map((m) => {
-          const isVoice = m.source === "voice";
-
-          return (
-            <div
-              key={m.id}
-              className={cn(
-                "rounded-md border px-2 py-1 text-[11px] border-l-4",
-                isVoice
-                  ? "bg-emerald-500/5 border-emerald-500/20 border-l-emerald-500"
-                  : "bg-violet-500/5 border-violet-500/20 border-l-violet-500"
-              )}
-            >
-              <div className="mb-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                {isVoice ? (
-                  <IconMicrophone className="size-3 text-emerald-600" />
-                ) : (
-                  <IconMessageDots className="size-3 text-violet-600" />
+        {entries.map((entry, i) => {
+          if (entry.kind === "user") {
+            const m = entry.msg;
+            const isVoice = m.source === "voice";
+            return (
+              <div
+                key={m.id}
+                className={cn(
+                  "rounded-md border px-2 py-1 text-[11px] border-l-4",
+                  isVoice
+                    ? "bg-emerald-500/5 border-emerald-500/20 border-l-emerald-500"
+                    : "bg-violet-500/5 border-violet-500/20 border-l-violet-500"
                 )}
-
-                {m.lang && (
-                  <>
-                    <span>·</span>
-                    <span>{m.lang}</span>
-                  </>
-                )}
-
-                <span>·</span>
-                <span>
-                  {new Date(m.timestamp).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
+              >
+                <div className="mb-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                  {isVoice ? (
+                    <IconMicrophone className="size-3 text-emerald-600" />
+                  ) : (
+                    <IconMessageDots className="size-3 text-violet-600" />
+                  )}
+                  {m.lang && (
+                    <>
+                      <span>·</span>
+                      <span>{m.lang}</span>
+                    </>
+                  )}
+                  <span>·</span>
+                  <span>
+                    {new Date(m.timestamp).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+                <div className="leading-snug">{m.text}</div>
               </div>
+            );
+          }
 
-              <div className="leading-snug">{m.text}</div>
+          // assistant
+          const r = entry.reply;
+          return (
+            <div key={`ai-${i}`} className="flex justify-end">
+              <div className="max-w-[88%] rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] leading-snug text-foreground shadow-sm">
+                <div className="mb-0.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+                    <IconSparkles className="size-3" />
+                    <span>Assistant</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(r.timestamp).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+                <div className="mt-1 whitespace-pre-wrap">{r.text}</div>
+              </div>
             </div>
           );
         })}
-      </div>
-    </div>
-  );
-}
 
-function AssistantReplyFeed({ replies }: { replies: string[] }) {
-  return (
-    <div className="px-3 py-2">
-      <div className="flex flex-col gap-2">
-        {replies.length === 0 && (
-          <div className="text-[10px] text-muted-foreground/60">
-            No AI reply yet
-          </div>
-        )}
-
-        {replies.slice(-3).map((reply, index) => (
-          <div key={`${index}-${reply.slice(0, 24)}`} className="flex justify-start">
-            <div className="max-w-[88%] rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] leading-snug text-foreground shadow-sm">
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-700">
-                <IconSparkles className="size-3" />
-                <span>Assistant</span>
-              </div>
-              <div className="mt-1 whitespace-pre-wrap">{reply}</div>
-            </div>
-          </div>
-        ))}
+        <div ref={bottomRef} />
       </div>
     </div>
   );
@@ -226,6 +265,7 @@ function ChatInputBar({
 
 export default function RecommendationSidebar({
   history = [],
+  activeRecommendations = [],
   llmReplies = [],
   voice,
   language,
@@ -234,15 +274,20 @@ export default function RecommendationSidebar({
   onChangeLanguage,
   onUndoLatest,
   onSendTextChat,
+  onAcceptRecommendation,
+  onDeclineRecommendation,
 }: {
   history?: Recommendation[];
-  llmReplies?: string[];
+  activeRecommendations?: Recommendation[];
+  llmReplies?: LlmReply[];
   voice: UseVoiceInputReturn;
   language: "en-US" | "ko-KR" | "ja-JP";
   isGenerating?: boolean;
   textChats?: string[];
   onUndoLatest?: () => void;
   onSendTextChat?: (text: string) => void;
+  onAcceptRecommendation?: (rec: Recommendation) => void;
+  onDeclineRecommendation?: (rec: Recommendation) => void;
   onChangeLanguage: (lang: "en-US" | "ko-KR" | "ja-JP") => void;
 }) {
   const { isListening, partial, conversation, start, stop } = voice;
@@ -254,15 +299,15 @@ export default function RecommendationSidebar({
       ? "話してください…"
       : "Speak now…";
 
-  const unifiedMessages: UnifiedMessage[] = useMemo(() => {
+  const unifiedMessages = useMemo(() => {
     return buildRecentRequestMessages({
       conversation,
       textChats,
     });
   }, [conversation, textChats]);
+
   return (
     <>
-      {" "}
       {/* Header */}
       <SidebarHeader className="border-b p-3.5">
         <SidebarMenu>
@@ -271,7 +316,7 @@ export default function RecommendationSidebar({
               <div className="flex items-center gap-2">
                 <IconSparkles className="size-5 text-primary" />
                 <div>
-                  <div className="font-semibold">AI History</div>
+                  <div className="font-semibold">AI Recommendations</div>
                 </div>
               </div>
 
@@ -289,7 +334,8 @@ export default function RecommendationSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      {/* Recommendations Scroll */}
+
+      {/* Main scroll area */}
       <SidebarContent className="flex-1 overflow-hidden">
         <ScrollArea className="h-full p-4">
           <div className="flex flex-col gap-4 pr-1">
@@ -300,75 +346,130 @@ export default function RecommendationSidebar({
               </div>
             )}
 
-            {history.length === 0 && !isGenerating && (
-              <div className="text-xs text-muted-foreground">
-                No applied recommendations yet.
+            {/* ===== Active (Pending) Recommendations ===== */}
+            {activeRecommendations.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Pending Recommendations
+                </div>
+                <AnimatePresence>
+                  {activeRecommendations.map((r, idx) => (
+                    <motion.div
+                      key={r.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                    >
+                      <div className="w-full min-w-0 flex items-start gap-2 rounded-md border-2 border-blue-400/40 bg-blue-50/30 dark:bg-blue-950/20 px-2.5 py-2 text-xs">
+                        <div className="mt-0.5 inline-flex size-7 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-sm">
+                          #{idx + 1}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                              {recIcon(r.type)}
+                              {r.type.replace("_", " ")}
+                            </span>
+                          </div>
+                          <div className="font-medium leading-snug break-words">
+                            {r.title}
+                          </div>
+                          <div className="mt-1 break-words text-[11px] text-muted-foreground">
+                            {r.reason}
+                          </div>
+
+                          <div className="mt-2 flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="h-6 px-2 text-[11px] gap-1"
+                              onClick={() => onAcceptRecommendation?.(r)}
+                            >
+                              <IconCheck className="size-3" />
+                              Apply
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => onDeclineRecommendation?.(r)}
+                              aria-label="Decline"
+                            >
+                              <IconX className="size-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
             )}
 
-            {history.length > 0 && onUndoLatest && (
-              <button
-                onClick={onUndoLatest}
-                className="w-full rounded-md border bg-background/70 px-3 py-2 text-xs font-semibold text-primary hover:bg-muted"
-              >
-                Undo last change
-              </button>
-            )}
+            {/* ===== Applied History ===== */}
+            {history.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {activeRecommendations.length > 0 && (
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mt-2">
+                    Applied
+                  </div>
+                )}
 
-            <AnimatePresence>
-              {history.map((r) => {
-                const icon =
-                  r.type === "REORDER" ? (
-                    <IconArrowsDownUp className="size-4" />
-                  ) : r.type === "RESIZE" ? (
-                    <IconResize className="size-4" />
-                  ) : r.type === "NEW_CONTENT" ? (
-                    <IconPlus className="size-4" />
-                  ) : r.type === "MODIFY_FILTER" ? (
-                    <IconFilter className="size-4" />
-                  ) : r.type === "MODIFY_CONTENT" ? (
-                    <IconPencil className="size-4" />
-                  ) : (
-                    <IconTrash className="size-4" />
-                  );
-
-                return (
-                  <motion.div
-                    key={r.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
+                {onUndoLatest && (
+                  <button
+                    onClick={onUndoLatest}
+                    className="w-full rounded-md border bg-background/70 px-3 py-2 text-xs font-semibold text-primary hover:bg-muted"
                   >
-                    <div className="w-full min-w-0 flex items-start gap-2 rounded-md border bg-background/60 px-2.5 py-2 text-xs">
-                      <div className="mt-0.5 inline-flex size-7 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                        {icon}
-                      </div>
+                    Undo last change
+                  </button>
+                )}
 
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-1 flex items-center gap-2">
-                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                            AI recommendation
-                          </span>
-                          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
-                            {r.type.replace("_", " ")}
-                          </span>
+                <AnimatePresence>
+                  {history.map((r) => (
+                    <motion.div
+                      key={r.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                    >
+                      <div className="w-full min-w-0 flex items-start gap-2 rounded-md border bg-background/60 px-2.5 py-2 text-xs">
+                        <div className="mt-0.5 inline-flex size-7 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                          {recIcon(r.type)}
                         </div>
-                        <div className="flex items-start justify-between gap-2">
+
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex items-center gap-2">
+                            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                              Applied
+                            </span>
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                              {r.type.replace("_", " ")}
+                            </span>
+                          </div>
                           <div className="min-w-0 break-words font-medium leading-snug">
                             {r.title}
                           </div>
-                        </div>
-                        <div className="mt-1 break-words text-[11px] text-muted-foreground">
-                          {r.reason}
+                          <div className="mt-1 break-words text-[11px] text-muted-foreground">
+                            {r.reason}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {history.length === 0 &&
+              activeRecommendations.length === 0 &&
+              !isGenerating && (
+                <div className="text-xs text-muted-foreground">
+                  No recommendations yet.
+                </div>
+              )}
           </div>
         </ScrollArea>
       </SidebarContent>
+
       {/* Bottom Stack */}
       <div className="sticky bottom-0 z-10">
         <LiveTranscript
@@ -386,8 +487,10 @@ export default function RecommendationSidebar({
           </div>
 
           <CollapsibleContent>
-            <AssistantReplyFeed replies={llmReplies} />
-            <ConversationTimeline messages={unifiedMessages} />
+            <ChatLog
+              userMessages={unifiedMessages}
+              assistantReplies={llmReplies}
+            />
           </CollapsibleContent>
         </Collapsible>
 
