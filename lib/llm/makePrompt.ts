@@ -208,7 +208,7 @@ export function makePrompt({
   ━━━━━━━━━━━━━━━━━━━━━━━━
   
   ${conversation
-    .slice(-5)
+    .slice(-1)
     .map((u) => `- ${u.text}`)
     .join("\n")}
   
@@ -222,7 +222,7 @@ export function makePrompt({
   💬 TEXT CHAT
   ━━━━━━━━━━━━━━━━━━━━━━━━
   
-  ${textChats.map((t) => `- ${t}`).join("\n")}
+  ${textChats.slice(-1).map((t) => `- ${t}`).join("\n")}
   
   ━━━━━━━━━━━━━━━━━━━━━━━━
   🚨 FINAL REMINDER

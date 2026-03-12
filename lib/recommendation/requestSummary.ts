@@ -49,11 +49,5 @@ export function summarizeRecentRequest(messages: RecentRequestMessage[]) {
   }
 
   const uniqueRecent = Array.from(new Set(recent));
-  const selected = uniqueRecent.slice(-2);
-
-  if (selected.length === 1) {
-    return selected[0];
-  }
-
-  return `${selected[0]} Then: ${selected[1]}`;
+  return uniqueRecent[uniqueRecent.length - 1];
 }
