@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { useRecommendation } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
@@ -33,6 +33,10 @@ import { TimeFilterProvider } from "@/context/TimeFilterContext";
 import { CategoryFilterProvider, useCategoryFilter } from "@/context/CategoryFilterContext";
 
 import { useExperimentLogger } from "@/hooks/useExperimentLogger";
+import type { VoiceUtterance } from "@/hooks/useVoiceInput";
+
+const AUTO_SAVE_INTERVAL_MS = 60_000;
+const AUTO_SAVE_STORAGE_KEY = "ld_dashboard_autosave_session";
 
 /* =====================================================
    Types / guards
@@ -55,6 +59,19 @@ function isChartView(v: View): v is ChartView {
  * then normalize into a concrete View *safely* via chartType-based logic.
  */
 type AnyPayload = any;
+
+type SavedDashboardState = {
+  savedAt: string;
+  views?: View[];
+  focusScore?: Record<string, number>;
+  textChats?: string[];
+  llmReplies?: string[];
+  appliedRecommendations?: Recommendation[];
+  acceptedRecommendationIds?: string[];
+  voiceConversation?: VoiceUtterance[];
+  language?: "en-US" | "ko-KR" | "ja-JP";
+  experimentSession?: unknown;
+};
 
 function getValueByPath(row: any, path: string) {
   return path.split(".").reduce((acc, key) => {
@@ -657,6 +674,7 @@ function AppContent() {
     "en-US"
   );
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false);
 
   const { focusScore } = useFocus();
   const { schema, attributeKeys, attributeTypes, rawData, loadDemoDataset, resolveAttribute } =
@@ -665,9 +683,11 @@ function AppContent() {
 
   const {
     recommendations,
+    llmReplies,
     acceptRecommendation,
     isLoading,
     triggerRecommendation,
+    restoreHistory,
   } = useRecommendation();
 
   const { session: experimentSession, logEvent } = useExperimentLogger();
@@ -713,6 +733,57 @@ function AppContent() {
       });
     },
   });
+
+  useEffect(() => {
+    if (hasRestoredAutoSaveRef.current) return;
+    hasRestoredAutoSaveRef.current = true;
+
+    const stored = localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
+    if (!stored) return;
+
+    try {
+      const parsed = JSON.parse(stored) as SavedDashboardState;
+      const restoredViews = Array.isArray(parsed.views) ? parsed.views : [];
+
+      if (restoredViews.length > 0) {
+        setViews(restoredViews);
+      }
+
+      if (Array.isArray(parsed.textChats)) {
+        setTextChats(parsed.textChats.filter((item) => typeof item === "string"));
+      }
+
+      if (Array.isArray(parsed.appliedRecommendations)) {
+        setAppliedRecommendations(
+          parsed.appliedRecommendations.map((rec) => ({
+            ...rec,
+            _prevViews: restoredViews,
+          }))
+        );
+      }
+
+      if (Array.isArray(parsed.acceptedRecommendationIds)) {
+        setAcceptedRecommendationIds(
+          parsed.acceptedRecommendationIds.filter((id) => typeof id === "string")
+        );
+      }
+
+      if (parsed.language === "en-US" || parsed.language === "ko-KR" || parsed.language === "ja-JP") {
+        setLanguage(parsed.language);
+      }
+
+      if (Array.isArray(parsed.voiceConversation)) {
+        voice.restoreConversation(parsed.voiceConversation);
+      }
+
+      restoreHistory({
+        llmReplies: parsed.llmReplies,
+        dismissedRecommendationIds: parsed.acceptedRecommendationIds,
+      });
+    } catch {
+      console.warn("Failed to restore auto-saved dashboard session.");
+    }
+  }, [restoreHistory, voice]);
 
   /* ================= PREVIEW ================= */
 
@@ -966,32 +1037,70 @@ function AppContent() {
   /* ================= Save Dashboard State ================= */
 
   const saveDashboardState = useCallback(() => {
-    const payload = {
+    const payload: SavedDashboardState = {
       savedAt: new Date().toISOString(),
       views,
       focusScore,
       textChats,
+      llmReplies,
+      voiceConversation: voice.conversation,
+      language,
       appliedRecommendations: appliedRecommendations.map(
         ({ _prevViews, ...rest }) => rest
       ),
+      acceptedRecommendationIds,
       experimentSession: experimentSession ?? null,
     };
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `dashboard-session-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [views, focusScore, textChats, appliedRecommendations, experimentSession]);
+    localStorage.setItem(AUTO_SAVE_STORAGE_KEY, JSON.stringify(payload));
+  }, [
+    views,
+    focusScore,
+    textChats,
+    llmReplies,
+    voice.conversation,
+    language,
+    appliedRecommendations,
+    acceptedRecommendationIds,
+    experimentSession,
+  ]);
+
+  const saveDashboardStateRef = useRef(saveDashboardState);
+  const hasRestoredAutoSaveRef = useRef(false);
+
+  useEffect(() => {
+    saveDashboardStateRef.current = saveDashboardState;
+  }, [saveDashboardState]);
+
+  useEffect(() => {
+    if (!isAutoSaveEnabled) return;
+
+    const intervalId = window.setInterval(() => {
+      saveDashboardStateRef.current();
+    }, AUTO_SAVE_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [isAutoSaveEnabled]);
+
+  useEffect(() => {
+    if (!isAutoSaveEnabled) return;
+
+    const persistOnPageHide = () => {
+      saveDashboardStateRef.current();
+    };
+
+    window.addEventListener("pagehide", persistOnPageHide);
+
+    return () => window.removeEventListener("pagehide", persistOnPageHide);
+  }, [isAutoSaveEnabled]);
 
   return (
     <>
       <SidebarInset className="bg-muted/10">
-        <SiteHeader onSave={saveDashboardState} />
+        <SiteHeader
+          isAutoSaveEnabled={isAutoSaveEnabled}
+          onAutoSaveToggle={setIsAutoSaveEnabled}
+        />
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto p-6 md:p-8">
             <DashboardView
@@ -1093,6 +1202,7 @@ function AppContent() {
           <RecommendationSidebar
             language={language}
             history={appliedRecommendations}
+            llmReplies={llmReplies}
             onUndoLatest={undoLatestRecommendation}
             voice={voice}
             textChats={textChats}

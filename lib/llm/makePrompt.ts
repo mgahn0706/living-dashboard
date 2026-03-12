@@ -1,4 +1,8 @@
 import { VoiceUtterance } from "@/hooks/useVoiceInput";
+import {
+  buildRecentRequestMessages,
+  summarizeRecentRequest,
+} from "@/lib/recommendation/requestSummary";
 
 export function makePrompt({
   views,
@@ -13,6 +17,10 @@ export function makePrompt({
   textChats: string[];
   dataSchema?: any;
 }) {
+  const recentRequestSummary = summarizeRecentRequest(
+    buildRecentRequestMessages({ conversation, textChats })
+  );
+
   return {
     role: "system",
     content: `
@@ -40,9 +48,16 @@ export function makePrompt({
   📦 OUTPUT CONTRACT (STRICT)
   ━━━━━━━━━━━━━━━━━━━━━━━━
   
-  Return ONLY a JSON array.
+  Return ONLY a JSON object.
   
-  Each object MUST follow:
+  The object MUST follow:
+  
+  {
+    "reply": string,
+    "recommendations": Recommendation[]
+  }
+  
+  Each recommendation object MUST follow:
   
   {
     "id": string,
@@ -57,8 +72,15 @@ export function makePrompt({
   
   - DO NOT include text outside JSON
   - DO NOT include markdown
-  - DO NOT include explanations outside "reason"
   - DO NOT include fields not listed above
+  - "reply" must be a short assistant-style response summarizing what you want to do next
+  - "reply" should read like a chatbot talking back to the user, in plain language
+  - "reply" should mention the main analytic intent from the latest user request
+  - "reply" must explicitly say what you recommend
+  - "reply" must explicitly say why you recommend it
+  - If there are multiple recommendations, mention the top 1-2 most important ones and the reason for each in concise language
+  - If there are no recommendations, "reply" should explicitly say that no change is recommended and why
+  - "recommendations" must be an array
   - "payload" must contain only valid View fields
   - If payload.chartType is "TABLE", payload.columns MUST be a non-empty array of valid schema columns.
   - Never output TABLE payload with empty or missing columns.
@@ -151,6 +173,7 @@ export function makePrompt({
   - comparison language
   - filtering requests
   - temporal or categorical grouping intent
+  - the most recent explicit user request and treat it as highest-priority intent
   
   ━━━━━━━━━━━━━━━━━━━━━━━━
   📏 STABILITY RULES
@@ -190,6 +213,12 @@ export function makePrompt({
     .join("\n")}
   
   ━━━━━━━━━━━━━━━━━━━━━━━━
+  🧭 RECENT REQUEST SUMMARY
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+  
+  ${recentRequestSummary}
+  
+  ━━━━━━━━━━━━━━━━━━━━━━━━
   💬 TEXT CHAT
   ━━━━━━━━━━━━━━━━━━━━━━━━
   
@@ -199,7 +228,8 @@ export function makePrompt({
   🚨 FINAL REMINDER
   ━━━━━━━━━━━━━━━━━━━━━━━━
   
-  Return ONLY valid JSON array.
+  Return ONLY valid JSON object with "reply" and "recommendations".
+  The "reply" should sound like a concise assistant chat message, not a label or summary heading.
   
   No explanation.
   No markdown.

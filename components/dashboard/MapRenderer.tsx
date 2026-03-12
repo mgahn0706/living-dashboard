@@ -1,12 +1,6 @@
 "use client";
 
 import React from "react";
-import {
-  ComposableMap,
-  Geographies,
-  Geography,
-  Marker,
-} from "react-simple-maps";
 import { ChartView } from "@/types/dashboard";
 import { useDataset } from "@/context/DatasetContext";
 import { useSelection } from "@/context/SelectionContext";
@@ -73,7 +67,140 @@ const COUNTRY_COORDS: Record<string, [number, number]> = {
   Taiwan: [121, 24],
 };
 
-const GEO_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+const MAP_WIDTH = 800;
+const MAP_HEIGHT = 450;
+const MAP_PADDING = 24;
+const MAX_LATITUDE = 82;
+
+/* =======================================================
+   Simplified world land outlines (lon, lat)
+======================================================= */
+
+const WORLD_LAND: Array<Array<[number, number]>> = [
+  // North America
+  [
+    [-170, 66], [-168, 72], [-140, 70], [-120, 74], [-95, 73], [-80, 76],
+    [-65, 73], [-58, 52], [-55, 47], [-60, 46], [-67, 44], [-70, 42],
+    [-75, 36], [-81, 25], [-83, 10], [-84, 9], [-88, 14], [-92, 15],
+    [-97, 18], [-105, 20], [-110, 24], [-117, 32], [-122, 37], [-125, 49],
+    [-130, 55], [-137, 59], [-145, 60], [-155, 60], [-165, 63], [-170, 66],
+  ],
+  // South America
+  [
+    [-80, 10], [-77, 8], [-72, 12], [-62, 11], [-60, 8], [-52, 3],
+    [-48, 0], [-35, -5], [-38, -13], [-39, -17], [-43, -23], [-50, -28],
+    [-54, -34], [-58, -38], [-65, -42], [-72, -48], [-74, -52], [-68, -55],
+    [-64, -55], [-60, -52], [-55, -35], [-53, -33], [-50, -22], [-48, -15],
+    [-50, -5], [-52, 2], [-60, 5], [-68, 10], [-72, 12], [-75, 11],
+    [-80, 10],
+  ],
+  // Europe
+  [
+    [-10, 36], [-10, 43], [-5, 48], [0, 49], [2, 51], [5, 54], [8, 55],
+    [12, 56], [14, 55], [20, 55], [24, 58], [28, 60], [30, 65], [28, 71],
+    [20, 71], [15, 67], [10, 64], [5, 62], [0, 58], [-5, 58], [-10, 52],
+    [-10, 36],
+  ],
+  // Africa
+  [
+    [-17, 15], [-17, 21], [-13, 28], [-5, 36], [0, 36], [10, 37],
+    [12, 33], [25, 32], [33, 30], [36, 22], [43, 12], [51, 12],
+    [42, 2], [42, -2], [40, -10], [36, -20], [33, -26], [28, -33],
+    [18, -35], [15, -28], [12, -18], [12, -6], [10, 0], [9, 5],
+    [3, 6], [-3, 5], [-8, 5], [-12, 7], [-15, 11], [-17, 15],
+  ],
+  // Asia (main body)
+  [
+    [28, 42], [35, 37], [36, 34], [40, 38], [50, 38], [55, 42],
+    [63, 40], [68, 38], [72, 20], [75, 15], [80, 10], [78, 7],
+    [80, 8], [85, 15], [88, 22], [92, 22], [97, 16], [100, 14],
+    [103, 2], [105, 5], [108, 14], [110, 20], [115, 23], [120, 23],
+    [122, 30], [125, 34], [129, 36], [132, 42], [140, 44], [143, 50],
+    [137, 55], [120, 55], [100, 53], [90, 50], [80, 52], [70, 55],
+    [60, 55], [50, 52], [43, 47], [40, 44], [28, 42],
+  ],
+  // Northern Asia (Siberia)
+  [
+    [28, 55], [40, 58], [55, 55], [70, 56], [80, 54], [90, 52],
+    [100, 54], [115, 55], [125, 58], [135, 60], [145, 60], [160, 64],
+    [170, 66], [180, 67], [180, 72], [170, 72], [145, 70], [120, 73],
+    [100, 72], [80, 72], [60, 70], [40, 68], [30, 65], [28, 60],
+    [28, 55],
+  ],
+  // Australia
+  [
+    [115, -15], [120, -14], [130, -12], [137, -12], [142, -11],
+    [146, -15], [150, -22], [153, -28], [150, -35], [146, -38],
+    [138, -36], [130, -32], [125, -35], [115, -34], [113, -26],
+    [114, -22], [115, -15],
+  ],
+  // Greenland
+  [
+    [-50, 60], [-55, 65], [-53, 70], [-45, 74], [-35, 76], [-22, 76],
+    [-18, 72], [-25, 68], [-35, 65], [-45, 62], [-50, 60],
+  ],
+  // UK / Ireland (simplified)
+  [
+    [-10, 50], [-6, 54], [-5, 58], [-3, 58], [-2, 56], [0, 52],
+    [2, 52], [2, 51], [-1, 50], [-5, 50], [-10, 50],
+  ],
+  // Japan (simplified)
+  [
+    [130, 31], [132, 34], [136, 35], [140, 38], [140, 42], [142, 44],
+    [145, 44], [145, 42], [141, 39], [140, 36], [136, 34], [132, 33],
+    [130, 31],
+  ],
+  // New Zealand (simplified)
+  [
+    [166, -45], [168, -44], [172, -41], [178, -37], [177, -38],
+    [175, -41], [170, -46], [166, -45],
+  ],
+  // Indonesia / SE Asia (simplified)
+  [
+    [96, 6], [100, 3], [104, -3], [106, -6], [110, -7], [115, -8],
+    [120, -8], [125, -8], [128, -5], [130, -3], [133, -3], [136, -2],
+    [136, -5], [130, -8], [125, -10], [120, -10], [115, -10], [110, -8],
+    [104, -6], [100, 0], [96, 6],
+  ],
+  // Madagascar
+  [
+    [44, -12], [50, -15], [50, -23], [47, -25], [44, -24], [43, -18],
+    [44, -12],
+  ],
+];
+
+function clampLatitude(latitude: number): number {
+  return Math.max(-MAX_LATITUDE, Math.min(MAX_LATITUDE, latitude));
+}
+
+function mercatorY(latitude: number): number {
+  const latRad = (clampLatitude(latitude) * Math.PI) / 180;
+  return Math.log(Math.tan(Math.PI / 4 + latRad / 2));
+}
+
+const MERCATOR_MIN_Y = mercatorY(-MAX_LATITUDE);
+const MERCATOR_MAX_Y = mercatorY(MAX_LATITUDE);
+
+function projectCoordinates([longitude, latitude]: [number, number]): [number, number] {
+  const x =
+    MAP_PADDING + ((longitude + 180) / 360) * (MAP_WIDTH - MAP_PADDING * 2);
+  const yRatio =
+    (MERCATOR_MAX_Y - mercatorY(latitude)) /
+    (MERCATOR_MAX_Y - MERCATOR_MIN_Y);
+  const y = MAP_PADDING + yRatio * (MAP_HEIGHT - MAP_PADDING * 2);
+  return [x, y];
+}
+
+function landPolygonToPath(coords: Array<[number, number]>): string {
+  return (
+    coords
+      .map((c, i) => {
+        const [x, y] = projectCoordinates(c);
+        return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ") + " Z"
+  );
+}
 
 /* =======================================================
    Filter helpers (duplicated minimally from ChartRenderer)
@@ -118,6 +245,7 @@ type ChartRendererFilter = {
 type BubbleData = {
   country: string;
   coords: [number, number];
+  projected: [number, number];
   value: number;
 };
 
@@ -240,18 +368,18 @@ export default function MapRenderer({
       if (agg === "avg") value = count > 0 ? sum / count : 0;
       else if (agg === "count") value = count;
       else value = sum;
-      result.push({ country, coords, value });
+      result.push({ country, coords, projected: projectCoordinates(coords), value });
     }
 
     return result;
   }, [crossFilteredData, countryColumn, yColumn, agg, filter]);
 
   // Compute bubble scale
-  const { maxValue, scale } = React.useMemo(() => {
+  const { scale } = React.useMemo(() => {
     const maxVal = Math.max(...bubbleData.map((d) => d.value), 1);
     // Scale: min radius 6, max radius 35
     const scaleFn = (v: number) => 6 + (v / maxVal) * 29;
-    return { maxValue: maxVal, scale: scaleFn };
+    return { scale: scaleFn };
   }, [bubbleData]);
 
   // Highlighting: which countries match the current selection
@@ -323,6 +451,11 @@ export default function MapRenderer({
 
   const bubbleColor = "#8da0cb"; // primaryColor
   const fadedColor = "#cbd5e1";
+  const gridColor = "#d7dee7";
+  const surfaceColor = "#dce8f0";
+  const frameColor = "#e2e8f0";
+  const landColor = "#f0f0ec";
+  const coastColor = "#c8d0d7";
 
   if (!bubbleData.length) {
     return (
@@ -339,42 +472,86 @@ export default function MapRenderer({
       onDoubleClick={() => clearSelection()}
       onClick={(e) => e.stopPropagation()}
     >
-      <ComposableMap
-        projection="geoMercator"
-        projectionConfig={{
-          scale: 120,
-          center: [10, 20],
-        }}
-        width={800}
-        height={450}
-        style={{ width: "100%", height: "100%" }}
+      <svg
+        viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
+        className="h-full w-full"
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="World map bubble chart"
       >
-        <Geographies geography={GEO_URL}>
-          {({ geographies }: { geographies: any[] }) =>
-            geographies.map((geo) => (
-              <Geography
-                key={geo.rsmKey}
-                geography={geo}
-                fill="#e8e8e8"
-                stroke="#d0d0d0"
-                strokeWidth={0.5}
-                style={{
-                  default: { outline: "none" },
-                  hover: { outline: "none", fill: "#ddd" },
-                  pressed: { outline: "none" },
-                }}
-              />
-            ))
-          }
-        </Geographies>
+        <rect
+          x={MAP_PADDING}
+          y={MAP_PADDING}
+          width={MAP_WIDTH - MAP_PADDING * 2}
+          height={MAP_HEIGHT - MAP_PADDING * 2}
+          rx={24}
+          fill={surfaceColor}
+          stroke={frameColor}
+        />
+
+        {/* Clip land polygons to the map area */}
+        <defs>
+          <clipPath id={`map-clip-${view.id}`}>
+            <rect
+              x={MAP_PADDING}
+              y={MAP_PADDING}
+              width={MAP_WIDTH - MAP_PADDING * 2}
+              height={MAP_HEIGHT - MAP_PADDING * 2}
+              rx={24}
+            />
+          </clipPath>
+        </defs>
+
+        {/* Land masses */}
+        <g clipPath={`url(#map-clip-${view.id})`}>
+          {WORLD_LAND.map((coords, i) => (
+            <path
+              key={i}
+              d={landPolygonToPath(coords)}
+              fill={landColor}
+              stroke={coastColor}
+              strokeWidth={0.5}
+              strokeLinejoin="round"
+            />
+          ))}
+        </g>
+
+        {[-60, -30, 0, 30, 60].map((latitude) => {
+          const [, y] = projectCoordinates([0, latitude]);
+          return (
+            <line
+              key={`lat-${latitude}`}
+              x1={MAP_PADDING}
+              x2={MAP_WIDTH - MAP_PADDING}
+              y1={y}
+              y2={y}
+              stroke={gridColor}
+              strokeDasharray="4 6"
+            />
+          );
+        })}
+
+        {[-120, -60, 0, 60, 120].map((longitude) => {
+          const [x] = projectCoordinates([longitude, 0]);
+          return (
+            <line
+              key={`lon-${longitude}`}
+              x1={x}
+              x2={x}
+              y1={MAP_PADDING}
+              y2={MAP_HEIGHT - MAP_PADDING}
+              stroke={gridColor}
+              strokeDasharray="4 6"
+            />
+          );
+        })}
 
         {bubbleData.map((d) => {
           const isHighlighted = !highlightedCountries || highlightedCountries.has(d.country);
           const r = scale(d.value);
           return (
-            <Marker
+            <g
               key={d.country}
-              coordinates={d.coords}
               onClick={(e: React.MouseEvent) => {
                 e.stopPropagation();
                 if (e.ctrlKey || e.metaKey) {
@@ -392,18 +569,22 @@ export default function MapRenderer({
                 });
               }}
               onMouseLeave={() => setTooltip(null)}
+              style={{ cursor: "pointer" }}
             >
               <circle
+                cx={d.projected[0]}
+                cy={d.projected[1]}
                 r={r}
                 fill={isHighlighted ? bubbleColor : fadedColor}
                 fillOpacity={isHighlighted ? 0.7 : 0.25}
                 stroke={isHighlighted ? bubbleColor : fadedColor}
                 strokeWidth={1}
                 strokeOpacity={0.8}
-                style={{ cursor: "pointer" }}
               />
               {r > 12 && (
                 <text
+                  x={d.projected[0]}
+                  y={d.projected[1]}
                   textAnchor="middle"
                   dominantBaseline="central"
                   style={{
@@ -416,10 +597,10 @@ export default function MapRenderer({
                   {formatCompactNumber(d.value)}
                 </text>
               )}
-            </Marker>
+            </g>
           );
         })}
-      </ComposableMap>
+      </svg>
 
       {/* Tooltip */}
       {tooltip && (

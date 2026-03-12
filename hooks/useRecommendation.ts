@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Recommendation } from "@/types/dashboard";
 import { VoiceUtterance } from "./useVoiceInput";
 import { makePrompt } from "@/lib/llm/makePrompt";
@@ -11,6 +11,13 @@ function getRecommendationKey(r: Recommendation) {
   return r.id;
 }
 
+type RecommendationApiResponse =
+  | Recommendation[]
+  | {
+      reply?: string;
+      recommendations?: Recommendation[];
+    };
+
 /* ===================== Hook ===================== */
 
 export function useRecommendation() {
@@ -20,6 +27,7 @@ export function useRecommendation() {
   );
 
   const [recs, setRecs] = useState<Recommendation[]>([]);
+  const [llmReplies, setLlmReplies] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const lastCallRef = useRef<number>(0);
@@ -65,11 +73,28 @@ export function useRecommendation() {
           body: JSON.stringify({ prompt, views }),
         });
 
-        const data: Recommendation[] = await res.json();
+        const data: RecommendationApiResponse = await res.json();
+
+        const recommendations = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.recommendations)
+          ? data.recommendations
+          : [];
+
+        const reply =
+          typeof data === "object" &&
+          data !== null &&
+          !Array.isArray(data) &&
+          typeof data.reply === "string"
+            ? data.reply.trim()
+            : "";
 
         setRecs(
-          data.filter((r) => !dismissedKeys.has(getRecommendationKey(r)))
+          recommendations.filter((r) => !dismissedKeys.has(getRecommendationKey(r)))
         );
+        if (reply) {
+          setLlmReplies((prev) => [...prev, reply]);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -91,11 +116,43 @@ export function useRecommendation() {
     setRecs((prev) => prev.filter((r) => getRecommendationKey(r) !== key));
   }, []);
 
+  const restoreHistory = useCallback(
+    ({
+      llmReplies,
+      dismissedRecommendationIds,
+    }: {
+      llmReplies?: string[];
+      dismissedRecommendationIds?: string[];
+    }) => {
+      if (Array.isArray(llmReplies)) {
+        setLlmReplies(llmReplies.filter((reply) => typeof reply === "string"));
+      }
+
+      if (Array.isArray(dismissedRecommendationIds)) {
+        setDismissedKeys(
+          new Set(
+            dismissedRecommendationIds.filter((id) => typeof id === "string")
+          )
+        );
+      }
+
+      setRecs((prev) =>
+        prev.filter(
+          (r) =>
+            !dismissedRecommendationIds?.includes(getRecommendationKey(r))
+        )
+      );
+    },
+    []
+  );
+
   return {
     recommendations: recs,
+    llmReplies,
     triggerRecommendation, // ✅ mutateAsync equivalent
     acceptRecommendation,
     isLoading,
+    restoreHistory,
 
     resetAccepted: () => {
       setDismissedKeys(new Set());
