@@ -179,19 +179,25 @@ export function makePrompt({
 
   CRITICAL: When the user's request mentions specific values (e.g., countries, categories, statuses),
   identify ALL existing views where those values are relevant and recommend filtering EACH of them.
+  You MUST emit multiple MODIFY_FILTER recommendations (up to 3) to cover the most relevant views.
+
+  How to pick which views to filter:
+  1. Look at EVERY view in CURRENT VIEWS.
+  2. For each view, check: does this view's xColumn, yColumn, groupByColumn, or data domain relate to any dimension the user mentioned?
+  3. If yes, emit a MODIFY_FILTER for that view. Combine all relevant filters in one includeByColumn array.
+  4. Prioritize the views that are MOST directly relevant to the user's question.
 
   For example, if the user asks about "Germany and Denmark":
   - A MAP view with xColumn=Country → MODIFY_FILTER with includeXValues: ["Germany", "Denmark"]
   - A STACKED_BAR with xColumn=Industry → MODIFY_FILTER with includeByColumn for Country
   - A KPI showing revenue → MODIFY_FILTER with includeByColumn for Country
 
-  Similarly, if the user asks about "winning deals in software":
-  - Filter views by Status=Won using includeByColumn
-  - Filter views by Product Category=Software using includeByColumn
-  - Apply both filters together where applicable
+  For a multi-dimensional question like "deal duration in the proposal stage for winning software":
+  - A RANGE_BAR (timeline) → MODIFY_FILTER with includeByColumn for Stage=Proposal + Status=Won + Product Category=Software
+  - A DONUT showing Product Category → MODIFY_FILTER with includeXValues: ["Software"] + includeByColumn for Status=Won
+  - A STACKED_BAR showing industry by status → MODIFY_FILTER with includeByColumn for Product Category=Software + Status=Won
 
-  Scan ALL views in CURRENT VIEWS and apply relevant filters to each one that benefits from the user's intent.
-  Do not stop at filtering just one view when multiple views would benefit.
+  Do not stop at filtering just one view when the question spans multiple dimensions.
   
   ━━━━━━━━━━━━━━━━━━━━━━━━
   📊 INTERPRETING FOCUS SCORE
@@ -225,12 +231,11 @@ export function makePrompt({
   ━━━━━━━━━━━━━━━━━━━━━━━━
   📏 STABILITY RULES
   ━━━━━━━━━━━━━━━━━━━━━━━━
-  
-  Avoid excessive UI churn.
-  
-  Prefer:
-  - incremental changes
-  - at most 3 recommendations per response
+
+  Avoid excessive UI churn when the user has NOT made an explicit request.
+
+  - When NO explicit user request: prefer at most 1-2 incremental changes based on focus signals.
+  - When the user makes an explicit request: prioritize FULLY answering the question. If the request spans multiple dimensions (e.g., country + industry + status), emit up to 3 MODIFY_FILTER recommendations to filter all relevant views. Do NOT stop at 1 recommendation when the question clearly needs changes across multiple views.
   
   ━━━━━━━━━━━━━━━━━━━━━━━━
   📊 DATA SCHEMA
