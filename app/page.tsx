@@ -207,6 +207,7 @@ function makeChartView(
     groupByColumn: payload.groupByColumn,
     aggregation: payload.aggregation,
     colorByColumn: payload.colorByColumn,
+    x2Column: payload.x2Column,
     sortDescending: payload.sortDescending,
   };
 }

@@ -358,6 +358,12 @@ export default function MapRenderer({
     });
   }, [rawData, hasSelection, selection, rangeFilter, lassoFilter]);
 
+  // includeXValues filter set (for country-level filtering)
+  const includeXSet = React.useMemo(() => {
+    if (!filter?.includeXValues || filter.includeXValues.length === 0) return null;
+    return new Set(filter.includeXValues.map((v) => String(v)));
+  }, [filter?.includeXValues]);
+
   // Filter + aggregate by country
   const bubbleData = React.useMemo(() => {
     const filtered = crossFilteredData.filter((row: any) =>
@@ -369,6 +375,8 @@ export default function MapRenderer({
       const country = getValueByPath(row, countryColumn);
       if (country == null) continue;
       const key = String(country);
+      // Apply includeXValues filter (country-level)
+      if (includeXSet && !includeXSet.has(key)) continue;
       const yRaw = getValueByPath(row, yColumn);
       const yVal = agg === "count" ? 1 : Number(yRaw);
       if (Number.isNaN(yVal) && agg !== "count") continue;
@@ -390,7 +398,7 @@ export default function MapRenderer({
     }
 
     return result;
-  }, [crossFilteredData, countryColumn, yColumn, agg, filter]);
+  }, [crossFilteredData, countryColumn, yColumn, agg, filter, includeXSet]);
 
   // Compute bubble scale
   const { scale } = React.useMemo(() => {

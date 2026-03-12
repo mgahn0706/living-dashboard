@@ -100,31 +100,50 @@ export function makePrompt({
   - If the recommendation applies to an existing view, you MUST include "targetViewId" to specify which view is affected.
   - Never use recommendation "id" as a view id.
   - Never omit "targetViewId" when modifying an existing view.
-  - The only valid chartType values are: "BAR", "LINE", "SCATTER", "PIE", "TABLE".
+  - Valid chartType values are: "BAR", "LINE", "SCATTER", "PIE", "TABLE", "MAP", "STACKED_BAR", "GROUPED_BAR", "HORIZONTAL_BAR", "DONUT", "FUNNEL", "KPI", "RANGE_BAR".
   - "Column Chart" (or "Column") is NOT a valid chartType. Use "BAR" instead.
 
-  
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+  📊 CHART TYPE REFERENCE
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Understand what each chart type visualizes so you can apply the right filter strategy:
+
+  - BAR: Vertical bars. xColumn = categories, yColumn = measure.
+  - LINE: Time series or trend. xColumn = date/numeric, yColumn = measure.
+  - SCATTER: Two numeric axes. xColumn = numeric, yColumn = numeric. May have colorByColumn.
+  - PIE / DONUT: Proportional slices. xColumn = categories, yColumn = measure.
+  - TABLE: Tabular rows. Has "columns" array instead of xColumn/yColumn.
+  - MAP: Geographic bubble map. xColumn = country name, yColumn = measure. Bubbles sized by aggregated yColumn per country.
+  - STACKED_BAR / GROUPED_BAR: Multi-series bars. xColumn = categories, yColumn = measure, groupByColumn = series splitter (e.g., Status).
+  - HORIZONTAL_BAR: Horizontal bars, may have groupByColumn for drill-down.
+  - FUNNEL: Stages funnel. xColumn = stage names, yColumn = measure.
+  - KPI: Single metric card. yColumn = measure, aggregation = sum/avg/count. Often has filter (e.g., Status=Won).
+  - RANGE_BAR: Gantt/timeline. xColumn = start date, x2Column = end date, yColumn = category label.
+
+  When modifying an existing view, you do NOT need to change its chartType. You can apply MODIFY_FILTER to ANY existing view regardless of its chartType.
+
   ━━━━━━━━━━━━━━━━━━━━━━━━
   📐 ADAPTATION POLICY
   ━━━━━━━━━━━━━━━━━━━━━━━━
-  
+
   ### REORDER
   Use when:
   - A view has significantly higher focus score
   - A view is actively discussed
   - Users repeatedly inspect a view
-  
+
   ### RESIZE
   Use when:
   - High focus → enlarge
   - Low focus → shrink
-  
+
   ### NEW_CONTENT
   Use when:
   - Conversation references attributes not visualized
   - Users compare dimensions not currently shown
   - Schema reveals relevant attributes missing in views
-  
+
   ### MODIFY_CONTENT
   Use when:
   - Axis or grouping should better match discussion intent
@@ -140,11 +159,39 @@ export function makePrompt({
   - For TABLE column-focused filtering, prefer: payload.filter = { "includeColumns": [...] }
   - For non-x-axis attributes (e.g., Status = LOST while x-axis is Country), use:
     payload.filter = { "includeByColumn": [ { "column": "Status", "includeValues": ["LOST"] } ] }
-  
+
+  Filter strategy per chart type:
+  - MAP: xColumn is country. To show only specific countries, use includeXValues with country names. To filter by a non-country attribute (e.g., Status=Won), use includeByColumn.
+  - STACKED_BAR / GROUPED_BAR: xColumn is category, groupByColumn is series. To filter by a non-axis attribute, use includeByColumn. To show specific x-axis values, use includeXValues.
+  - RANGE_BAR: Filter by stage or other attributes using includeByColumn.
+  - KPI: Already may have a filter. Use includeByColumn to narrow the metric (e.g., add Country filter).
+  - FUNNEL: Use includeByColumn for attribute filtering.
+  - All chart types support includeByColumn for filtering on ANY column in the dataset.
+
   ### REMOVE_CONTENT
   Use when:
   - View has persistently low focus
   - View is redundant with another view
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+  🧠 MULTI-VIEW FILTERING
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  CRITICAL: When the user's request mentions specific values (e.g., countries, categories, statuses),
+  identify ALL existing views where those values are relevant and recommend filtering EACH of them.
+
+  For example, if the user asks about "Germany and Denmark":
+  - A MAP view with xColumn=Country → MODIFY_FILTER with includeXValues: ["Germany", "Denmark"]
+  - A STACKED_BAR with xColumn=Industry → MODIFY_FILTER with includeByColumn for Country
+  - A KPI showing revenue → MODIFY_FILTER with includeByColumn for Country
+
+  Similarly, if the user asks about "winning deals in software":
+  - Filter views by Status=Won using includeByColumn
+  - Filter views by Product Category=Software using includeByColumn
+  - Apply both filters together where applicable
+
+  Scan ALL views in CURRENT VIEWS and apply relevant filters to each one that benefits from the user's intent.
+  Do not stop at filtering just one view when multiple views would benefit.
   
   ━━━━━━━━━━━━━━━━━━━━━━━━
   📊 INTERPRETING FOCUS SCORE
