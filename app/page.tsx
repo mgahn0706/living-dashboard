@@ -32,6 +32,7 @@ import { SelectionProvider } from "@/context/SelectionContext";
 import { TimeFilterProvider } from "@/context/TimeFilterContext";
 
 import { useExperimentLogger } from "@/hooks/useExperimentLogger";
+import type { ExperimentSession } from "@/hooks/useExperimentLogger";
 import type { VoiceUtterance } from "@/hooks/useVoiceInput";
 
 const AUTO_SAVE_INTERVAL_MS = 60_000;
@@ -70,6 +71,13 @@ type SavedDashboardState = {
   voiceConversation?: VoiceUtterance[];
   language?: "en-US" | "ko-KR" | "ja-JP";
   experimentSession?: unknown;
+};
+
+type DashboardStateFile = {
+  version: 1;
+  exportedAt: string;
+  dataset?: unknown;
+  dashboard: SavedDashboardState;
 };
 
 function getValueByPath(row: any, path: string) {
@@ -683,8 +691,15 @@ function AppContent() {
   const [isInitializing, setIsInitializing] = useState(false);
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false);
 
-  const { focusScore } = useFocus();
-  const { schema, attributeKeys, attributeTypes, rawData, loadDemoDataset } =
+  const { focusScore, restoreFocusScore } = useFocus();
+  const {
+    schema,
+    attributeKeys,
+    attributeTypes,
+    rawData,
+    loadDemoDataset,
+    restoreDataset,
+  } =
     useDataset();
 
   const {
@@ -694,9 +709,14 @@ function AppContent() {
     isLoading,
     triggerRecommendation,
     restoreHistory,
+    resetAccepted,
   } = useRecommendation();
 
-  const { session: experimentSession, logEvent } = useExperimentLogger();
+  const {
+    session: experimentSession,
+    logEvent,
+    restoreSession,
+  } = useExperimentLogger();
 
   /* ================= Recommendation SHOWN ================= */
 
@@ -740,6 +760,79 @@ function AppContent() {
     },
   });
 
+  const restoreDashboardState = useCallback(
+    (parsed: SavedDashboardState) => {
+      const restoredViews = Array.isArray(parsed.views) ? parsed.views : [];
+
+      setViews(restoredViews);
+      setSelectedViewId(null);
+      setSidebarMode("FORMAT");
+      setHoveredRec(null);
+      setShownRecIds(new Set());
+
+      setTextChats(
+        Array.isArray(parsed.textChats)
+          ? parsed.textChats.filter((item) => typeof item === "string")
+          : []
+      );
+
+      setAppliedRecommendations(
+        Array.isArray(parsed.appliedRecommendations)
+          ? parsed.appliedRecommendations.map((rec) => ({
+              ...rec,
+              _prevViews: restoredViews,
+            }))
+          : []
+      );
+
+      const restoredAcceptedIds = Array.isArray(parsed.acceptedRecommendationIds)
+        ? parsed.acceptedRecommendationIds.filter((id) => typeof id === "string")
+        : [];
+      setAcceptedRecommendationIds(restoredAcceptedIds);
+
+      if (parsed.language === "en-US" || parsed.language === "ko-KR" || parsed.language === "ja-JP") {
+        setLanguage(parsed.language);
+      } else {
+        setLanguage("en-US");
+      }
+
+      if (
+        parsed.focusScore &&
+        typeof parsed.focusScore === "object" &&
+        !Array.isArray(parsed.focusScore)
+      ) {
+        restoreFocusScore(parsed.focusScore);
+      } else {
+        restoreFocusScore({});
+      }
+
+      voice.restoreConversation(
+        Array.isArray(parsed.voiceConversation) ? parsed.voiceConversation : []
+      );
+
+      resetAccepted();
+      restoreHistory({
+        llmReplies: Array.isArray(parsed.llmReplies) ? parsed.llmReplies : [],
+        dismissedRecommendationIds: restoredAcceptedIds,
+      });
+
+      const nextExperimentSession =
+        parsed.experimentSession &&
+        typeof parsed.experimentSession === "object" &&
+        !Array.isArray(parsed.experimentSession)
+          ? (parsed.experimentSession as ExperimentSession)
+          : null;
+      restoreSession(nextExperimentSession);
+    },
+    [
+      resetAccepted,
+      restoreFocusScore,
+      restoreHistory,
+      restoreSession,
+      voice,
+    ]
+  );
+
   useEffect(() => {
     if (hasRestoredAutoSaveRef.current) return;
     hasRestoredAutoSaveRef.current = true;
@@ -749,47 +842,11 @@ function AppContent() {
 
     try {
       const parsed = JSON.parse(stored) as SavedDashboardState;
-      const restoredViews = Array.isArray(parsed.views) ? parsed.views : [];
-
-      if (restoredViews.length > 0) {
-        setViews(restoredViews);
-      }
-
-      if (Array.isArray(parsed.textChats)) {
-        setTextChats(parsed.textChats.filter((item) => typeof item === "string"));
-      }
-
-      if (Array.isArray(parsed.appliedRecommendations)) {
-        setAppliedRecommendations(
-          parsed.appliedRecommendations.map((rec) => ({
-            ...rec,
-            _prevViews: restoredViews,
-          }))
-        );
-      }
-
-      if (Array.isArray(parsed.acceptedRecommendationIds)) {
-        setAcceptedRecommendationIds(
-          parsed.acceptedRecommendationIds.filter((id) => typeof id === "string")
-        );
-      }
-
-      if (parsed.language === "en-US" || parsed.language === "ko-KR" || parsed.language === "ja-JP") {
-        setLanguage(parsed.language);
-      }
-
-      if (Array.isArray(parsed.voiceConversation)) {
-        voice.restoreConversation(parsed.voiceConversation);
-      }
-
-      restoreHistory({
-        llmReplies: parsed.llmReplies,
-        dismissedRecommendationIds: parsed.acceptedRecommendationIds,
-      });
+      restoreDashboardState(parsed);
     } catch {
       console.warn("Failed to restore auto-saved dashboard session.");
     }
-  }, [restoreHistory, voice]);
+  }, [restoreDashboardState]);
 
   /* ================= PREVIEW ================= */
 
@@ -1098,12 +1155,95 @@ function AppContent() {
     return () => window.removeEventListener("pagehide", persistOnPageHide);
   }, [isAutoSaveEnabled]);
 
+  const exportDashboardState = useCallback(() => {
+    const payload: DashboardStateFile = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      dataset: rawData ?? null,
+      dashboard: {
+        savedAt: new Date().toISOString(),
+        views,
+        focusScore,
+        textChats,
+        llmReplies,
+        voiceConversation: voice.conversation,
+        language,
+        appliedRecommendations: appliedRecommendations.map(
+          ({ _prevViews, ...rest }) => rest
+        ),
+        acceptedRecommendationIds,
+        experimentSession: experimentSession ?? null,
+      },
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const timestamp = payload.exportedAt.replace(/[:.]/g, "-");
+
+    a.href = url;
+    a.download = `living-dashboard-state-${timestamp}.json`;
+    a.click();
+
+    URL.revokeObjectURL(url);
+  }, [
+    acceptedRecommendationIds,
+    appliedRecommendations,
+    experimentSession,
+    focusScore,
+    language,
+    llmReplies,
+    rawData,
+    textChats,
+    views,
+    voice.conversation,
+  ]);
+
+  const importDashboardState = useCallback(
+    async (file: File) => {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+
+      if (!parsed || typeof parsed !== "object") {
+        throw new Error("Invalid dashboard state payload");
+      }
+
+      const importedDashboard =
+        "dashboard" in parsed &&
+        parsed.dashboard &&
+        typeof parsed.dashboard === "object"
+          ? parsed.dashboard
+          : parsed;
+
+      const importedDataset =
+        "dataset" in parsed ? parsed.dataset : undefined;
+
+      if (
+        importedDataset !== undefined &&
+        importedDataset !== null
+      ) {
+        restoreDataset(importedDataset);
+      }
+
+      restoreDashboardState(importedDashboard as SavedDashboardState);
+      localStorage.setItem(
+        AUTO_SAVE_STORAGE_KEY,
+        JSON.stringify(importedDashboard)
+      );
+    },
+    [restoreDashboardState, restoreDataset]
+  );
+
   return (
     <>
       <SidebarInset className="bg-muted/10">
         <SiteHeader
           isAutoSaveEnabled={isAutoSaveEnabled}
           onAutoSaveToggle={setIsAutoSaveEnabled}
+          onExportDashboardState={exportDashboardState}
+          onImportDashboardState={importDashboardState}
         />
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto p-6 md:p-8">

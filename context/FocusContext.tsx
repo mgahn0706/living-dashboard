@@ -22,6 +22,7 @@ type FocusContextValue = {
   ) => void;
 
   reportClickInteraction: (viewId: string) => void;
+  restoreFocusScore: (next: Record<string, number>) => void;
 };
 
 const FocusContext = createContext<FocusContextValue | null>(null);
@@ -58,6 +59,10 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     handleClick(viewId);
   };
 
+  const restoreFocusScore = (next: Record<string, number>) => {
+    setFocusScore(next);
+  };
+
   /* -------------------------------------------------------
      Context value
   ------------------------------------------------------- */
@@ -68,6 +73,7 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
         focusScore,
         reportPointerInteraction,
         reportClickInteraction,
+        restoreFocusScore,
       }}
     >
       {children}
