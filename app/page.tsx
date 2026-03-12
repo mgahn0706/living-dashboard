@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
-import { useRecommendation } from "@/hooks/useRecommendation";
+import { useRecommendation, type LlmReply } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
 import type {
   ChartType,
@@ -30,6 +30,7 @@ import { IconSparkles } from "@tabler/icons-react";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 import { SelectionProvider } from "@/context/SelectionContext";
 import { TimeFilterProvider } from "@/context/TimeFilterContext";
+import { CategoryFilterProvider, useCategoryFilter } from "@/context/CategoryFilterContext";
 
 import { useExperimentLogger } from "@/hooks/useExperimentLogger";
 import type { ExperimentSession } from "@/hooks/useExperimentLogger";
@@ -65,7 +66,7 @@ type SavedDashboardState = {
   views?: View[];
   focusScore?: Record<string, number>;
   textChats?: string[];
-  llmReplies?: string[];
+  llmReplies?: (string | LlmReply)[];
   appliedRecommendations?: Recommendation[];
   acceptedRecommendationIds?: string[];
   voiceConversation?: VoiceUtterance[];
@@ -214,6 +215,7 @@ function makeChartView(
     groupByColumn: payload.groupByColumn,
     aggregation: payload.aggregation,
     colorByColumn: payload.colorByColumn,
+    x2Column: payload.x2Column,
     sortDescending: payload.sortDescending,
   };
 }
@@ -466,17 +468,19 @@ function getDemoViews(): View[] {
         includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
       },
     },
-    // KPI 3: Overall Win Rate %
+    // KPI 3: Total Won Deals
     {
       id: "demo_kpi_winrate",
       chartType: "KPI",
       xColumn: "",
-      yColumn: "WonNumeric",
+      yColumn: "Revenue",
       size: "sm",
       priority: 98,
-      title: "Overall Win Rate %",
-      aggregation: "avg",
-      yLabel: "%",
+      title: "Total Won Deals",
+      aggregation: "count",
+      filter: {
+        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
+      },
     },
     // KPI 4: Avg Deal Size
     {
@@ -493,15 +497,15 @@ function getDemoViews(): View[] {
         includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
       },
     },
-    // Funnel Chart — Deal count by Stage
+    // Funnel Chart — Revenue by Stage
     {
       id: "demo_funnel",
       chartType: "FUNNEL",
       xColumn: "Stage",
-      yColumn: "Count",
+      yColumn: "Revenue",
       size: "lg",
       priority: 96,
-      title: "Deal Count by Stage",
+      title: "Revenue by Stage",
       aggregation: "sum",
     },
     // Stacked Bar — Sum of Units by Stage, split by Won/Lost
@@ -558,46 +562,47 @@ function getDemoViews(): View[] {
       priority: 92,
       title: "Revenue by Product Category",
     },
-    // Win Rate by Industry — Horizontal bar chart, sorted descending
+    // Won vs Lost by Industry — Stacked bar chart
     {
       id: "demo_wr_industry",
-      chartType: "HORIZONTAL_BAR",
+      chartType: "STACKED_BAR",
       xColumn: "Industry",
-      yColumn: "WonNumeric",
-      aggregation: "avg",
-      sortDescending: true,
+      yColumn: "Revenue",
+      groupByColumn: "Status",
+      aggregation: "count",
       size: "md",
       priority: 91,
-      title: "Win Rate by Industry",
+      title: "Won vs Lost by Industry",
     },
-    // Win Rate by Campaign Type — Horizontal bar chart
+    // Won vs Lost by Campaign Type — Stacked bar chart
     {
       id: "demo_wr_campaign",
-      chartType: "HORIZONTAL_BAR",
+      chartType: "STACKED_BAR",
       xColumn: "CampaignType",
-      yColumn: "WonNumeric",
-      aggregation: "avg",
-      sortDescending: true,
+      yColumn: "Revenue",
+      groupByColumn: "Status",
+      aggregation: "count",
       size: "md",
       priority: 90,
-      title: "Win Rate by Campaign Type",
+      title: "Won vs Lost by Campaign Type",
     },
-    // Win Rate by Experience Level — Clustered bar
+    // Won vs Lost by Experience Level — Grouped bar
     {
       id: "demo_wr_experience",
-      chartType: "BAR",
+      chartType: "GROUPED_BAR",
       xColumn: "Experience Level",
-      yColumn: "WonNumeric",
-      aggregation: "avg",
+      yColumn: "Revenue",
+      groupByColumn: "Status",
+      aggregation: "count",
       size: "md",
       priority: 89,
-      title: "Win Rate by Experience Level",
+      title: "Won vs Lost by Experience Level",
     },
-    // Revenue Trend Over Time — Monthly line chart (Won deals only)
+    // Revenue Trend Over Time — Line chart by CloseDate (Won deals only)
     {
       id: "demo_rev_trend",
       chartType: "LINE",
-      xColumn: "YearMonth",
+      xColumn: "CloseDate",
       yColumn: "Revenue",
       size: "md",
       priority: 88,
@@ -606,27 +611,16 @@ function getDemoViews(): View[] {
         includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
       },
     },
-    // Deal Velocity — Avg days from Created Date to CloseDate by Stage
+    // Deal Duration Timeline — Range bar by Stage
     {
       id: "demo_velocity",
-      chartType: "BAR",
-      xColumn: "Stage",
-      yColumn: "DealDays",
-      aggregation: "avg",
+      chartType: "RANGE_BAR",
+      xColumn: "Created Date",
+      x2Column: "CloseDate",
+      yColumn: "Stage",
       size: "md",
       priority: 87,
-      title: "Deal Velocity (Avg Days)",
-    },
-    // Win Rate by Quarter — Line chart
-    {
-      id: "demo_wr_quarter",
-      chartType: "LINE",
-      xColumn: "Quarter",
-      yColumn: "WonNumeric",
-      aggregation: "avg",
-      size: "md",
-      priority: 86,
-      title: "Win Rate by Quarter",
+      title: "Deal Duration Timeline",
     },
     // Revenue by Market Maturity — Column chart
     {
@@ -702,6 +696,7 @@ function AppContent() {
     restoreDataset,
   } =
     useDataset();
+  const { addFilter: addCategoryFilter } = useCategoryFilter();
 
   const {
     recommendations,
@@ -1026,6 +1021,8 @@ function AppContent() {
       await loadDemoDataset();
       setViews(getDemoViews());
       setSidebarMode("FORMAT");
+      // Pre-add Status filter with all values selected
+      addCategoryFilter("Status", ["Won", "Lost"]);
     } catch (err) {
       console.error("Failed to load demo dataset:", err);
     } finally {
@@ -1146,6 +1143,18 @@ function AppContent() {
     return () => window.removeEventListener("pagehide", persistOnPageHide);
   }, [isAutoSaveEnabled]);
 
+  /* Auto-scroll to first recommendation target when new recommendations arrive */
+  useEffect(() => {
+    if (activeRecommendations.length === 0) return;
+    const first = activeRecommendations.find((r) => r.targetViewId);
+    if (!first?.targetViewId) return;
+    const el = document.querySelector(
+      `[data-view-id="${first.targetViewId}"]`
+    );
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [activeRecommendations]);
   const exportDashboardState = useCallback(() => {
     const payload: DashboardStateFile = {
       version: 1,
@@ -1356,8 +1365,11 @@ function AppContent() {
           <RecommendationSidebar
             language={language}
             history={appliedRecommendations}
+            activeRecommendations={activeRecommendations}
             llmReplies={llmReplies}
             onUndoLatest={undoLatestRecommendation}
+            onAcceptRecommendation={apply}
+            onDeclineRecommendation={decline}
             voice={voice}
             textChats={textChats}
             isGenerating={isLoading}
@@ -1435,7 +1447,9 @@ export default function Page() {
         <FocusProvider>
           <DatasetProvider>
             <TimeFilterProvider>
-              <AppContent />
+              <CategoryFilterProvider>
+                <AppContent />
+              </CategoryFilterProvider>
             </TimeFilterProvider>
           </DatasetProvider>
         </FocusProvider>

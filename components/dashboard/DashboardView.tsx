@@ -1,15 +1,30 @@
 "use client";
 
+import React from "react";
 import { useMemo } from "react";
 import { Recommendation, View } from "@/types/dashboard";
 import { INITIAL_FOCUS_SCORE, useFocus } from "@/context/FocusContext";
+import { useDataset } from "@/context/DatasetContext";
+import { useCategoryFilter } from "@/context/CategoryFilterContext";
 import ViewCard, { PreviewState } from "./ViewCard";
 import { Button } from "../ui/button";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Plus, X } from "lucide-react";
 import TimeSlider from "./TimeSlider";
 
 const FOCUS_STABLE_RANGE = 100;
-const MIN_VISIBLE_FOCUS_INTENSITY = 0.85;
+const MIN_VISIBLE_FOCUS_INTENSITY = 0.25;
+
+/* Continuous sizing ranges driven by focus intensity.
+   max ~32% → ~3 cards per row at full focus; min ~16% → thumbnail.
+   Heights kept compact for a commercial dashboard feel. */
+const CHART_BASIS = { min: 16, max: 32 };
+const CHART_HEIGHT = { min: 100, max: 260 };
+const KPI_BASIS = { min: 8, max: 11.5 };
+const KPI_HEIGHT = { min: 56, max: 100 };
+
+function lerp(min: number, max: number, t: number) {
+  return min + t * (max - min);
+}
 
 export default function DashboardView({
   views = [],
@@ -86,6 +101,21 @@ export default function DashboardView({
     return map;
   }, [views, focusScore]);
 
+  const sizingByViewId = useMemo(() => {
+    const map: Record<string, { flexBasis: string; heightPx: number }> = {};
+    views.forEach((view) => {
+      const t = focusIntensityByViewId[view.id] ?? 0.25;
+      const isKpi = view.chartType === "KPI";
+      const basis = isKpi ? KPI_BASIS : CHART_BASIS;
+      const height = isKpi ? KPI_HEIGHT : CHART_HEIGHT;
+      map[view.id] = {
+        flexBasis: `${lerp(basis.min, basis.max, t).toFixed(1)}%`,
+        heightPx: Math.round(lerp(height.min, height.max, t)),
+      };
+    });
+    return map;
+  }, [views, focusIntensityByViewId]);
+
   /* =======================================================
      Empty State
   ======================================================= */
@@ -141,12 +171,16 @@ export default function DashboardView({
   return (
     <>
     <TimeSlider />
+    <CategoryFilterBar />
     <div className="flex flex-wrap gap-4 items-stretch">
       {sortedViews.map((view) => (
         <ViewCard
           key={view.id}
           view={view}
           focusIntensity={focusIntensityByViewId[view.id] ?? 0.2}
+          flexBasis={sizingByViewId[view.id]?.flexBasis ?? "32%"}
+          heightPx={sizingByViewId[view.id]?.heightPx ?? 260}
+          hasActiveRecommendation={!!recommendationsByViewId[view.id]}
           isSelected={selectedViewId === view.id}
           preview={previewMap[view.id] ?? null}
           recommendation={recommendationsByViewId[view.id] ?? null}
@@ -172,6 +206,8 @@ export default function DashboardView({
         <ViewCard
           view={addPreview}
           focusIntensity={0.2}
+          flexBasis="32%"
+          heightPx={260}
           preview={{ type: "ADD", view: addPreview }}
           isSelected={false}
           recommendation={newContentRecommendation}
@@ -183,5 +219,153 @@ export default function DashboardView({
       )}
     </div>
     </>
+  );
+}
+
+/* =======================================================
+   Category Filter Bar
+======================================================= */
+
+function CategoryFilterBar() {
+  const { attributeKeys, attributeTypes, resolveAttribute, rawData } = useDataset();
+  const { categoryFilters, addFilter, removeFilter, toggleValue, selectAll, deselectAll } = useCategoryFilter();
+  const [addOpen, setAddOpen] = React.useState(false);
+
+  // String columns that don't already have a filter
+  const availableColumns = React.useMemo(
+    () =>
+      attributeKeys.filter(
+        (k) =>
+          attributeTypes[k] === "string" &&
+          !categoryFilters.some((f) => f.column === k)
+      ),
+    [attributeKeys, attributeTypes, categoryFilters]
+  );
+
+  if (!rawData) return null;
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      {categoryFilters.map((cf) => (
+        <CategoryFilterChips
+          key={cf.column}
+          column={cf.column}
+          selectedValues={cf.selectedValues}
+          onToggle={(val) => toggleValue(cf.column, val)}
+          onSelectAll={(vals) => selectAll(cf.column, vals)}
+          onDeselectAll={() => deselectAll(cf.column)}
+          onRemove={() => removeFilter(cf.column)}
+        />
+      ))}
+
+      {availableColumns.length > 0 && (
+        <div className="relative">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1"
+            onClick={() => setAddOpen(!addOpen)}
+          >
+            <Plus className="h-3 w-3" /> Add Filter
+          </Button>
+          {addOpen && (
+            <div className="absolute top-8 left-0 z-50 rounded-md border bg-popover p-1 shadow-md min-w-[160px]">
+              {availableColumns.map((col) => (
+                <button
+                  key={col}
+                  className="w-full text-left px-2 py-1 text-xs rounded hover:bg-accent"
+                  onClick={() => {
+                    const values = resolveAttribute(col);
+                    const unique = Array.from(
+                      new Set(
+                        values
+                          .filter((v: any) => v != null && v !== "")
+                          .map((v: any) => String(v))
+                      )
+                    ).sort();
+                    addFilter(col, unique);
+                    setAddOpen(false);
+                  }}
+                >
+                  {col}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CategoryFilterChips({
+  column,
+  selectedValues,
+  onToggle,
+  onSelectAll,
+  onDeselectAll,
+  onRemove,
+}: {
+  column: string;
+  selectedValues: Set<string>;
+  onToggle: (value: string) => void;
+  onSelectAll: (values: string[]) => void;
+  onDeselectAll: () => void;
+  onRemove: () => void;
+}) {
+  const { resolveAttribute } = useDataset();
+
+  const uniqueValues = React.useMemo(() => {
+    const values = resolveAttribute(column);
+    return Array.from(
+      new Set(
+        values
+          .filter((v: any) => v != null && v !== "")
+          .map((v: any) => String(v))
+      )
+    ).sort();
+  }, [column, resolveAttribute]);
+
+  const allSelected = uniqueValues.length === selectedValues.size;
+
+  return (
+    <div className="flex items-center gap-1 rounded-md border bg-card px-2 py-1">
+      <span className="text-xs font-medium text-muted-foreground mr-1">
+        {column}:
+      </span>
+
+      {uniqueValues.map((val) => {
+        const isOn = selectedValues.has(val);
+        return (
+          <button
+            key={val}
+            onClick={() => onToggle(val)}
+            className={`px-2 py-0.5 rounded text-xs transition-colors ${
+              isOn
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {val}
+          </button>
+        );
+      })}
+
+      <button
+        onClick={() => (allSelected ? onDeselectAll() : onSelectAll(uniqueValues))}
+        className="px-1 text-[10px] text-muted-foreground hover:text-foreground ml-1"
+        title={allSelected ? "Deselect all" : "Select all"}
+      >
+        {allSelected ? "None" : "All"}
+      </button>
+
+      <button
+        onClick={onRemove}
+        className="text-muted-foreground hover:text-destructive ml-0.5"
+        title="Remove filter"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </div>
   );
 }

@@ -5,6 +5,10 @@ import { Recommendation } from "@/types/dashboard";
 import { VoiceUtterance } from "./useVoiceInput";
 import { makePrompt } from "@/lib/llm/makePrompt";
 
+/* ===================== Types ===================== */
+
+export type LlmReply = { text: string; timestamp: number };
+
 /* ===================== Semantic Key ===================== */
 
 function getRecommendationKey(r: Recommendation) {
@@ -27,7 +31,7 @@ export function useRecommendation() {
   );
 
   const [recs, setRecs] = useState<Recommendation[]>([]);
-  const [llmReplies, setLlmReplies] = useState<string[]>([]);
+  const [llmReplies, setLlmReplies] = useState<LlmReply[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const lastCallRef = useRef<number>(0);
@@ -93,7 +97,7 @@ export function useRecommendation() {
           recommendations.filter((r) => !dismissedKeys.has(getRecommendationKey(r)))
         );
         if (reply) {
-          setLlmReplies((prev) => [...prev, reply]);
+          setLlmReplies((prev) => [...prev, { text: reply, timestamp: Date.now() }]);
         }
       } finally {
         setIsLoading(false);
@@ -121,11 +125,21 @@ export function useRecommendation() {
       llmReplies,
       dismissedRecommendationIds,
     }: {
-      llmReplies?: string[];
+      llmReplies?: (string | LlmReply)[];
       dismissedRecommendationIds?: string[];
     }) => {
       if (Array.isArray(llmReplies)) {
-        setLlmReplies(llmReplies.filter((reply) => typeof reply === "string"));
+        setLlmReplies(
+          llmReplies
+            .map((r) =>
+              typeof r === "string"
+                ? { text: r, timestamp: Date.now() }
+                : r && typeof r === "object" && typeof r.text === "string"
+                ? r
+                : null
+            )
+            .filter((r): r is LlmReply => r !== null)
+        );
       }
 
       if (Array.isArray(dismissedRecommendationIds)) {

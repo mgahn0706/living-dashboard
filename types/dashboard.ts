@@ -11,7 +11,8 @@ export type ChartType =
   | "STACKED_BAR"
   | "GROUPED_BAR"
   | "DONUT"
-  | "MAP";
+  | "MAP"
+  | "RANGE_BAR";
 
 export type View = ChartView | TableView;
 
@@ -51,6 +52,7 @@ export type ChartView = {
   groupByColumn?: string;
   aggregation?: "sum" | "avg" | "count";
   colorByColumn?: string;
+  x2Column?: string;
   sortDescending?: boolean;
 };
 

@@ -47,6 +47,7 @@ export type NewViewPayload =
       groupByColumn?: string;
       aggregation?: "sum" | "avg" | "count";
       colorByColumn?: string;
+      x2Column?: string;
       sortDescending?: boolean;
     };
 
@@ -70,6 +71,7 @@ const CHART_BUTTONS: {
   { type: "KPI", icon: <Gauge />, label: "KPI Card" },
   { type: "TABLE", icon: <Table2 />, label: "Table" },
   { type: "SCATTER", icon: <ScatterChart />, label: "Scatter Plot" },
+  { type: "RANGE_BAR", icon: <BarChartHorizontal />, label: "Range Bar (Timeline)" },
 ];
 
 /* =====================================================
@@ -100,6 +102,8 @@ function chartHint(chartType: ChartType) {
       return "Stage-based flow visualization.";
     case "TABLE":
       return "Select multiple attributes to inspect raw values.";
+    case "RANGE_BAR":
+      return "Timeline chart: pick start date (X), end date (X2), and a category (Y).";
     default:
       return null;
   }
@@ -113,6 +117,7 @@ function isChartTypeAvailable(
   if (chartType === "TABLE") return attributeKeys.length > 0;
   if (chartType === "KPI") return numericLikeCount >= 1;
   if (chartType === "SCATTER") return numericLikeCount >= 2;
+  if (chartType === "RANGE_BAR") return attributeKeys.length >= 3;
 
   // BAR/LINE/PIE/HORIZONTAL_BAR/STACKED_BAR/GROUPED_BAR/FUNNEL/DONUT
   return numericLikeCount >= 1 && attributeKeys.length >= 2;
@@ -133,6 +138,11 @@ function isSelectionCompatible(
 
   if (chartType === "SCATTER") {
     return isNumericLike(xAttr) && yIsNumeric;
+  }
+
+  if (chartType === "RANGE_BAR") {
+    // X and Y just need to be non-empty; x2Column validated separately
+    return true;
   }
 
   return yIsNumeric;
@@ -279,6 +289,7 @@ function ChartConfigPanel({
 
   const [xAttr, setXAttr] = useState<string | null>(null);
   const [yAttr, setYAttr] = useState<string | null>(null);
+  const [x2Attr, setX2Attr] = useState<string | null>(null);
   const [tableAttrs, setTableAttrs] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [size, setSize] = useState<"sm" | "md" | "lg" | "xl">("md");
@@ -304,15 +315,19 @@ function ChartConfigPanel({
     if (selectedView.chartType !== "TABLE") {
       setXAttr(selectedView.xColumn ?? null);
       setYAttr(selectedView.yColumn ?? null);
+      setX2Attr(selectedView.x2Column ?? null);
     } else {
       setXAttr(null);
       setYAttr(null);
+      setX2Attr(null);
     }
   }, [isEditMode, selectedView, chartType]);
 
   const canApply =
     chartType === "TABLE"
       ? tableAttrs.length > 0
+      : chartType === "RANGE_BAR"
+      ? !!xAttr && !!yAttr && !!x2Attr
       : isSelectionCompatible(chartType, xAttr, yAttr, (attr) => {
           if (attributeTypes[attr] === "number") return true;
           const values = resolveAttribute(attr);
@@ -338,12 +353,16 @@ function ChartConfigPanel({
       ? "Category"
       : chartType === "KPI"
       ? "(unused)"
+      : chartType === "RANGE_BAR"
+      ? "Start Date"
       : "Select X";
   const yLabel =
     chartType === "PIE" || chartType === "DONUT"
       ? "Value"
       : chartType === "KPI"
       ? "Metric"
+      : chartType === "RANGE_BAR"
+      ? "Category (Y)"
       : "Select Y";
 
   return (
@@ -408,6 +427,21 @@ function ChartConfigPanel({
             ))}
           </select>
 
+          {chartType === "RANGE_BAR" && (
+            <select
+              className="w-full rounded-md border px-2 py-1"
+              value={x2Attr ?? ""}
+              onChange={(e) => setX2Attr(e.target.value || null)}
+            >
+              <option value="">End Date (X2)</option>
+              {attributeKeys.map((k) => (
+                <option key={k} value={k}>
+                  {k} ({attributeTypes[k]})
+                </option>
+              ))}
+            </select>
+          )}
+
           {chartType === "PIE" && (
             <div className="text-[11px] text-muted-foreground">
               Pick a categorical column for Category and a numeric column for
@@ -461,6 +495,9 @@ function ChartConfigPanel({
                     size,
                     priority: selectedView.priority,
                     title,
+                    ...(chartType === "RANGE_BAR" && x2Attr
+                      ? { x2Column: x2Attr }
+                      : {}),
                   };
 
             onEditView(selectedView.id, nextView);
@@ -477,12 +514,16 @@ function ChartConfigPanel({
                   yColumn: yAttr!,
                   size,
                   title,
+                  ...(chartType === "RANGE_BAR" && x2Attr
+                    ? { x2Column: x2Attr }
+                    : {}),
                 };
 
           onAddView(payload);
           setTitle("");
           setXAttr(null);
           setYAttr(null);
+          setX2Attr(null);
           setTableAttrs([]);
         }}
       >

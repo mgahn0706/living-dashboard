@@ -40,6 +40,7 @@ import MapRenderer from "./MapRenderer";
 import { useDataset } from "@/context/DatasetContext";
 import { useSelection, type RangeFilter, type LassoFilter } from "@/context/SelectionContext";
 import { useTimeFilter } from "@/context/TimeFilterContext";
+import { useCategoryFilter } from "@/context/CategoryFilterContext";
 import { formatCompactNumber } from "@/lib/utils";
 
 /* =======================================================
@@ -677,20 +678,36 @@ function buildColoredScatterSeries(
 function useTimeFilteredData(): any[] {
   const { rawData } = useDataset();
   const { timeFilter } = useTimeFilter();
+  const { categoryFilters } = useCategoryFilter();
 
   return React.useMemo(() => {
     if (!Array.isArray(rawData)) return [];
-    if (!timeFilter) return rawData;
+    let data = rawData;
 
-    const { column, min, max } = timeFilter;
-    return rawData.filter((row: any) => {
-      const val = getValueByPath(row, column);
-      if (val == null || val === "") return false;
-      const ts = Date.parse(String(val));
-      if (Number.isNaN(ts)) return false;
-      return ts >= min && ts <= max;
-    });
-  }, [rawData, timeFilter]);
+    // Apply time filter
+    if (timeFilter) {
+      const { column, min, max } = timeFilter;
+      data = data.filter((row: any) => {
+        const val = getValueByPath(row, column);
+        if (val == null || val === "") return false;
+        const ts = Date.parse(String(val));
+        if (Number.isNaN(ts)) return false;
+        return ts >= min && ts <= max;
+      });
+    }
+
+    // Apply category filters
+    for (const cf of categoryFilters) {
+      if (cf.selectedValues.size === 0) continue;
+      data = data.filter((row: any) => {
+        const val = getValueByPath(row, cf.column);
+        if (val == null) return false;
+        return cf.selectedValues.has(String(val));
+      });
+    }
+
+    return data;
+  }, [rawData, timeFilter, categoryFilters]);
 }
 
 /* =======================================================
@@ -901,6 +918,13 @@ export default React.memo(function ChartRenderer({
     );
   }
 
+  /* ---- RANGE_BAR ---- */
+  if (view.chartType === "RANGE_BAR" && (view as ChartView).x2Column) {
+    return (
+      <RangeBarRenderer view={view as ChartView} height={height} filter={filter} />
+    );
+  }
+
   /* ---- STACKED_BAR / GROUPED_BAR ---- */
   if (
     (view.chartType === "STACKED_BAR" || view.chartType === "GROUPED_BAR") &&
@@ -969,7 +993,7 @@ export default React.memo(function ChartRenderer({
                 trigger="hover"
                 formatter={(value: any) => [
                   formatCompactNumber(Number(value)),
-                  "Count",
+                  chartView?.yColumn ?? "Value",
                 ]}
               />
               <Funnel
@@ -1368,6 +1392,260 @@ function KPIRenderer({
           of {formatKPIValue(total, view.yLabel)} total
         </span>
       )}
+    </div>
+  );
+}
+
+/* =======================================================
+   Range Bar Renderer (Gantt / timeline)
+======================================================= */
+
+function RangeBarRenderer({
+  view,
+  height,
+  filter,
+}: {
+  view: ChartView;
+  height: number | "100%";
+  filter?: ChartRendererFilter;
+}) {
+  const rawData = useTimeFilteredData();
+  const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [dims, setDims] = React.useState({ w: 400, h: 300 });
+
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setDims({ w: entry.contentRect.width, h: entry.contentRect.height });
+      }
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // Parse individual deals
+  const deals = React.useMemo(() => {
+    if (!Array.isArray(rawData) || !view.x2Column) return [];
+
+    let data = rawData;
+    if (filter?.includeByColumn) {
+      data = data.filter((row) =>
+        rowMatchesAttributeFilter(row, filter.includeByColumn)
+      );
+    }
+
+    const items: Array<{
+      category: string;
+      start: number;
+      end: number;
+      highlighted: boolean;
+    }> = [];
+
+    for (const row of data) {
+      const startRaw = getValueByPath(row, view.xColumn);
+      const endRaw = getValueByPath(row, view.x2Column);
+      const category = String(getValueByPath(row, view.yColumn) ?? "");
+
+      if (startRaw == null || endRaw == null || !category) continue;
+
+      const startTs = Date.parse(String(startRaw));
+      const endTs = Date.parse(String(endRaw));
+
+      if (Number.isNaN(startTs) || Number.isNaN(endTs)) continue;
+
+      items.push({
+        category,
+        start: startTs,
+        end: endTs,
+        highlighted: rowMatchesSelection(row, selection, rangeFilter, lassoFilter),
+      });
+    }
+
+    return items;
+  }, [rawData, view, filter, selection, rangeFilter, lassoFilter]);
+
+  // Group by category
+  const groups = React.useMemo(() => {
+    const map = new Map<string, typeof deals>();
+    for (const deal of deals) {
+      if (!map.has(deal.category)) map.set(deal.category, []);
+      map.get(deal.category)!.push(deal);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, items]) => ({
+        name,
+        deals: items.sort((a, b) => a.start - b.start),
+      }));
+  }, [deals]);
+
+  const colorMap = React.useMemo(
+    () => buildCategoryColorMap(groups.map((g) => g.name)),
+    [groups]
+  );
+
+  if (!groups.length) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
+        No compatible data
+      </div>
+    );
+  }
+
+  // Layout
+  const margin = { top: 10, right: 20, bottom: 28, left: 90 };
+  const plotW = Math.max(100, dims.w - margin.left - margin.right);
+  const plotH = Math.max(50, dims.h - margin.top - margin.bottom);
+
+  // Time domain
+  const allTimes = deals.flatMap((d) => [d.start, d.end]);
+  const tMin = Math.min(...allTimes);
+  const tMax = Math.max(...allTimes);
+  const tRange = tMax - tMin || 1;
+  const xScale = (ts: number) => ((ts - tMin) / tRange) * plotW;
+
+  // Y layout — each stage gets a swim lane
+  const rowH = plotH / groups.length;
+  const maxBarsPerRow = 25;
+
+  // X axis ticks
+  const numTicks = Math.max(2, Math.min(8, Math.floor(plotW / 80)));
+  const xTicks: number[] = [];
+  for (let i = 0; i <= numTicks; i++) {
+    xTicks.push(tMin + (tRange * i) / numTicks);
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full outline-none"
+      style={{ height }}
+      onDoubleClick={() => clearSelection()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <svg width={dims.w} height={dims.h}>
+        {/* Grid lines */}
+        {xTicks.map((tick) => (
+          <line
+            key={tick}
+            x1={margin.left + xScale(tick)}
+            y1={margin.top}
+            x2={margin.left + xScale(tick)}
+            y2={margin.top + plotH}
+            stroke="#e5e7eb"
+            strokeOpacity={0.4}
+          />
+        ))}
+
+        {/* X axis tick labels */}
+        {xTicks.map((tick) => (
+          <text
+            key={`lbl-${tick}`}
+            x={margin.left + xScale(tick)}
+            y={margin.top + plotH + 16}
+            textAnchor="middle"
+            fontSize={10}
+            fill="#6b7280"
+          >
+            {new Date(tick).toLocaleDateString(undefined, { month: "short", year: "2-digit" })}
+          </text>
+        ))}
+
+        {/* Stage swim lanes */}
+        {groups.map((group, gi) => {
+          const laneY = margin.top + gi * rowH;
+
+          // Sample deals if there are too many
+          const sample =
+            group.deals.length > maxBarsPerRow
+              ? group.deals.filter(
+                  (_, i) =>
+                    i %
+                      Math.ceil(group.deals.length / maxBarsPerRow) ===
+                    0
+                ).slice(0, maxBarsPerRow)
+              : group.deals;
+
+          const barH = Math.max(
+            2,
+            Math.min(6, (rowH - 4) / Math.max(1, sample.length))
+          );
+          const gap = Math.max(
+            0.5,
+            Math.min(1, (rowH - 4 - sample.length * barH) / Math.max(1, sample.length))
+          );
+
+          return (
+            <g key={group.name}>
+              {/* Row separator */}
+              {gi > 0 && (
+                <line
+                  x1={margin.left}
+                  y1={laneY}
+                  x2={margin.left + plotW}
+                  y2={laneY}
+                  stroke="#e5e7eb"
+                  strokeOpacity={0.3}
+                />
+              )}
+
+              {/* Category label */}
+              <text
+                x={margin.left - 8}
+                y={laneY + rowH / 2}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fontSize={11}
+                fill="#374151"
+              >
+                {group.name.length > 12
+                  ? group.name.slice(0, 12) + "\u2026"
+                  : group.name}
+              </text>
+
+              {/* Individual deal bars */}
+              {sample.map((deal, di) => {
+                const x = margin.left + xScale(deal.start);
+                const w = Math.max(2, xScale(deal.end) - xScale(deal.start));
+                const y = laneY + 2 + di * (barH + gap);
+                const durationDays = Math.round(
+                  (deal.end - deal.start) / (1000 * 60 * 60 * 24)
+                );
+
+                return (
+                  <rect
+                    key={di}
+                    x={x}
+                    y={y}
+                    width={w}
+                    height={barH}
+                    rx={1}
+                    fill={colorMap[group.name]}
+                    opacity={
+                      !hasSelection || deal.highlighted ? 0.85 : 0.15
+                    }
+                    style={{ cursor: "pointer" }}
+                    onClick={(e) => {
+                      if (e.ctrlKey || e.metaKey) {
+                        addToSelection(view.yColumn, group.name);
+                      } else {
+                        replaceSelection(view.yColumn, group.name);
+                      }
+                    }}
+                  >
+                    <title>
+                      {`${group.name}: ${new Date(deal.start).toLocaleDateString()} → ${new Date(deal.end).toLocaleDateString()} (${durationDays}d)`}
+                    </title>
+                  </rect>
+                );
+              })}
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }

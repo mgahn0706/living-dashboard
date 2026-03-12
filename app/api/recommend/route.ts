@@ -18,7 +18,7 @@ export async function POST(req: Request) {
         },
       ],
       temperature: 0.2,
-      max_output_tokens: 1000,
+      max_output_tokens: 2000,
     });
 
     console.log("INPUT PROMPT:", prompt.content);
