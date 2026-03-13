@@ -10,19 +10,30 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useDataset } from "@/context/DatasetContext";
+import type { DecayMode } from "@/app/page";
 
 interface SiteHeaderProps {
   onExportDashboardState?: () => void;
   onImportDashboardState?: (file: File) => Promise<void>;
   hasSavedDashboardState?: boolean;
   onLoadSavedDashboardState?: () => void;
+  decayMode?: DecayMode;
+  onDecayModeChange?: (mode: DecayMode) => void;
 }
+
+const DECAY_OPTIONS: { value: DecayMode; label: string }[] = [
+  { value: "shrink", label: "Shrink" },
+  { value: "burn", label: "Burn" },
+  { value: "dissolve", label: "Dissolve" },
+];
 
 export function SiteHeader({
   onExportDashboardState,
   onImportDashboardState,
   hasSavedDashboardState = false,
   onLoadSavedDashboardState,
+  decayMode = "shrink",
+  onDecayModeChange,
 }: SiteHeaderProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stateFileInputRef = useRef<HTMLInputElement>(null);
@@ -129,6 +140,27 @@ export function SiteHeader({
             <span className="text-xs text-muted-foreground">
               {attributeKeys.length} attributes
             </span>
+          )}
+
+          {hasDataset && onDecayModeChange && (
+            <>
+              <Separator orientation="vertical" className="mx-1 h-4" />
+              <div className="flex items-center rounded-md border bg-muted/50 p-0.5">
+                {DECAY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => onDecayModeChange(opt.value)}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-sm transition-colors ${
+                      decayMode === opt.value
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
 
           <Separator orientation="vertical" className="mx-1 h-4" />

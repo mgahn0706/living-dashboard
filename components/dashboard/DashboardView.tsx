@@ -3,6 +3,7 @@
 import React from "react";
 import { useEffect, useMemo } from "react";
 import { Recommendation, View } from "@/types/dashboard";
+import type { DecayMode } from "@/app/page";
 import { INITIAL_FOCUS_SCORE, useFocus } from "@/context/FocusContext";
 import { useDataset } from "@/context/DatasetContext";
 import { useCategoryFilter } from "@/context/CategoryFilterContext";
@@ -30,6 +31,7 @@ export default function DashboardView({
   views = [],
   previewMap = {},
   addPreview = null,
+  decayMode = "shrink",
   recommendationsByViewId = {},
   recommendationOrderMap = {},
   appliedRecColorByViewId = {},
@@ -49,6 +51,7 @@ export default function DashboardView({
   views: View[];
   previewMap?: Record<string, PreviewState>;
   addPreview?: View | null;
+  decayMode?: DecayMode;
   recommendationsByViewId?: Record<string, Recommendation>;
   recommendationOrderMap?: Record<string, number>;
   appliedRecColorByViewId?: Record<string, string>;
@@ -187,6 +190,7 @@ export default function DashboardView({
           focusIntensity={focusIntensityByViewId[view.id] ?? 0.2}
           flexBasis={sizingByViewId[view.id]?.flexBasis ?? "32%"}
           heightPx={sizingByViewId[view.id]?.heightPx ?? 260}
+          decayMode={decayMode}
           isSelected={selectedViewId === view.id}
           preview={previewMap[view.id] ?? null}
           appliedRecColor={appliedRecColorByViewId[view.id]}

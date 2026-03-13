@@ -53,6 +53,8 @@ const AUTO_SAVE_STORAGE_KEY = "ld_dashboard_autosave_session";
    Types / guards
 ===================================================== */
 
+export type DecayMode = "shrink" | "burn" | "dissolve";
+
 type ChartKind = Exclude<ChartType, "TABLE">;
 
 function isTableView(v: View): v is TableView {
@@ -696,6 +698,7 @@ function AppContent() {
   const [isInitializing, setIsInitializing] = useState(false);
   const [isAutoSaveEnabled] = useState(false);
   const [hasSavedDashboardState, setHasSavedDashboardState] = useState(false);
+  const [decayMode, setDecayMode] = useState<DecayMode>("shrink");
   const [appliedRecColorByViewId, setAppliedRecColorByViewId] = useState<
     Record<string, string>
   >({});
@@ -1311,6 +1314,8 @@ function AppContent() {
           onImportDashboardState={importDashboardState}
           hasSavedDashboardState={hasSavedDashboardState}
           onLoadSavedDashboardState={loadSavedDashboardState}
+          decayMode={decayMode}
+          onDecayModeChange={setDecayMode}
         />
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto p-6 md:p-8">
@@ -1318,6 +1323,7 @@ function AppContent() {
               views={views}
               previewMap={previewMap}
               addPreview={addPreview}
+              decayMode={decayMode}
               selectedViewId={selectedViewId}
               isAddMode={sidebarMode === "STRUCTURE"}
               setSidebarMode={setSidebarMode}

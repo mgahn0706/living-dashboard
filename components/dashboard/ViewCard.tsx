@@ -1,6 +1,7 @@
 "use client";
 
 import { Recommendation, View, ViewFilter } from "@/types/dashboard";
+import type { DecayMode } from "@/app/page";
 import {
   Card,
   CardHeader,
@@ -102,6 +103,7 @@ export default React.memo(function ViewCard({
   focusIntensity,
   flexBasis = "32%",
   heightPx = 260,
+  decayMode = "shrink",
   isSelected,
   preview = null,
   appliedRecColor,
@@ -118,6 +120,7 @@ export default React.memo(function ViewCard({
   focusIntensity: number;
   flexBasis?: string;
   heightPx?: number;
+  decayMode?: DecayMode;
   isSelected: boolean;
   preview?: PreviewState;
   appliedRecColor?: string;
@@ -143,14 +146,28 @@ export default React.memo(function ViewCard({
       : undefined;
   const contentOpacity = isEditing ? 1 : 0.6 + normalizedFocus * 0.4;
 
-  // Burned-edge vignette: activates below intensity 0.7, disabled on rec-targeted cards
+  // Shared: skip all decay effects on cards with pending recommendations
   const hasActiveRec = Boolean(recColor);
-  const vignetteStrength = hasActiveRec
-    ? 0
-    : Math.max(0, Math.min(1, (0.7 - normalizedFocus) / (0.7 - 0.25)));
-  const tintOpacity = hasActiveRec
-    ? 0
-    : Math.max(0, Math.min(1, (0.4 - normalizedFocus) / (0.4 - 0.25))) * 0.025;
+  const skipDecayEffects = hasActiveRec || isEditing;
+
+  // ---- Burn mode: vignette + tint (only when decayMode === "burn") ----
+  const vignetteStrength =
+    decayMode === "burn" && !skipDecayEffects
+      ? Math.max(0, Math.min(1, (0.7 - normalizedFocus) / (0.7 - 0.25)))
+      : 0;
+  const tintOpacity =
+    decayMode === "burn" && !skipDecayEffects
+      ? Math.max(0, Math.min(1, (0.4 - normalizedFocus) / (0.4 - 0.25))) * 0.025
+      : 0;
+
+  // ---- Dissolve mode: opacity, border, blur (only when decayMode === "dissolve") ----
+  const dissolveStrength =
+    decayMode === "dissolve" && !skipDecayEffects
+      ? Math.max(0, Math.min(1, (0.7 - normalizedFocus) / (0.7 - 0.25)))
+      : 0;
+  const dissolveOpacity = 1 - dissolveStrength * 0.75; // 1.0 → 0.25
+  const dissolveBorderOpacity = borderOpacity * (1 - dissolveStrength * 0.95); // fades to ~5%
+  const dissolveBlur = dissolveStrength * 2; // 0 → 2px
   const { attributeKeys, resolveAttribute } = useDataset();
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [draft, setDraft] = React.useState({
@@ -213,7 +230,10 @@ export default React.memo(function ViewCard({
         onPointerMove={onPointerMove}
         onClick={onCardClick}
         style={{
-          borderColor,
+          borderColor: dissolveStrength > 0
+            ? `rgba(59, 130, 246, ${dissolveBorderOpacity.toFixed(3)})`
+            : borderColor,
+          borderStyle: dissolveStrength > 0.5 ? "dashed" : undefined,
           boxShadow:
             !isEditing && recColor
               ? `0 0 0 2px ${recColor}33, 0 4px 24px ${recColor}22`
@@ -221,6 +241,7 @@ export default React.memo(function ViewCard({
                 ? `${baseShadow}, inset 0 0 ${(32 * vignetteStrength).toFixed(1)}px ${(16 * vignetteStrength).toFixed(1)}px rgba(120, 60, 0, ${(0.18 * vignetteStrength).toFixed(3)})`
                 : baseShadow,
           backgroundColor: tintOpacity > 0 ? `rgba(180, 100, 20, ${tintOpacity.toFixed(4)})` : undefined,
+          opacity: dissolveStrength > 0 ? dissolveOpacity : undefined,
           flexBasis,
         }}
         className={cn(
@@ -492,8 +513,11 @@ export default React.memo(function ViewCard({
 
           {/* Content */}
           <CardContent
-            className="relative flex p-0 overflow-hidden transition-[height] duration-300 ease-out"
-            style={{ height: `${heightPx}px` }}
+            className="relative flex p-0 overflow-hidden transition-[height,filter] duration-300 ease-out"
+            style={{
+              height: `${heightPx}px`,
+              filter: dissolveBlur > 0 ? `blur(${dissolveBlur.toFixed(1)}px)` : undefined,
+            }}
           >
             <div
               className="relative size-full transition-opacity duration-300 ease-out"
