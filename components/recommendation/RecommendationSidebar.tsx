@@ -60,13 +60,45 @@ export function getRecColor(index: number): string {
 /** Derive a short action-oriented label from the recommendation's content. */
 export function getActionLabel(r: Recommendation): string {
   const filler = new Set([
-    "the", "a", "an", "by", "for", "to", "of", "in", "on", "with",
-    "and", "or", "is", "are", "was", "this", "that", "it",
+    "the",
+    "a",
+    "an",
+    "by",
+    "for",
+    "to",
+    "of",
+    "in",
+    "on",
+    "with",
+    "and",
+    "or",
+    "is",
+    "are",
+    "was",
+    "this",
+    "that",
+    "it",
   ]);
   const actionVerbs = new Set([
-    "filter", "focus", "show", "hide", "add", "remove", "update",
-    "change", "drill", "group", "sort", "compare", "highlight",
-    "reduce", "expand", "replace", "switch", "convert", "split",
+    "filter",
+    "focus",
+    "show",
+    "hide",
+    "add",
+    "remove",
+    "update",
+    "change",
+    "drill",
+    "group",
+    "sort",
+    "compare",
+    "highlight",
+    "reduce",
+    "expand",
+    "replace",
+    "switch",
+    "convert",
+    "split",
   ]);
 
   const words = r.title
@@ -440,8 +472,8 @@ export default function RecommendationSidebar({
     language === "ko-KR"
       ? "말씀하세요…"
       : language === "ja-JP"
-        ? "話してください…"
-        : "Speak now…";
+      ? "話してください…"
+      : "Speak now…";
 
   const unifiedMessages = useMemo(() => {
     return buildRecentRequestMessages({
@@ -496,7 +528,7 @@ export default function RecommendationSidebar({
               <div className="flex items-center gap-2">
                 <IconSparkles className="size-5 text-primary" />
                 <div>
-                  <div className="text-sm font-semibold">AI Recommendations</div>
+                  <div className="text-sm font-semibold">AI Suggestions</div>
                   <div className="text-[10px] text-muted-foreground">
                     {appliedCount} applied · {pendingCount} pending
                   </div>
@@ -704,9 +736,7 @@ export default function RecommendationSidebar({
                               {/* Target chart link */}
                               {targetTitle && targetId && (
                                 <button
-                                  onClick={() =>
-                                    scrollToChart(targetId, color)
-                                  }
+                                  onClick={() => scrollToChart(targetId, color)}
                                   className="mt-2 inline-flex items-center gap-1 rounded-md border bg-background/60 px-2 py-1 text-[10px] text-muted-foreground cursor-pointer transition-colors hover:bg-muted group"
                                 >
                                   <IconArrowUpRight
