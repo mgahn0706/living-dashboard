@@ -502,6 +502,17 @@ export default function RecommendationSidebar({
   const [justAppliedIds, setJustAppliedIds] = useState<Set<string>>(new Set());
   const [showOlderHistory, setShowOlderHistory] = useState(false);
 
+  // Stable color assignment: remember each rec's original palette index so
+  // colors don't shift when earlier recommendations are applied/removed.
+  const colorMapRef = useRef<Map<string, number>>(new Map());
+  useMemo(() => {
+    activeRecommendations.forEach((r, idx) => {
+      if (!colorMapRef.current.has(r.id)) {
+        colorMapRef.current.set(r.id, idx);
+      }
+    });
+  }, [activeRecommendations]);
+
   const placeholder =
     language === "ko-KR"
       ? "말씀하세요…"
@@ -555,8 +566,6 @@ export default function RecommendationSidebar({
     () => history.filter((r) => !justAppliedIds.has(r.id)),
     [history, justAppliedIds]
   );
-  const recentAppliedHistory = appliedHistory.slice(0, 3);
-  const olderAppliedHistory = appliedHistory.slice(3);
 
   return (
     <>
@@ -718,7 +727,7 @@ export default function RecommendationSidebar({
                       const targetTitle = targetId
                         ? viewTitles[targetId]
                         : undefined;
-                      const color = getRecColor(idx);
+                      const color = getRecColor(colorMapRef.current.get(r.id) ?? idx);
 
                       return (
                         <motion.div
@@ -827,15 +836,9 @@ export default function RecommendationSidebar({
                 </div>
               )}
 
-              {/* ===== Applied History ===== */}
-              {history.length > 0 && (
+              {/* ===== Applied History (all in collapsible) ===== */}
+              {appliedHistory.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  {activeRecommendations.length > 0 && (
-                    <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mt-2">
-                      Applied
-                    </div>
-                  )}
-
                   {onUndoLatest && (
                     <button
                       onClick={onUndoLatest}
@@ -845,52 +848,38 @@ export default function RecommendationSidebar({
                     </button>
                   )}
 
-                  <AnimatePresence>
-                    {recentAppliedHistory.map((r) => (
-                      <motion.div
-                        key={r.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                      >
-                        <AppliedHistoryItem recommendation={r} />
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
+                  <Collapsible
+                    open={showOlderHistory}
+                    onOpenChange={setShowOlderHistory}
+                  >
+                    <CollapsibleTrigger asChild>
+                      <button className="flex w-full items-center justify-between rounded-md border bg-background/70 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
+                        <span>
+                          Previous suggestions ({appliedHistory.length})
+                        </span>
+                        <IconChevronDown
+                          className={cn(
+                            "size-4 transition-transform",
+                            showOlderHistory && "rotate-180"
+                          )}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
 
-                  {olderAppliedHistory.length > 0 && (
-                    <Collapsible
-                      open={showOlderHistory}
-                      onOpenChange={setShowOlderHistory}
-                    >
-                      <CollapsibleTrigger asChild>
-                        <button className="flex w-full items-center justify-between rounded-md border bg-background/70 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
-                          <span>
-                            Previous suggestions ({olderAppliedHistory.length})
-                          </span>
-                          <IconChevronDown
-                            className={cn(
-                              "size-4 transition-transform",
-                              showOlderHistory && "rotate-180"
-                            )}
-                          />
-                        </button>
-                      </CollapsibleTrigger>
-
-                      <CollapsibleContent className="mt-2 space-y-2">
-                        <AnimatePresence initial={false}>
-                          {olderAppliedHistory.map((r) => (
-                            <motion.div
-                              key={r.id}
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                            >
-                              <AppliedHistoryItem recommendation={r} />
-                            </motion.div>
-                          ))}
-                        </AnimatePresence>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  )}
+                    <CollapsibleContent className="mt-2 space-y-2">
+                      <AnimatePresence initial={false}>
+                        {appliedHistory.map((r) => (
+                          <motion.div
+                            key={r.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                          >
+                            <AppliedHistoryItem recommendation={r} />
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
               )}
 

@@ -894,12 +894,16 @@ function AppContent() {
     return map;
   }, [activeRecommendations]);
 
+  // Stable order map: lock each recommendation to its original index so
+  // colors don't shift when earlier recommendations are applied/removed.
+  const stableOrderRef = useRef<Record<string, number>>({});
   const recommendationOrderMap = useMemo(() => {
-    const map: Record<string, number> = {};
     activeRecommendations.forEach((r, idx) => {
-      map[r.id] = idx + 1;
+      if (!(r.id in stableOrderRef.current)) {
+        stableOrderRef.current[r.id] = idx + 1;
+      }
     });
-    return map;
+    return { ...stableOrderRef.current };
   }, [activeRecommendations]);
 
   const viewTitlesMap = useMemo(() => {
