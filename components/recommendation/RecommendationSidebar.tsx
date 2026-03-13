@@ -496,7 +496,7 @@ export default function RecommendationSidebar({
               <div className="flex items-center gap-2">
                 <IconSparkles className="size-5 text-primary" />
                 <div>
-                  <div className="font-semibold">AI Recommendations</div>
+                  <div className="text-sm font-semibold">AI Recommendations</div>
                   <div className="text-[10px] text-muted-foreground">
                     {appliedCount} applied · {pendingCount} pending
                   </div>
