@@ -1,0 +1,14 @@
+The following changes need to be implemented:
+2. Have a landing page and a dashboard page.
+3. The second person should import the first person's state and the demo data.
+7. Test the order of the recommendations, sometimes the order is reversed.
+8. Test the pilot studies questions, especially with drill-down features.
+9. Apply the effects:
+    9.1 Opacity: Ghost (boundary becomes more transparent)
+    9.2 Size: If something shrinks, something else should become bigger.
+    9.3 Burning paper effect: This is currently implemented.
+
+
+
+
+

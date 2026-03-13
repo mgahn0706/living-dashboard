@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import React, {
+  useCallback,
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { useRecommendation, type LlmReply } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
@@ -27,10 +33,14 @@ import ChartCreatorSidebar from "@/components/chartCreator/chartCreatorSidebar";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Edit, Plus } from "lucide-react";
 import { IconSparkles } from "@tabler/icons-react";
+import { getRecColor } from "@/components/recommendation/RecommendationSidebar";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 import { SelectionProvider } from "@/context/SelectionContext";
 import { TimeFilterProvider } from "@/context/TimeFilterContext";
-import { CategoryFilterProvider, useCategoryFilter } from "@/context/CategoryFilterContext";
+import {
+  CategoryFilterProvider,
+  useCategoryFilter,
+} from "@/context/CategoryFilterContext";
 
 import { useExperimentLogger } from "@/hooks/useExperimentLogger";
 import type { ExperimentSession } from "@/hooks/useExperimentLogger";
@@ -42,6 +52,8 @@ const AUTO_SAVE_STORAGE_KEY = "ld_dashboard_autosave_session";
 /* =====================================================
    Types / guards
 ===================================================== */
+
+export type DecayMode = "shrink" | "burn" | "dissolve";
 
 type ChartKind = Exclude<ChartType, "TABLE">;
 
@@ -147,7 +159,8 @@ function sanitizeFilterForView(
       rawData,
       xColumn
     ).filter(
-      (v): v is string | number => typeof v === "string" || typeof v === "number"
+      (v): v is string | number =>
+        typeof v === "string" || typeof v === "number"
     );
     if (xValues.length > 0) next.includeXValues = xValues;
   }
@@ -683,8 +696,12 @@ function AppContent() {
     "en-US"
   );
   const [isInitializing, setIsInitializing] = useState(false);
-  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false);
+  const [isAutoSaveEnabled] = useState(false);
   const [hasSavedDashboardState, setHasSavedDashboardState] = useState(false);
+  const [decayMode, setDecayMode] = useState<DecayMode>("shrink");
+  const [appliedRecColorByViewId, setAppliedRecColorByViewId] = useState<
+    Record<string, string>
+  >({});
 
   const { focusScore, restoreFocusScore } = useFocus();
   const {
@@ -694,8 +711,7 @@ function AppContent() {
     rawData,
     loadDemoDataset,
     restoreDataset,
-  } =
-    useDataset();
+  } = useDataset();
   const { addFilter: addCategoryFilter } = useCategoryFilter();
 
   const {
@@ -703,6 +719,7 @@ function AppContent() {
     llmReplies,
     acceptRecommendation,
     isLoading,
+    streamingText,
     triggerRecommendation,
     restoreHistory,
     resetAccepted,
@@ -781,12 +798,20 @@ function AppContent() {
           : []
       );
 
-      const restoredAcceptedIds = Array.isArray(parsed.acceptedRecommendationIds)
-        ? parsed.acceptedRecommendationIds.filter((id) => typeof id === "string")
+      const restoredAcceptedIds = Array.isArray(
+        parsed.acceptedRecommendationIds
+      )
+        ? parsed.acceptedRecommendationIds.filter(
+            (id) => typeof id === "string"
+          )
         : [];
       setAcceptedRecommendationIds(restoredAcceptedIds);
 
-      if (parsed.language === "en-US" || parsed.language === "ko-KR" || parsed.language === "ja-JP") {
+      if (
+        parsed.language === "en-US" ||
+        parsed.language === "ko-KR" ||
+        parsed.language === "ja-JP"
+      ) {
         setLanguage(parsed.language);
       } else {
         setLanguage("en-US");
@@ -820,13 +845,7 @@ function AppContent() {
           : null;
       restoreSession(nextExperimentSession);
     },
-    [
-      resetAccepted,
-      restoreFocusScore,
-      restoreHistory,
-      restoreSession,
-      voice,
-    ]
+    [resetAccepted, restoreFocusScore, restoreHistory, restoreSession, voice]
   );
 
   useEffect(() => {
@@ -870,18 +889,33 @@ function AppContent() {
   const modifyRecommendationsByViewId = useMemo(() => {
     const map: Record<string, Recommendation> = {};
     activeRecommendations.forEach((r) => {
-      if (
-        r.type !== "MODIFY_CONTENT" &&
-        r.type !== "MODIFY_FILTER" &&
-        r.type !== "REMOVE_CONTENT"
-      )
-        return;
+      if (r.type === "NEW_CONTENT") return;
       const targetId = getRecommendationTargetViewId(r);
       if (!targetId) return;
       if (!map[targetId]) map[targetId] = r;
     });
     return map;
   }, [activeRecommendations]);
+
+  // Stable order map: lock each recommendation to its original index so
+  // colors don't shift when earlier recommendations are applied/removed.
+  const stableOrderRef = useRef<Record<string, number>>({});
+  const recommendationOrderMap = useMemo(() => {
+    activeRecommendations.forEach((r, idx) => {
+      if (!(r.id in stableOrderRef.current)) {
+        stableOrderRef.current[r.id] = idx + 1;
+      }
+    });
+    return { ...stableOrderRef.current };
+  }, [activeRecommendations]);
+
+  const viewTitlesMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    views.forEach((v) => {
+      map[v.id] = v.title || v.id;
+    });
+    return map;
+  }, [views]);
 
   const newContentRecommendation = useMemo(
     () => activeRecommendations.find((r) => r.type === "NEW_CONTENT") ?? null,
@@ -992,6 +1026,24 @@ function AppContent() {
       }
     });
 
+    // Track color for "Applied" badge on the chart card (auto-fades after 10s)
+    const targetId = getRecommendationTargetViewId(r);
+    if (targetId) {
+      const orderIdx = recommendationOrderMap[r.id];
+      const color = orderIdx != null ? getRecColor(orderIdx - 1) : "#3b82f6";
+      setAppliedRecColorByViewId((prev) => ({
+        ...prev,
+        [targetId]: color,
+      }));
+      setTimeout(() => {
+        setAppliedRecColorByViewId((prev) => {
+          const next = { ...prev };
+          delete next[targetId];
+          return next;
+        });
+      }, 10_000);
+    }
+
     acceptRecommendation(r);
   };
 
@@ -1002,6 +1054,10 @@ function AppContent() {
       setViews(latest._prevViews);
       return prev.slice(1);
     });
+  };
+
+  const applyAll = () => {
+    activeRecommendations.forEach((r) => apply(r));
   };
 
   const decline = (r: Recommendation) => {
@@ -1059,7 +1115,10 @@ function AppContent() {
           nextViews.length > 0
             ? Math.min(...nextViews.map((v) => v.priority ?? 0))
             : 0;
-        const fallbackTable = buildFallbackTableView(attributeKeys, minPriority - 1);
+        const fallbackTable = buildFallbackTableView(
+          attributeKeys,
+          minPriority - 1
+        );
         if (fallbackTable) {
           nextViews = [...nextViews, fallbackTable];
         }
@@ -1148,9 +1207,7 @@ function AppContent() {
     if (activeRecommendations.length === 0) return;
     const first = activeRecommendations.find((r) => r.targetViewId);
     if (!first?.targetViewId) return;
-    const el = document.querySelector(
-      `[data-view-id="${first.targetViewId}"]`
-    );
+    const el = document.querySelector(`[data-view-id="${first.targetViewId}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
@@ -1217,13 +1274,9 @@ function AppContent() {
           ? parsed.dashboard
           : parsed;
 
-      const importedDataset =
-        "dataset" in parsed ? parsed.dataset : undefined;
+      const importedDataset = "dataset" in parsed ? parsed.dataset : undefined;
 
-      if (
-        importedDataset !== undefined &&
-        importedDataset !== null
-      ) {
+      if (importedDataset !== undefined && importedDataset !== null) {
         restoreDataset(importedDataset);
       }
 
@@ -1257,12 +1310,12 @@ function AppContent() {
     <>
       <SidebarInset className="bg-muted/10">
         <SiteHeader
-          isAutoSaveEnabled={isAutoSaveEnabled}
-          onAutoSaveToggle={setIsAutoSaveEnabled}
           onExportDashboardState={exportDashboardState}
           onImportDashboardState={importDashboardState}
           hasSavedDashboardState={hasSavedDashboardState}
           onLoadSavedDashboardState={loadSavedDashboardState}
+          decayMode={decayMode}
+          onDecayModeChange={setDecayMode}
         />
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto p-6 md:p-8">
@@ -1270,13 +1323,14 @@ function AppContent() {
               views={views}
               previewMap={previewMap}
               addPreview={addPreview}
+              decayMode={decayMode}
               selectedViewId={selectedViewId}
               isAddMode={sidebarMode === "STRUCTURE"}
               setSidebarMode={setSidebarMode}
               recommendationsByViewId={modifyRecommendationsByViewId}
+              recommendationOrderMap={recommendationOrderMap}
+              appliedRecColorByViewId={appliedRecColorByViewId}
               newContentRecommendation={newContentRecommendation}
-              onRecommendationHover={(r) => setHoveredRec(r)}
-              onRecommendationLeave={() => setHoveredRec(null)}
               onAcceptRecommendation={apply}
               onDeclineRecommendation={decline}
               onInitializeDashboard={initializeDashboard}
@@ -1367,12 +1421,15 @@ function AppContent() {
             history={appliedRecommendations}
             activeRecommendations={activeRecommendations}
             llmReplies={llmReplies}
+            viewTitles={viewTitlesMap}
             onUndoLatest={undoLatestRecommendation}
             onAcceptRecommendation={apply}
             onDeclineRecommendation={decline}
+            onAcceptAllRecommendations={applyAll}
             voice={voice}
             textChats={textChats}
             isGenerating={isLoading}
+            streamingText={streamingText}
             onChangeLanguage={(lang) => setLanguage(lang)}
             onSendTextChat={(msg) => {
               logEvent("text_chat", { length: msg.length });
@@ -1436,6 +1493,7 @@ function AppContent() {
 export default function Page() {
   return (
     <SidebarProvider
+      defaultOpen={false}
       style={
         {
           "--sidebar-width": "280px",

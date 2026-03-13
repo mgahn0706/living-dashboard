@@ -390,7 +390,35 @@ export function useFocusPathDetector(
     return () => window.clearInterval(id);
   }, [configuration.analysisWindowMilliseconds]);
 
-  return { handlePointerMove, handleClick };
+  /* =======================================================
+     Register view IDs so they start decaying immediately
+  ======================================================= */
+
+  const registerViewIds = useCallback(
+    (viewIds: string[]) => {
+      const now = performance.now();
+      // Backdate so untouched views start already past the idle grace period,
+      // entering accelerated decay immediately.
+      const backdated = now - configuration.idleDecayGracePeriodMilliseconds;
+      for (const viewId of viewIds) {
+        if (!activeViewsRef.current.has(viewId)) {
+          activeViewsRef.current.add(viewId);
+          if (focusEstimateRef.current[viewId] == null) {
+            focusEstimateRef.current[viewId] = Math.max(
+              configuration.minimumFocusScore,
+              configuration.initialFocusScore
+            );
+          }
+          if (lastInteractionTimestampRef.current[viewId] == null) {
+            lastInteractionTimestampRef.current[viewId] = backdated;
+          }
+        }
+      }
+    },
+    [configuration]
+  );
+
+  return { handlePointerMove, handleClick, registerViewIds };
 }
 
 /* =======================================================

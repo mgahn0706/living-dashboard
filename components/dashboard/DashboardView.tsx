@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Recommendation, View } from "@/types/dashboard";
+import type { DecayMode } from "@/app/page";
 import { INITIAL_FOCUS_SCORE, useFocus } from "@/context/FocusContext";
 import { useDataset } from "@/context/DatasetContext";
 import { useCategoryFilter } from "@/context/CategoryFilterContext";
@@ -30,10 +31,11 @@ export default function DashboardView({
   views = [],
   previewMap = {},
   addPreview = null,
+  decayMode = "shrink",
   recommendationsByViewId = {},
+  recommendationOrderMap = {},
+  appliedRecColorByViewId = {},
   newContentRecommendation = null,
-  onRecommendationHover,
-  onRecommendationLeave,
   onAcceptRecommendation,
   onDeclineRecommendation,
   onInitializeDashboard,
@@ -49,10 +51,11 @@ export default function DashboardView({
   views: View[];
   previewMap?: Record<string, PreviewState>;
   addPreview?: View | null;
+  decayMode?: DecayMode;
   recommendationsByViewId?: Record<string, Recommendation>;
+  recommendationOrderMap?: Record<string, number>;
+  appliedRecColorByViewId?: Record<string, string>;
   newContentRecommendation?: Recommendation | null;
-  onRecommendationHover?: (rec: Recommendation) => void;
-  onRecommendationLeave?: () => void;
   onAcceptRecommendation?: (rec: Recommendation) => void;
   onDeclineRecommendation?: (rec: Recommendation) => void;
   onInitializeDashboard?: () => void;
@@ -65,8 +68,15 @@ export default function DashboardView({
   onSelect: (viewId: string) => void;
   onApplyFilter?: (viewId: string, filter: View["filter"] | undefined) => void;
 }) {
-  const { focusScore, reportPointerInteraction, reportClickInteraction } =
+  const { focusScore, reportPointerInteraction, reportClickInteraction, registerViewIds } =
     useFocus();
+
+  // Register all view IDs so they start decaying immediately, not only on hover.
+  useEffect(() => {
+    if (views.length > 0) {
+      registerViewIds(views.map((v) => v.id));
+    }
+  }, [views, registerViewIds]);
 
   const sortedViews = [...views].sort((a, b) => b.priority - a.priority);
   const focusIntensityByViewId = useMemo(() => {
@@ -172,7 +182,7 @@ export default function DashboardView({
     <>
     <TimeSlider />
     <CategoryFilterBar />
-    <div className="flex flex-wrap gap-4 items-stretch">
+    <div className="flex flex-wrap gap-4 items-start">
       {sortedViews.map((view) => (
         <ViewCard
           key={view.id}
@@ -180,12 +190,16 @@ export default function DashboardView({
           focusIntensity={focusIntensityByViewId[view.id] ?? 0.2}
           flexBasis={sizingByViewId[view.id]?.flexBasis ?? "32%"}
           heightPx={sizingByViewId[view.id]?.heightPx ?? 260}
-          hasActiveRecommendation={!!recommendationsByViewId[view.id]}
+          decayMode={decayMode}
           isSelected={selectedViewId === view.id}
           preview={previewMap[view.id] ?? null}
+          appliedRecColor={appliedRecColorByViewId[view.id]}
           recommendation={recommendationsByViewId[view.id] ?? null}
-          onRecommendationHover={onRecommendationHover}
-          onRecommendationLeave={onRecommendationLeave}
+          recommendationIndex={
+            recommendationsByViewId[view.id]
+              ? recommendationOrderMap[recommendationsByViewId[view.id].id]
+              : undefined
+          }
           onAcceptRecommendation={onAcceptRecommendation}
           onDeclineRecommendation={onDeclineRecommendation}
           onPointerMove={(e) =>
@@ -211,8 +225,11 @@ export default function DashboardView({
           preview={{ type: "ADD", view: addPreview }}
           isSelected={false}
           recommendation={newContentRecommendation}
-          onRecommendationHover={onRecommendationHover}
-          onRecommendationLeave={onRecommendationLeave}
+          recommendationIndex={
+            newContentRecommendation
+              ? recommendationOrderMap[newContentRecommendation.id]
+              : undefined
+          }
           onAcceptRecommendation={onAcceptRecommendation}
           onDeclineRecommendation={onDeclineRecommendation}
         />

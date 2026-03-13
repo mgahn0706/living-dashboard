@@ -2,8 +2,6 @@
 
 import { useRef } from "react";
 import {
-  IconBrandGithub,
-  IconDashboard,
   IconDownload,
   IconUpload,
 } from "@tabler/icons-react";
@@ -11,31 +9,31 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Switch } from "@/components/ui/switch";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useDataset } from "@/context/DatasetContext";
+import type { DecayMode } from "@/app/page";
 
 interface SiteHeaderProps {
-  isAutoSaveEnabled?: boolean;
-  onAutoSaveToggle?: (enabled: boolean) => void;
   onExportDashboardState?: () => void;
   onImportDashboardState?: (file: File) => Promise<void>;
   hasSavedDashboardState?: boolean;
   onLoadSavedDashboardState?: () => void;
+  decayMode?: DecayMode;
+  onDecayModeChange?: (mode: DecayMode) => void;
 }
 
+const DECAY_OPTIONS: { value: DecayMode; label: string }[] = [
+  { value: "shrink", label: "Shrink" },
+  { value: "burn", label: "Burn" },
+  { value: "dissolve", label: "Dissolve" },
+];
+
 export function SiteHeader({
-  isAutoSaveEnabled = false,
-  onAutoSaveToggle,
   onExportDashboardState,
   onImportDashboardState,
   hasSavedDashboardState = false,
   onLoadSavedDashboardState,
+  decayMode = "shrink",
+  onDecayModeChange,
 }: SiteHeaderProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stateFileInputRef = useRef<HTMLInputElement>(null);
@@ -73,38 +71,17 @@ export function SiteHeader({
 
   return (
     <header className="sticky top-0 z-50 flex h-(--header-height) w-full items-center border-b bg-background">
-      <div className="flex w-full items-center px-4 lg:px-6">
-        {/* Left */}
+      <div className="flex w-full items-center justify-end px-4 lg:px-6">
         <div className="flex items-center gap-2">
-          <div className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <IconDashboard className="size-4" />
-          </div>
-          <h1 className="text-base font-medium">Living Dashboard</h1>
-        </div>
-
-        {/* Right */}
-        <div className="ml-auto flex items-center gap-2">
-          <TooltipProvider>
-            <Tooltip open={!hasDataset} delayDuration={0}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="hidden sm:flex gap-2 text-muted-foreground"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <IconUpload className="size-4" />
-                  <span>Upload JSON / CSV / XLSX</span>
-                </Button>
-              </TooltipTrigger>
-
-              {!hasDataset && (
-                <TooltipContent side="bottom" align="end">
-                  <p className="text-xs">Upload a dataset to start a meeting</p>
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="hidden sm:flex gap-2 text-muted-foreground"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <IconUpload className="size-4" />
+            <span>Upload JSON / CSV / XLSX</span>
+          </Button>
 
           <input
             ref={fileInputRef}
@@ -165,32 +142,26 @@ export function SiteHeader({
             </span>
           )}
 
-          {onAutoSaveToggle && (
-            <label className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
-              <span>Auto Save (1m)</span>
-              <Switch
-                checked={isAutoSaveEnabled}
-                onCheckedChange={onAutoSaveToggle}
-                aria-label="Toggle auto save"
-              />
-            </label>
+          {hasDataset && onDecayModeChange && (
+            <>
+              <Separator orientation="vertical" className="mx-1 h-4" />
+              <div className="flex items-center rounded-md border bg-muted/50 p-0.5">
+                {DECAY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => onDecayModeChange(opt.value)}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-sm transition-colors ${
+                      decayMode === opt.value
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
-
-          <Button
-            variant="ghost"
-            asChild
-            size="sm"
-            className="hidden sm:flex gap-2 text-muted-foreground"
-          >
-            <a
-              href="https://github.com/mgahn0706/living-dashboard"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <IconBrandGithub className="size-4" />
-              <span>GitHub</span>
-            </a>
-          </Button>
 
           <Separator orientation="vertical" className="mx-1 h-4" />
           <SidebarTrigger className="-mr-1" />

@@ -22,6 +22,7 @@ type FocusContextValue = {
   ) => void;
 
   reportClickInteraction: (viewId: string) => void;
+  registerViewIds: (viewIds: string[]) => void;
   restoreFocusScore: (next: Record<string, number>) => void;
 };
 
@@ -35,7 +36,7 @@ export const INITIAL_FOCUS_SCORE = 10_000_000;
 export function FocusProvider({ children }: { children: React.ReactNode }) {
   const [focusScore, setFocusScore] = useState<Record<string, number>>({});
 
-  const { handlePointerMove, handleClick } = useFocusPathDetector(
+  const { handlePointerMove, handleClick, registerViewIds: registerDetectorViewIds } = useFocusPathDetector(
     (viewId, delta) => {
       setFocusScore((previous) => ({
         ...previous,
@@ -59,6 +60,21 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     handleClick(viewId);
   };
 
+  const registerViewIds = (viewIds: string[]) => {
+    registerDetectorViewIds(viewIds);
+    setFocusScore((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const id of viewIds) {
+        if (!(id in next)) {
+          next[id] = INITIAL_FOCUS_SCORE;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  };
+
   const restoreFocusScore = (next: Record<string, number>) => {
     setFocusScore(next);
   };
@@ -73,6 +89,7 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
         focusScore,
         reportPointerInteraction,
         reportClickInteraction,
+        registerViewIds,
         restoreFocusScore,
       }}
     >
