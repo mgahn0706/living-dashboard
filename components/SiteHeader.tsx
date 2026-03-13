@@ -9,12 +9,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useDataset } from "@/context/DatasetContext";
 
 interface SiteHeaderProps {
@@ -68,27 +62,15 @@ export function SiteHeader({
     <header className="sticky top-0 z-50 flex h-(--header-height) w-full items-center border-b bg-background">
       <div className="flex w-full items-center justify-end px-4 lg:px-6">
         <div className="flex items-center gap-2">
-          <TooltipProvider>
-            <Tooltip open={!hasDataset} delayDuration={0}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="hidden sm:flex gap-2 text-muted-foreground"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <IconUpload className="size-4" />
-                  <span>Upload JSON / CSV / XLSX</span>
-                </Button>
-              </TooltipTrigger>
-
-              {!hasDataset && (
-                <TooltipContent side="bottom" align="end">
-                  <p className="text-xs">Upload a dataset to start a meeting</p>
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="hidden sm:flex gap-2 text-muted-foreground"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <IconUpload className="size-4" />
+            <span>Upload JSON / CSV / XLSX</span>
+          </Button>
 
           <input
             ref={fileInputRef}
