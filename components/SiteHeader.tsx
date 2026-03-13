@@ -2,7 +2,6 @@
 
 import { useRef } from "react";
 import {
-  IconBrandGithub,
   IconDashboard,
   IconDownload,
   IconUpload,
@@ -159,22 +158,6 @@ export function SiteHeader({
               {attributeKeys.length} attributes
             </span>
           )}
-
-          <Button
-            variant="ghost"
-            asChild
-            size="sm"
-            className="hidden sm:flex gap-2 text-muted-foreground"
-          >
-            <a
-              href="https://github.com/mgahn0706/living-dashboard"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <IconBrandGithub className="size-4" />
-              <span>GitHub</span>
-            </a>
-          </Button>
 
           <Separator orientation="vertical" className="mx-1 h-4" />
           <SidebarTrigger className="-mr-1" />
