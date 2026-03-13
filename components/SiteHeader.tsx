@@ -11,7 +11,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
@@ -21,8 +20,6 @@ import {
 import { useDataset } from "@/context/DatasetContext";
 
 interface SiteHeaderProps {
-  isAutoSaveEnabled?: boolean;
-  onAutoSaveToggle?: (enabled: boolean) => void;
   onExportDashboardState?: () => void;
   onImportDashboardState?: (file: File) => Promise<void>;
   hasSavedDashboardState?: boolean;
@@ -30,8 +27,6 @@ interface SiteHeaderProps {
 }
 
 export function SiteHeader({
-  isAutoSaveEnabled = false,
-  onAutoSaveToggle,
   onExportDashboardState,
   onImportDashboardState,
   hasSavedDashboardState = false,
@@ -163,17 +158,6 @@ export function SiteHeader({
             <span className="text-xs text-muted-foreground">
               {attributeKeys.length} attributes
             </span>
-          )}
-
-          {onAutoSaveToggle && (
-            <label className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
-              <span>Auto Save (1m)</span>
-              <Switch
-                checked={isAutoSaveEnabled}
-                onCheckedChange={onAutoSaveToggle}
-                aria-label="Toggle auto save"
-              />
-            </label>
           )}
 
           <Button

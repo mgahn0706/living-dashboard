@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import React, {
+  useCallback,
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { useRecommendation, type LlmReply } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
@@ -31,7 +37,10 @@ import { getRecColor } from "@/components/recommendation/RecommendationSidebar";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 import { SelectionProvider } from "@/context/SelectionContext";
 import { TimeFilterProvider } from "@/context/TimeFilterContext";
-import { CategoryFilterProvider, useCategoryFilter } from "@/context/CategoryFilterContext";
+import {
+  CategoryFilterProvider,
+  useCategoryFilter,
+} from "@/context/CategoryFilterContext";
 
 import { useExperimentLogger } from "@/hooks/useExperimentLogger";
 import type { ExperimentSession } from "@/hooks/useExperimentLogger";
@@ -148,7 +157,8 @@ function sanitizeFilterForView(
       rawData,
       xColumn
     ).filter(
-      (v): v is string | number => typeof v === "string" || typeof v === "number"
+      (v): v is string | number =>
+        typeof v === "string" || typeof v === "number"
     );
     if (xValues.length > 0) next.includeXValues = xValues;
   }
@@ -684,7 +694,7 @@ function AppContent() {
     "en-US"
   );
   const [isInitializing, setIsInitializing] = useState(false);
-  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false);
+  const [isAutoSaveEnabled] = useState(false);
   const [hasSavedDashboardState, setHasSavedDashboardState] = useState(false);
   const [appliedRecColorByViewId, setAppliedRecColorByViewId] = useState<
     Record<string, string>
@@ -698,8 +708,7 @@ function AppContent() {
     rawData,
     loadDemoDataset,
     restoreDataset,
-  } =
-    useDataset();
+  } = useDataset();
   const { addFilter: addCategoryFilter } = useCategoryFilter();
 
   const {
@@ -786,12 +795,20 @@ function AppContent() {
           : []
       );
 
-      const restoredAcceptedIds = Array.isArray(parsed.acceptedRecommendationIds)
-        ? parsed.acceptedRecommendationIds.filter((id) => typeof id === "string")
+      const restoredAcceptedIds = Array.isArray(
+        parsed.acceptedRecommendationIds
+      )
+        ? parsed.acceptedRecommendationIds.filter(
+            (id) => typeof id === "string"
+          )
         : [];
       setAcceptedRecommendationIds(restoredAcceptedIds);
 
-      if (parsed.language === "en-US" || parsed.language === "ko-KR" || parsed.language === "ja-JP") {
+      if (
+        parsed.language === "en-US" ||
+        parsed.language === "ko-KR" ||
+        parsed.language === "ja-JP"
+      ) {
         setLanguage(parsed.language);
       } else {
         setLanguage("en-US");
@@ -825,13 +842,7 @@ function AppContent() {
           : null;
       restoreSession(nextExperimentSession);
     },
-    [
-      resetAccepted,
-      restoreFocusScore,
-      restoreHistory,
-      restoreSession,
-      voice,
-    ]
+    [resetAccepted, restoreFocusScore, restoreHistory, restoreSession, voice]
   );
 
   useEffect(() => {
@@ -1012,8 +1023,7 @@ function AppContent() {
     const targetId = getRecommendationTargetViewId(r);
     if (targetId) {
       const orderIdx = recommendationOrderMap[r.id];
-      const color =
-        orderIdx != null ? getRecColor(orderIdx - 1) : "#3b82f6";
+      const color = orderIdx != null ? getRecColor(orderIdx - 1) : "#3b82f6";
       setAppliedRecColorByViewId((prev) => ({
         ...prev,
         [targetId]: color,
@@ -1098,7 +1108,10 @@ function AppContent() {
           nextViews.length > 0
             ? Math.min(...nextViews.map((v) => v.priority ?? 0))
             : 0;
-        const fallbackTable = buildFallbackTableView(attributeKeys, minPriority - 1);
+        const fallbackTable = buildFallbackTableView(
+          attributeKeys,
+          minPriority - 1
+        );
         if (fallbackTable) {
           nextViews = [...nextViews, fallbackTable];
         }
@@ -1187,9 +1200,7 @@ function AppContent() {
     if (activeRecommendations.length === 0) return;
     const first = activeRecommendations.find((r) => r.targetViewId);
     if (!first?.targetViewId) return;
-    const el = document.querySelector(
-      `[data-view-id="${first.targetViewId}"]`
-    );
+    const el = document.querySelector(`[data-view-id="${first.targetViewId}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
@@ -1256,13 +1267,9 @@ function AppContent() {
           ? parsed.dashboard
           : parsed;
 
-      const importedDataset =
-        "dataset" in parsed ? parsed.dataset : undefined;
+      const importedDataset = "dataset" in parsed ? parsed.dataset : undefined;
 
-      if (
-        importedDataset !== undefined &&
-        importedDataset !== null
-      ) {
+      if (importedDataset !== undefined && importedDataset !== null) {
         restoreDataset(importedDataset);
       }
 
@@ -1296,8 +1303,6 @@ function AppContent() {
     <>
       <SidebarInset className="bg-muted/10">
         <SiteHeader
-          isAutoSaveEnabled={isAutoSaveEnabled}
-          onAutoSaveToggle={setIsAutoSaveEnabled}
           onExportDashboardState={exportDashboardState}
           onImportDashboardState={importDashboardState}
           hasSavedDashboardState={hasSavedDashboardState}
