@@ -1,11 +1,6 @@
 The following changes need to be implemented:
-0. Main screen: Get rid of upload a dataset to start the meeting. Keep only Import State. Get rid of AutoSave. Also, remove the github link. And don't show the sidebar as soon as we go to the website
-1. Next screen the top of the dashboard: Only keep Save state option/download state option and the hide sidebar button
 2. Have a landing page and a dashboard page.
 3. The second person should import the first person's state and the demo data.
-4. Smaller font of AI recommendation on the sidebar. Better call it suggestions.
-5. Collapse previous suggestions.
-6. UI issue on the KPI card (the suggestions is not shown correctly)
 7. Test the order of the recommendations, sometimes the order is reversed.
 8. Test the pilot studies questions, especially with drill-down features.
 9. Apply the effects:

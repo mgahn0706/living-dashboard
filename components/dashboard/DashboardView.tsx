@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Recommendation, View } from "@/types/dashboard";
 import { INITIAL_FOCUS_SCORE, useFocus } from "@/context/FocusContext";
 import { useDataset } from "@/context/DatasetContext";
@@ -65,8 +65,15 @@ export default function DashboardView({
   onSelect: (viewId: string) => void;
   onApplyFilter?: (viewId: string, filter: View["filter"] | undefined) => void;
 }) {
-  const { focusScore, reportPointerInteraction, reportClickInteraction } =
+  const { focusScore, reportPointerInteraction, reportClickInteraction, registerViewIds } =
     useFocus();
+
+  // Register all view IDs so they start decaying immediately, not only on hover.
+  useEffect(() => {
+    if (views.length > 0) {
+      registerViewIds(views.map((v) => v.id));
+    }
+  }, [views, registerViewIds]);
 
   const sortedViews = [...views].sort((a, b) => b.priority - a.priority);
   const focusIntensityByViewId = useMemo(() => {
@@ -172,7 +179,7 @@ export default function DashboardView({
     <>
     <TimeSlider />
     <CategoryFilterBar />
-    <div className="flex flex-wrap gap-4 items-stretch">
+    <div className="flex flex-wrap gap-4 items-start">
       {sortedViews.map((view) => (
         <ViewCard
           key={view.id}

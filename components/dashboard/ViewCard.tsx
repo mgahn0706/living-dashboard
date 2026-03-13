@@ -242,7 +242,7 @@ export default React.memo(function ViewCard({
         {/* Base View */}
         <div
           className={cn(
-            "relative z-0 flex flex-col",
+            "relative z-0 flex flex-col flex-1 min-h-0",
             preview?.type === "REMOVE" && "opacity-40"
           )}
         >
