@@ -1493,7 +1493,7 @@ function AppContent() {
 export default function Page() {
   return (
     <SidebarProvider
-      defaultOpen={false}
+      defaultOpen={true}
       style={
         {
           "--sidebar-width": "280px",
