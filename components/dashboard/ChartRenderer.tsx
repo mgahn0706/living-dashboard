@@ -863,6 +863,26 @@ export default React.memo(function ChartRenderer({
     [baseData, filter]
   );
 
+  // Stable funnel color map: built from rawData (unaffected by cross-filtering)
+  // so each category always keeps the same color regardless of selection.
+  const funnelColorMap = React.useMemo(() => {
+    if (view.chartType !== "FUNNEL" || !chartView) return new Map<string, string>();
+    const xCol = chartView.xColumn;
+    const yCol = chartView.yColumn;
+    const totals = new Map<string, number>();
+    for (const row of rawData) {
+      const key = String(getValueByPath(row, xCol) ?? "");
+      const val = Number(getValueByPath(row, yCol)) || 0;
+      totals.set(key, (totals.get(key) ?? 0) + val);
+    }
+    const sorted = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+    const map = new Map<string, string>();
+    sorted.forEach(([key], i) => {
+      map.set(key, FUNNEL_PALETTE[i % FUNNEL_PALETTE.length]);
+    });
+    return map;
+  }, [rawData, chartView, view.chartType]);
+
   const rotateXLabels = React.useMemo(
     () => xType === "category" && shouldRotateLabels(visibleData),
     [visibleData, xType]
@@ -975,15 +995,18 @@ export default React.memo(function ChartRenderer({
 
   /* ---- FUNNEL ---- */
   if (view.chartType === "FUNNEL") {
-    const funnelData = visibleData
+    const funnelData = [...visibleData]
       .sort((a, b) => b.y - a.y)
-      .map((d, i) => ({
-        name: String(d.xRaw ?? d.x),
-        value: d.y,
-        fill: FUNNEL_PALETTE[i % FUNNEL_PALETTE.length],
-        highlighted: isPointHighlighted(d),
-        xRaw: d.xRaw ?? d.x,
-      }));
+      .map((d) => {
+        const key = String(d.xRaw ?? d.x);
+        return {
+          name: key,
+          value: d.y,
+          fill: funnelColorMap.get(key) ?? FUNNEL_PALETTE[0],
+          highlighted: isPointHighlighted(d),
+          xRaw: d.xRaw ?? d.x,
+        };
+      });
 
     return (
       <div className="h-full w-full outline-none" style={{ height }} onDoubleClick={() => clearSelection()} onClick={(e) => e.stopPropagation()}>
@@ -1021,13 +1044,7 @@ export default React.memo(function ChartRenderer({
                 {funnelData.map((entry, i) => (
                   <Cell
                     key={i}
-                    fill={
-                      hasSelection
-                        ? entry.highlighted
-                          ? entry.fill
-                          : faded
-                        : entry.fill
-                    }
+                    fill={entry.fill}
                     opacity={!hasSelection || entry.highlighted ? 1 : 0.3}
                     style={{ cursor: "pointer" }}
                   />
