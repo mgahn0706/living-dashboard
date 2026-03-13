@@ -26,6 +26,7 @@ import {
   IconBolt,
   IconArrowUpRight,
   IconSend,
+  IconChevronDown,
 } from "@tabler/icons-react";
 
 import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
@@ -34,6 +35,11 @@ import type { LlmReply } from "@/hooks/useRecommendation";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   buildRecentRequestMessages,
   type RecentRequestMessage,
@@ -427,6 +433,33 @@ function ChatInputBar({
   );
 }
 
+function AppliedHistoryItem({ recommendation }: { recommendation: Recommendation }) {
+  return (
+    <div className="w-full min-w-0 flex items-start gap-2 rounded-md border bg-background/60 px-2.5 py-2 text-xs">
+      <div className="mt-0.5 inline-flex size-7 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        {recIcon(recommendation.type)}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-center gap-2">
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+            Applied
+          </span>
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+            {recommendation.type.replace("_", " ")}
+          </span>
+        </div>
+        <div className="min-w-0 break-words font-medium leading-snug">
+          {recommendation.title}
+        </div>
+        <div className="mt-1 break-words text-[11px] text-muted-foreground">
+          {recommendation.reason}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== Sidebar ===================== */
 
 export default function RecommendationSidebar({
@@ -467,6 +500,7 @@ export default function RecommendationSidebar({
     "suggestions"
   );
   const [justAppliedIds, setJustAppliedIds] = useState<Set<string>>(new Set());
+  const [showOlderHistory, setShowOlderHistory] = useState(false);
 
   const placeholder =
     language === "ko-KR"
@@ -517,6 +551,12 @@ export default function RecommendationSidebar({
     () => history.filter((r) => justAppliedIds.has(r.id)),
     [history, justAppliedIds]
   );
+  const appliedHistory = useMemo(
+    () => history.filter((r) => !justAppliedIds.has(r.id)),
+    [history, justAppliedIds]
+  );
+  const recentAppliedHistory = appliedHistory.slice(0, 3);
+  const olderAppliedHistory = appliedHistory.slice(3);
 
   return (
     <>
@@ -806,39 +846,51 @@ export default function RecommendationSidebar({
                   )}
 
                   <AnimatePresence>
-                    {history
-                      .filter((r) => !justAppliedIds.has(r.id))
-                      .map((r) => (
-                        <motion.div
-                          key={r.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                        >
-                          <div className="w-full min-w-0 flex items-start gap-2 rounded-md border bg-background/60 px-2.5 py-2 text-xs">
-                            <div className="mt-0.5 inline-flex size-7 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                              {recIcon(r.type)}
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                              <div className="mb-1 flex items-center gap-2">
-                                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                                  Applied
-                                </span>
-                                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
-                                  {r.type.replace("_", " ")}
-                                </span>
-                              </div>
-                              <div className="min-w-0 break-words font-medium leading-snug">
-                                {r.title}
-                              </div>
-                              <div className="mt-1 break-words text-[11px] text-muted-foreground">
-                                {r.reason}
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))}
+                    {recentAppliedHistory.map((r) => (
+                      <motion.div
+                        key={r.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <AppliedHistoryItem recommendation={r} />
+                      </motion.div>
+                    ))}
                   </AnimatePresence>
+
+                  {olderAppliedHistory.length > 0 && (
+                    <Collapsible
+                      open={showOlderHistory}
+                      onOpenChange={setShowOlderHistory}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <button className="flex w-full items-center justify-between rounded-md border bg-background/70 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
+                          <span>
+                            Previous suggestions ({olderAppliedHistory.length})
+                          </span>
+                          <IconChevronDown
+                            className={cn(
+                              "size-4 transition-transform",
+                              showOlderHistory && "rotate-180"
+                            )}
+                          />
+                        </button>
+                      </CollapsibleTrigger>
+
+                      <CollapsibleContent className="mt-2 space-y-2">
+                        <AnimatePresence initial={false}>
+                          {olderAppliedHistory.map((r) => (
+                            <motion.div
+                              key={r.id}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                            >
+                              <AppliedHistoryItem recommendation={r} />
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )}
                 </div>
               )}
 
