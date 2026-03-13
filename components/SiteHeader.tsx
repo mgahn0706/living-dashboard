@@ -2,7 +2,6 @@
 
 import { useRef } from "react";
 import {
-  IconDashboard,
   IconDownload,
   IconUpload,
 } from "@tabler/icons-react";
@@ -67,17 +66,8 @@ export function SiteHeader({
 
   return (
     <header className="sticky top-0 z-50 flex h-(--header-height) w-full items-center border-b bg-background">
-      <div className="flex w-full items-center px-4 lg:px-6">
-        {/* Left */}
+      <div className="flex w-full items-center justify-end px-4 lg:px-6">
         <div className="flex items-center gap-2">
-          <div className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <IconDashboard className="size-4" />
-          </div>
-          <h1 className="text-base font-medium">Living Dashboard</h1>
-        </div>
-
-        {/* Right */}
-        <div className="ml-auto flex items-center gap-2">
           <TooltipProvider>
             <Tooltip open={!hasDataset} delayDuration={0}>
               <TooltipTrigger asChild>
