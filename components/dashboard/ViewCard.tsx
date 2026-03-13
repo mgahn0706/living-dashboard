@@ -142,6 +142,15 @@ export default React.memo(function ViewCard({
       ? getRecColor(recommendationIndex - 1)
       : undefined;
   const contentOpacity = isEditing ? 1 : 0.6 + normalizedFocus * 0.4;
+
+  // Burned-edge vignette: activates below intensity 0.7, disabled on rec-targeted cards
+  const hasActiveRec = Boolean(recColor);
+  const vignetteStrength = hasActiveRec
+    ? 0
+    : Math.max(0, Math.min(1, (0.7 - normalizedFocus) / (0.7 - 0.25)));
+  const tintOpacity = hasActiveRec
+    ? 0
+    : Math.max(0, Math.min(1, (0.4 - normalizedFocus) / (0.4 - 0.25))) * 0.025;
   const { attributeKeys, resolveAttribute } = useDataset();
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [draft, setDraft] = React.useState({
@@ -208,7 +217,10 @@ export default React.memo(function ViewCard({
           boxShadow:
             !isEditing && recColor
               ? `0 0 0 2px ${recColor}33, 0 4px 24px ${recColor}22`
-              : baseShadow,
+              : vignetteStrength > 0
+                ? `${baseShadow}, inset 0 0 ${(32 * vignetteStrength).toFixed(1)}px ${(16 * vignetteStrength).toFixed(1)}px rgba(120, 60, 0, ${(0.18 * vignetteStrength).toFixed(3)})`
+                : baseShadow,
+          backgroundColor: tintOpacity > 0 ? `rgba(180, 100, 20, ${tintOpacity.toFixed(4)})` : undefined,
           flexBasis,
         }}
         className={cn(

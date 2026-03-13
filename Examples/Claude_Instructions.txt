@@ -1,6 +1,5 @@
 The following changes need to be implemented:
-
-
-3. Also, the visuals that are shrinking should have a burning edge (like burning paper) effect on the visual boundary to indicate their decay.
-4. The AI should be able to offer recommendation on interactive events as well, not just basic filtering. For example, we have a drill-down visual in the dashboard, so the AI should be able to recommend drill-intreractivity as well, if the question is such.
-The quality of interaction is poor, in the end it doesn't lead to the answers, somehow the ordering is not correct.
+1. Test the pilot studies questions, especially with drill-down features.
+2. Test the order of the recommendations, sometimes the order is reversed.
+3. UI issue on the KPI card
+4. Remove the old applied filters history (archive them)
