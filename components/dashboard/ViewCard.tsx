@@ -208,6 +208,12 @@ export default React.memo(function ViewCard({
   }, [view.id, view.filter]);
 
   const canManualFilter = Boolean(onApplyFilter) && preview == null;
+  const minCardWidth =
+    view.chartType === "KPI"
+      ? recommendation || canManualFilter
+        ? 240
+        : 180
+      : undefined;
 
   return (
     <>
@@ -243,6 +249,7 @@ export default React.memo(function ViewCard({
           backgroundColor: tintOpacity > 0 ? `rgba(180, 100, 20, ${tintOpacity.toFixed(4)})` : undefined,
           opacity: dissolveStrength > 0 ? dissolveOpacity : undefined,
           flexBasis,
+          minWidth: minCardWidth,
         }}
         className={cn(
           "relative overflow-hidden transition-all duration-300 ease-out cursor-pointer",
