@@ -1,7 +1,7 @@
 "use client";
 
 import { Recommendation, View, ViewFilter } from "@/types/dashboard";
-import type { DecayMode } from "@/app/page";
+import type { DecayMode } from "@/types/dashboard";
 import {
   Card,
   CardHeader,

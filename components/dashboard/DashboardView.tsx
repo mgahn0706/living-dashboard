@@ -3,7 +3,7 @@
 import React from "react";
 import { useEffect, useMemo } from "react";
 import { Recommendation, View } from "@/types/dashboard";
-import type { DecayMode } from "@/app/page";
+import type { DecayMode } from "@/types/dashboard";
 import { INITIAL_FOCUS_SCORE, useFocus } from "@/context/FocusContext";
 import { useDataset } from "@/context/DatasetContext";
 import { useCategoryFilter } from "@/context/CategoryFilterContext";
