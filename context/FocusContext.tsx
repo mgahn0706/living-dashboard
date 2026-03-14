@@ -27,7 +27,27 @@ type FocusContextValue = {
 };
 
 const FocusContext = createContext<FocusContextValue | null>(null);
-export const INITIAL_FOCUS_SCORE = 10_000_000;
+export const INITIAL_FOCUS_SCORE = 1_000;
+const LEGACY_FOCUS_SCORE_THRESHOLD = 100_000;
+
+function normalizeRestoredFocusScore(next: Record<string, number>) {
+  const entries = Object.entries(next).filter(
+    ([, value]) => typeof value === "number" && Number.isFinite(value)
+  );
+
+  if (entries.length === 0) return {};
+
+  const max = Math.max(...entries.map(([, value]) => value));
+  const shouldRescale = max > LEGACY_FOCUS_SCORE_THRESHOLD;
+  const scale = shouldRescale ? INITIAL_FOCUS_SCORE / max : 1;
+
+  return Object.fromEntries(
+    entries.map(([viewId, value]) => [
+      viewId,
+      Math.max(0, Number((value * scale).toFixed(3))),
+    ])
+  );
+}
 
 /* =======================================================
    Provider
@@ -76,7 +96,7 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
   };
 
   const restoreFocusScore = (next: Record<string, number>) => {
-    setFocusScore(next);
+    setFocusScore(normalizeRestoredFocusScore(next));
   };
 
   /* -------------------------------------------------------

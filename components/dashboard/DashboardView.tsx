@@ -12,7 +12,7 @@ import { Button } from "../ui/button";
 import { ArrowRight, Plus, X } from "lucide-react";
 import TimeSlider from "./TimeSlider";
 
-const FOCUS_STABLE_RANGE = 100;
+const FOCUS_STABLE_RANGE = 5;
 const MIN_VISIBLE_FOCUS_INTENSITY = 0.25;
 
 /* Continuous sizing ranges driven by focus intensity.
@@ -80,32 +80,25 @@ export default function DashboardView({
 
   const sortedViews = [...views].sort((a, b) => b.priority - a.priority);
   const focusIntensityByViewId = useMemo(() => {
-    const scored = views.map((view) => ({
-      id: view.id,
-      score: focusScore[view.id] ?? INITIAL_FOCUS_SCORE,
-    }));
-
-    if (scored.length === 0) return {} as Record<string, number>;
-
-    const values = scored.map((item) => item.score);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min;
     const map: Record<string, number> = {};
 
-    if (range < FOCUS_STABLE_RANGE) {
-      scored.forEach((item) => {
-        map[item.id] = 1;
-      });
-      return map;
-    }
+    if (views.length === 0) return map;
 
-    scored.forEach((item) => {
-      const normalized = (item.score - min) / range;
-      map[item.id] =
+    views.forEach((view) => {
+      const score = focusScore[view.id] ?? INITIAL_FOCUS_SCORE;
+
+      if (score >= INITIAL_FOCUS_SCORE - FOCUS_STABLE_RANGE) {
+        map[view.id] = 1;
+        return;
+      }
+
+      const normalized = Math.max(
+        0,
+        Math.min(1, score / INITIAL_FOCUS_SCORE)
+      );
+      map[view.id] =
         MIN_VISIBLE_FOCUS_INTENSITY +
-        Math.max(0, Math.min(1, normalized)) *
-          (1 - MIN_VISIBLE_FOCUS_INTENSITY);
+        normalized * (1 - MIN_VISIBLE_FOCUS_INTENSITY);
     });
 
     return map;

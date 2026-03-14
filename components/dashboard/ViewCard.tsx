@@ -276,8 +276,8 @@ export default React.memo(function ViewCard({
         >
           {/* Header */}
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-1">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <CardTitle className="min-w-0 flex flex-1 flex-wrap items-center gap-1 text-sm">
                 {view.title || view.id}
 
                 {isEditing && (
@@ -287,7 +287,7 @@ export default React.memo(function ViewCard({
                 )}
               </CardTitle>
 
-              <div className="flex items-center gap-1">
+              <div className="ml-auto flex shrink-0 items-center gap-1">
                 {appliedRecColor && !recommendation && (
                   <span
                     className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
