@@ -701,6 +701,7 @@ function AppContent() {
   const [appliedRecColorByViewId, setAppliedRecColorByViewId] = useState<
     Record<string, string>
   >({});
+  const restoredFromStorageRef = useRef(false);
 
   const { focusScore, restoreFocusScore } = useFocus();
   const {
@@ -848,6 +849,9 @@ function AppContent() {
   );
 
   useEffect(() => {
+    if (restoredFromStorageRef.current) return;
+    restoredFromStorageRef.current = true;
+
     const stored = localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
     if (!stored) {
       setHasSavedDashboardState(false);
