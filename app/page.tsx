@@ -3,9 +3,9 @@
 import React, { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useSystemMode } from "@/context/SystemModeContext";
 
 const AUTO_SAVE_STORAGE_KEY = "ld_dashboard_autosave_session";
-const PARTICIPANT_MODE_STORAGE_KEY = "ld_participant_mode";
 
 type UploadState = {
   filename: string;
@@ -16,6 +16,7 @@ type UploadState = {
 export default function Page() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { setSystemMode } = useSystemMode();
   const [isFirstUser, setIsFirstUser] = useState(false);
   const [selectedMode, setSelectedMode] = useState<"A" | "B" | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>({
@@ -64,7 +65,7 @@ export default function Page() {
   const handleModeSelect = (mode: "A" | "B") => {
     if (!canSelectSystem) return;
     setSelectedMode(mode);
-    localStorage.setItem(PARTICIPANT_MODE_STORAGE_KEY, mode);
+    setSystemMode(mode);
     router.push("/dashboard");
   };
 

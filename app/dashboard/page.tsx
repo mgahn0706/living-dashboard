@@ -42,6 +42,7 @@ import {
   CategoryFilterProvider,
   useCategoryFilter,
 } from "@/context/CategoryFilterContext";
+import { useSystemMode } from "@/context/SystemModeContext";
 
 import { useExperimentLogger } from "@/hooks/useExperimentLogger";
 import type { ExperimentSession } from "@/hooks/useExperimentLogger";
@@ -74,6 +75,7 @@ type AnyPayload = any;
 
 type SavedDashboardState = {
   savedAt: string;
+  systemMode?: "A" | "B" | null;
   views?: View[];
   focusScore?: Record<string, number>;
   textChats?: string[];
@@ -702,6 +704,7 @@ function AppContent() {
     Record<string, string>
   >({});
   const restoredFromStorageRef = useRef(false);
+  const { systemMode, setSystemMode } = useSystemMode();
 
   const { focusScore, restoreFocusScore } = useFocus();
   const {
@@ -817,6 +820,10 @@ function AppContent() {
         setLanguage("en-US");
       }
 
+      if (parsed.systemMode === "A" || parsed.systemMode === "B") {
+        setSystemMode(parsed.systemMode);
+      }
+
       if (
         parsed.focusScore &&
         typeof parsed.focusScore === "object" &&
@@ -845,7 +852,14 @@ function AppContent() {
           : null;
       restoreSession(nextExperimentSession);
     },
-    [resetAccepted, restoreFocusScore, restoreHistory, restoreSession, voice]
+    [
+      resetAccepted,
+      restoreFocusScore,
+      restoreHistory,
+      restoreSession,
+      setSystemMode,
+      voice,
+    ]
   );
 
   useEffect(() => {
@@ -1181,6 +1195,7 @@ function AppContent() {
   const saveDashboardState = useCallback(() => {
     const payload: SavedDashboardState = {
       savedAt: new Date().toISOString(),
+      systemMode,
       views,
       focusScore,
       textChats,
@@ -1206,6 +1221,7 @@ function AppContent() {
     appliedRecommendations,
     acceptedRecommendationIds,
     experimentSession,
+    systemMode,
   ]);
 
   const saveDashboardStateRef = useRef(saveDashboardState);
@@ -1253,6 +1269,7 @@ function AppContent() {
       dataset: rawData ?? null,
       dashboard: {
         savedAt: new Date().toISOString(),
+        systemMode,
         views,
         focusScore,
         textChats,
@@ -1287,6 +1304,7 @@ function AppContent() {
     language,
     llmReplies,
     rawData,
+    systemMode,
     textChats,
     views,
     voice.conversation,
