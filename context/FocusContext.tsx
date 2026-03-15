@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState } from "react";
 import { useFocusPathDetector } from "@/hooks/useFocusPathDetector";
+import { useSystemMode } from "@/context/SystemModeContext";
 
 /* =======================================================
    Types
@@ -55,9 +56,11 @@ function normalizeRestoredFocusScore(next: Record<string, number>) {
 
 export function FocusProvider({ children }: { children: React.ReactNode }) {
   const [focusScore, setFocusScore] = useState<Record<string, number>>({});
+  const { isSystemA } = useSystemMode();
 
   const { handlePointerMove, handleClick, registerViewIds: registerDetectorViewIds } = useFocusPathDetector(
     (viewId, delta) => {
+      if (!isSystemA) return;
       setFocusScore((previous) => ({
         ...previous,
         [viewId]: (previous[viewId] ?? INITIAL_FOCUS_SCORE) + delta,
@@ -73,10 +76,12 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     viewId: string,
     event: PointerEventPayload
   ) => {
+    if (!isSystemA) return;
     handlePointerMove(viewId, event);
   };
 
   const reportClickInteraction = (viewId: string) => {
+    if (!isSystemA) return;
     handleClick(viewId);
   };
 

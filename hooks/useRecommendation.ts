@@ -190,6 +190,12 @@ export function useRecommendation() {
     []
   );
 
+  const clearRecommendations = useCallback(() => {
+    setRecs([]);
+    setStreamingText("");
+    setIsLoading(false);
+  }, []);
+
   return {
     recommendations: recs,
     llmReplies,
@@ -198,6 +204,7 @@ export function useRecommendation() {
     isLoading,
     streamingText,
     restoreHistory,
+    clearRecommendations,
 
     resetAccepted: () => {
       setDismissedKeys(new Set());

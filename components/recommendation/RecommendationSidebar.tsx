@@ -372,11 +372,13 @@ function ChatLog({
 
 function ChatInputBar({
   isListening,
+  disabled = false,
   onStart,
   onStop,
   onSend,
 }: {
   isListening: boolean;
+  disabled?: boolean;
   onStart: () => void;
   onStop: () => void;
   onSend: (text: string) => void;
@@ -385,7 +387,7 @@ function ChatInputBar({
   const hasText = text.trim().length > 0;
 
   const submit = () => {
-    if (!hasText) return;
+    if (disabled || !hasText) return;
     onSend(text.trim());
     setText("");
   };
@@ -393,9 +395,14 @@ function ChatInputBar({
   return (
     <div className="flex items-center gap-2">
       <button
+        type="button"
         onClick={isListening ? onStop : onStart}
+        disabled={disabled}
         className={cn(
           "rounded-md p-2 border transition",
+          disabled
+            ? "cursor-not-allowed border-muted bg-muted/50 text-muted-foreground/50"
+            : "",
           isListening
             ? "bg-red-500/10 border-red-500/30 text-red-600"
             : "hover:bg-muted"
@@ -412,16 +419,18 @@ function ChatInputBar({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
-        placeholder="Type a message…"
+        placeholder={disabled ? "AI suggestions disabled in System B" : "Type a message…"}
+        disabled={disabled}
         className="flex-1 rounded-md border bg-background px-2 py-1.5 text-xs"
       />
 
       <button
+        type="button"
         onClick={submit}
-        disabled={!hasText}
+        disabled={disabled || !hasText}
         className={cn(
           "rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all duration-200 flex items-center gap-1",
-          hasText
+          !disabled && hasText
             ? "bg-gradient-to-r from-emerald-500 to-blue-500 text-white shadow-sm hover:shadow-md cursor-pointer"
             : "bg-muted text-muted-foreground/40 cursor-not-allowed border border-transparent"
         )}
@@ -466,6 +475,7 @@ export default function RecommendationSidebar({
   history = [],
   activeRecommendations = [],
   llmReplies = [],
+  aiEnabled = true,
   voice,
   language,
   isGenerating = false,
@@ -482,6 +492,7 @@ export default function RecommendationSidebar({
   history?: Recommendation[];
   activeRecommendations?: Recommendation[];
   llmReplies?: LlmReply[];
+  aiEnabled?: boolean;
   voice: UseVoiceInputReturn;
   language: "en-US" | "ko-KR" | "ja-JP";
   isGenerating?: boolean;
@@ -671,8 +682,14 @@ export default function RecommendationSidebar({
                 </div>
               )}
 
+              {!aiEnabled && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                  System B disables living features. Focus-based adaptation and AI recommendations are turned off.
+                </div>
+              )}
+
               {/* ===== Apply All Banner ===== */}
-              {activeRecommendations.length > 1 && (
+              {aiEnabled && activeRecommendations.length > 1 && (
                 <button
                   onClick={handleApplyAll}
                   className="w-full flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs transition hover:bg-primary/10"
@@ -715,7 +732,7 @@ export default function RecommendationSidebar({
               </AnimatePresence>
 
               {/* ===== Active (Pending) Recommendations ===== */}
-              {activeRecommendations.length > 0 && (
+              {aiEnabled && activeRecommendations.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <AnimatePresence>
                     {activeRecommendations.map((r, idx) => {
@@ -888,7 +905,9 @@ export default function RecommendationSidebar({
                 justAppliedRecs.length === 0 &&
                 !isGenerating && (
                   <div className="text-xs text-muted-foreground">
-                    No recommendations yet.
+                    {aiEnabled
+                      ? "No recommendations yet."
+                      : "Recommendations are disabled in System B."}
                   </div>
                 )}
             </div>
@@ -916,13 +935,16 @@ export default function RecommendationSidebar({
         <SidebarFooter className="border-t p-3 space-y-2 bg-background/95 backdrop-blur">
           <ChatInputBar
             isListening={isListening}
+            disabled={!aiEnabled}
             onStart={start}
             onStop={stop}
             onSend={(text) => onSendTextChat?.(text)}
           />
 
           <div className="text-[10px] text-muted-foreground/60">
-            Voice and text both influence recommendations.
+            {aiEnabled
+              ? "Voice and text both influence recommendations."
+              : "Voice and text input for recommendations is disabled in System B."}
           </div>
         </SidebarFooter>
       </div>
