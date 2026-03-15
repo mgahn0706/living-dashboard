@@ -384,6 +384,7 @@ function ChatInputBar({
   onSend: (text: string) => void;
 }) {
   const [text, setText] = useState("");
+  const [isComposing, setIsComposing] = useState(false);
   const hasText = text.trim().length > 0;
 
   const submit = () => {
@@ -418,7 +419,15 @@ function ChatInputBar({
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && submit()}
+        onCompositionStart={() => setIsComposing(true)}
+        onCompositionEnd={() => setIsComposing(false)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          if (isComposing || e.nativeEvent.isComposing || e.keyCode === 229) {
+            return;
+          }
+          submit();
+        }}
         placeholder={disabled ? "AI suggestions disabled in System B" : "Type a message…"}
         disabled={disabled}
         className="flex-1 rounded-md border bg-background px-2 py-1.5 text-xs"
