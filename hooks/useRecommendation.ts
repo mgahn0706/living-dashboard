@@ -41,12 +41,14 @@ export function useRecommendation() {
       conversation,
       textChats,
       dataSchema,
+      suppressRecommendations = false,
     }: {
       views: any[];
       focusScore: Record<string, number>;
       conversation: VoiceUtterance[];
       textChats: string[];
       dataSchema?: any;
+      suppressRecommendations?: boolean;
     }) => {
       const now = Date.now();
       if (now - lastCallRef.current < COOLDOWN) {
@@ -118,9 +120,11 @@ export function useRecommendation() {
             : "";
 
         setRecs(
-          recommendations.filter(
-            (r: Recommendation) => !dismissedKeys.has(getRecommendationKey(r))
-          )
+          suppressRecommendations
+            ? []
+            : recommendations.filter(
+                (r: Recommendation) => !dismissedKeys.has(getRecommendationKey(r))
+              )
         );
         if (reply) {
           setLlmReplies((prev) => [

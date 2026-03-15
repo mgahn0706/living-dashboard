@@ -706,6 +706,7 @@ function AppContent() {
   const restoredFromStorageRef = useRef(false);
   const { systemMode, setSystemMode } = useSystemMode();
   const isLivingFeaturesEnabled = systemMode !== "B";
+  const areRecommendationsEnabled = systemMode !== "B";
 
   const { focusScore, restoreFocusScore } = useFocus();
   const {
@@ -775,7 +776,6 @@ function AppContent() {
   const voice = useVoiceInput({
     lang: language,
     onFinal: (text) => {
-      if (!isLivingFeaturesEnabled) return;
       logEvent("voice_input", { length: text.length });
 
       triggerRecommendation({
@@ -784,6 +784,7 @@ function AppContent() {
         focusScore,
         dataSchema: schema,
         conversation: voice.conversation,
+        suppressRecommendations: !areRecommendationsEnabled,
       });
     },
   });
@@ -916,7 +917,7 @@ function AppContent() {
   /* ================= PREVIEW ================= */
 
   const previewMap = useMemo<Record<string, PreviewState>>(() => {
-    if (!isLivingFeaturesEnabled || !hoveredRec) return {};
+    if (!areRecommendationsEnabled || !hoveredRec) return {};
 
     const targetId = getRecommendationTargetViewId(hoveredRec);
     if (!targetId) return {};
@@ -941,9 +942,9 @@ function AppContent() {
   }, [hoveredRec, views]);
 
   const activeRecommendations = useMemo(() => {
-    if (!isLivingFeaturesEnabled) return [];
+    if (!areRecommendationsEnabled) return [];
     return recommendations.filter((r) => !acceptedRecommendationIds.includes(r.id));
-  }, [isLivingFeaturesEnabled, recommendations, acceptedRecommendationIds]);
+  }, [areRecommendationsEnabled, recommendations, acceptedRecommendationIds]);
 
   const modifyRecommendationsByViewId = useMemo(() => {
     const map: Record<string, Recommendation> = {};
@@ -1265,14 +1266,14 @@ function AppContent() {
 
   /* Auto-scroll to first recommendation target when new recommendations arrive */
   useEffect(() => {
-    if (!isLivingFeaturesEnabled || activeRecommendations.length === 0) return;
+    if (!areRecommendationsEnabled || activeRecommendations.length === 0) return;
     const first = activeRecommendations.find((r) => r.targetViewId);
     if (!first?.targetViewId) return;
     const el = document.querySelector(`[data-view-id="${first.targetViewId}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [activeRecommendations, isLivingFeaturesEnabled]);
+  }, [activeRecommendations, areRecommendationsEnabled]);
   const exportDashboardState = useCallback(() => {
     const payload: DashboardStateFile = {
       version: 1,
@@ -1468,7 +1469,7 @@ function AppContent() {
             history={appliedRecommendations}
             activeRecommendations={activeRecommendations}
             llmReplies={llmReplies}
-            aiEnabled={isLivingFeaturesEnabled}
+            recommendationsEnabled={areRecommendationsEnabled}
             viewTitles={viewTitlesMap}
             onUndoLatest={undoLatestRecommendation}
             onAcceptRecommendation={apply}
@@ -1480,7 +1481,6 @@ function AppContent() {
             streamingText={streamingText}
             onChangeLanguage={(lang) => setLanguage(lang)}
             onSendTextChat={(msg) => {
-              if (!isLivingFeaturesEnabled) return;
               logEvent("text_chat", { length: msg.length });
 
               setTextChats((prev) => [...prev, msg]);
@@ -1491,6 +1491,7 @@ function AppContent() {
                 focusScore,
                 dataSchema: schema,
                 conversation: voice.conversation,
+                suppressRecommendations: !areRecommendationsEnabled,
               });
             }}
           />

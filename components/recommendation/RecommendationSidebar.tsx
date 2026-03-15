@@ -475,7 +475,7 @@ export default function RecommendationSidebar({
   history = [],
   activeRecommendations = [],
   llmReplies = [],
-  aiEnabled = true,
+  recommendationsEnabled = true,
   voice,
   language,
   isGenerating = false,
@@ -492,7 +492,7 @@ export default function RecommendationSidebar({
   history?: Recommendation[];
   activeRecommendations?: Recommendation[];
   llmReplies?: LlmReply[];
-  aiEnabled?: boolean;
+  recommendationsEnabled?: boolean;
   voice: UseVoiceInputReturn;
   language: "en-US" | "ko-KR" | "ja-JP";
   isGenerating?: boolean;
@@ -508,7 +508,7 @@ export default function RecommendationSidebar({
 }) {
   const { isListening, partial, conversation, start, stop } = voice;
   const [activeTab, setActiveTab] = useState<"suggestions" | "chat">(
-    "suggestions"
+    recommendationsEnabled ? "suggestions" : "chat"
   );
   const [justAppliedIds, setJustAppliedIds] = useState<Set<string>>(new Set());
   const [showOlderHistory, setShowOlderHistory] = useState(false);
@@ -568,6 +568,12 @@ export default function RecommendationSidebar({
   const appliedCount = history.length;
   const pendingCount = activeRecommendations.length;
 
+  useEffect(() => {
+    if (!recommendationsEnabled && activeTab !== "chat") {
+      setActiveTab("chat");
+    }
+  }, [activeTab, recommendationsEnabled]);
+
   // Combine just-applied recs (for success animation) with active recs
   const justAppliedRecs = useMemo(
     () => history.filter((r) => justAppliedIds.has(r.id)),
@@ -588,9 +594,13 @@ export default function RecommendationSidebar({
               <div className="flex items-center gap-2">
                 <IconSparkles className="size-5 text-primary" />
                 <div>
-                  <div className="text-sm font-semibold">AI Suggestions</div>
+                  <div className="text-sm font-semibold">
+                    {recommendationsEnabled ? "AI Suggestions" : "AI Chat"}
+                  </div>
                   <div className="text-[10px] text-muted-foreground">
-                    {appliedCount} applied · {pendingCount} pending
+                    {recommendationsEnabled
+                      ? `${appliedCount} applied · ${pendingCount} pending`
+                      : "Chat available · recommendations hidden"}
                   </div>
                 </div>
               </div>
@@ -611,21 +621,24 @@ export default function RecommendationSidebar({
 
         {/* Tab navigation */}
         <div className="flex mt-2">
-          <button
-            onClick={() => setActiveTab("suggestions")}
-            className={cn(
-              "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
-              activeTab === "suggestions"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Suggestions ({pendingCount})
-          </button>
+          {recommendationsEnabled && (
+            <button
+              onClick={() => setActiveTab("suggestions")}
+              className={cn(
+                "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
+                activeTab === "suggestions"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Suggestions ({pendingCount})
+            </button>
+          )}
           <button
             onClick={() => setActiveTab("chat")}
             className={cn(
-              "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
+              "py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
+              recommendationsEnabled ? "flex-1" : "w-full",
               activeTab === "chat"
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -682,14 +695,8 @@ export default function RecommendationSidebar({
                 </div>
               )}
 
-              {!aiEnabled && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                  System B disables living features. Focus-based adaptation and AI recommendations are turned off.
-                </div>
-              )}
-
               {/* ===== Apply All Banner ===== */}
-              {aiEnabled && activeRecommendations.length > 1 && (
+              {recommendationsEnabled && activeRecommendations.length > 1 && (
                 <button
                   onClick={handleApplyAll}
                   className="w-full flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs transition hover:bg-primary/10"
@@ -732,7 +739,7 @@ export default function RecommendationSidebar({
               </AnimatePresence>
 
               {/* ===== Active (Pending) Recommendations ===== */}
-              {aiEnabled && activeRecommendations.length > 0 && (
+              {recommendationsEnabled && activeRecommendations.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <AnimatePresence>
                     {activeRecommendations.map((r, idx) => {
@@ -905,9 +912,9 @@ export default function RecommendationSidebar({
                 justAppliedRecs.length === 0 &&
                 !isGenerating && (
                   <div className="text-xs text-muted-foreground">
-                    {aiEnabled
+                    {recommendationsEnabled
                       ? "No recommendations yet."
-                      : "Recommendations are disabled in System B."}
+                      : "Recommendations are hidden in System B."}
                   </div>
                 )}
             </div>
@@ -935,16 +942,15 @@ export default function RecommendationSidebar({
         <SidebarFooter className="border-t p-3 space-y-2 bg-background/95 backdrop-blur">
           <ChatInputBar
             isListening={isListening}
-            disabled={!aiEnabled}
             onStart={start}
             onStop={stop}
             onSend={(text) => onSendTextChat?.(text)}
           />
 
           <div className="text-[10px] text-muted-foreground/60">
-            {aiEnabled
+            {recommendationsEnabled
               ? "Voice and text both influence recommendations."
-              : "Voice and text input for recommendations is disabled in System B."}
+              : "System B uses the LLM as a chat assistant only."}
           </div>
         </SidebarFooter>
       </div>
