@@ -604,12 +604,12 @@ export default function RecommendationSidebar({
                 <IconSparkles className="size-5 text-primary" />
                 <div>
                   <div className="text-sm font-semibold">
-                    {recommendationsEnabled ? "AI Suggestions" : "AI Chat"}
+                    {recommendationsEnabled ? "AI Suggestions" : "AI Assistant"}
                   </div>
                   <div className="text-[10px] text-muted-foreground">
                     {recommendationsEnabled
                       ? `${appliedCount} applied · ${pendingCount} pending`
-                      : "Chat available · recommendations hidden"}
+                      : "Chat available"}
                   </div>
                 </div>
               </div>
@@ -923,7 +923,7 @@ export default function RecommendationSidebar({
                   <div className="text-xs text-muted-foreground">
                     {recommendationsEnabled
                       ? "No recommendations yet."
-                      : "Recommendations are hidden in System B."}
+                      : "No chat history yet."}
                   </div>
                 )}
             </div>
