@@ -34,7 +34,29 @@ export function useExperimentLogger() {
   const STORAGE_KEY = "ld_user_study_session";
 
   const [session, setSession] = useState<ExperimentSession | null>(null);
+  const sessionRef = useRef<ExperimentSession | null>(null);
   const startTimeRef = useRef<number | null>(null);
+
+  const createSession = useCallback(
+    (
+      participantId = "anonymous",
+      systemType: SystemType = "LD",
+      scenarioId = "default"
+    ) => {
+      const now = Date.now();
+
+      return {
+        meta: {
+          participantId,
+          systemType,
+          scenarioId,
+          sessionStartTime: now,
+        },
+        logs: [],
+      } satisfies ExperimentSession;
+    },
+    []
+  );
 
   /* =========================================================
      Restore from localStorage (on mount)
@@ -47,6 +69,7 @@ export function useExperimentLogger() {
     try {
       const parsed: ExperimentSession = JSON.parse(stored);
       setSession(parsed);
+      sessionRef.current = parsed;
       startTimeRef.current = parsed.meta.sessionStartTime;
     } catch {
       console.warn("Failed to restore experiment session.");
@@ -61,29 +84,36 @@ export function useExperimentLogger() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, []);
 
+  const setActiveSession = useCallback(
+    (nextSession: ExperimentSession) => {
+      sessionRef.current = nextSession;
+      startTimeRef.current = nextSession.meta.sessionStartTime;
+      setSession(nextSession);
+      persist(nextSession);
+    },
+    [persist]
+  );
+
+  const ensureSession = useCallback(() => {
+    if (sessionRef.current && startTimeRef.current) {
+      return sessionRef.current;
+    }
+
+    const nextSession = createSession();
+    setActiveSession(nextSession);
+    return nextSession;
+  }, [createSession, setActiveSession]);
+
   /* =========================================================
      Start Session
   ========================================================= */
 
   const startSession = useCallback(
     (participantId: string, systemType: SystemType, scenarioId: string) => {
-      const now = Date.now();
-
-      const newSession: ExperimentSession = {
-        meta: {
-          participantId,
-          systemType,
-          scenarioId,
-          sessionStartTime: now,
-        },
-        logs: [],
-      };
-
-      startTimeRef.current = now;
-      setSession(newSession);
-      persist(newSession);
+      const newSession = createSession(participantId, systemType, scenarioId);
+      setActiveSession(newSession);
     },
-    [persist]
+    [createSession, setActiveSession]
   );
 
   /* =========================================================
@@ -92,12 +122,11 @@ export function useExperimentLogger() {
 
   const logEvent = useCallback(
     (eventType: string, payload: Record<string, unknown> = {}) => {
-      if (!session || !startTimeRef.current) return;
+      const activeSession = ensureSession();
+      const sessionStart = startTimeRef.current ?? activeSession.meta.sessionStartTime;
 
       const now = Date.now();
-      const timeElapsedSeconds = Math.floor(
-        (now - startTimeRef.current) / 1000
-      );
+      const timeElapsedSeconds = Math.floor((now - sessionStart) / 1000);
 
       const newLog: LogEntry = {
         timestamp: now,
@@ -107,14 +136,15 @@ export function useExperimentLogger() {
       };
 
       const updated: ExperimentSession = {
-        ...session,
-        logs: [...session.logs, newLog],
+        ...activeSession,
+        logs: [...activeSession.logs, newLog],
       };
 
+      sessionRef.current = updated;
       setSession(updated);
       persist(updated);
     },
-    [session, persist]
+    [ensureSession, persist]
   );
 
   /* =========================================================
@@ -122,19 +152,21 @@ export function useExperimentLogger() {
   ========================================================= */
 
   const endSession = useCallback(() => {
-    if (!session) return;
+    const activeSession = sessionRef.current;
+    if (!activeSession) return;
 
     const updated: ExperimentSession = {
-      ...session,
+      ...activeSession,
       meta: {
-        ...session.meta,
+        ...activeSession.meta,
         sessionEndTime: Date.now(),
       },
     };
 
+    sessionRef.current = updated;
     setSession(updated);
     persist(updated);
-  }, [session, persist]);
+  }, [persist]);
 
   /* =========================================================
      Download JSON
@@ -165,12 +197,14 @@ export function useExperimentLogger() {
 
   const clearSession = useCallback(() => {
     setSession(null);
+    sessionRef.current = null;
     startTimeRef.current = null;
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
   const restoreSession = useCallback((nextSession: ExperimentSession | null) => {
     setSession(nextSession);
+    sessionRef.current = nextSession;
     startTimeRef.current = nextSession?.meta.sessionStartTime ?? null;
 
     if (nextSession) {
