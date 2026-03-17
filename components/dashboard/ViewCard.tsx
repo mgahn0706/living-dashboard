@@ -115,6 +115,7 @@ export default React.memo(function ViewCard({
   onCardClick,
   onEditClick,
   onApplyFilter,
+  onDrillDown,
 }: {
   view: View;
   focusIntensity: number;
@@ -132,6 +133,7 @@ export default React.memo(function ViewCard({
   onCardClick?: () => void;
   onEditClick?: () => void;
   onApplyFilter?: (viewId: string, filter: ViewFilter | undefined) => void;
+  onDrillDown?: (viewId: string, category: string | null) => void;
 }) {
   const isEditing = isSelected;
   const normalizedFocus = Number.isFinite(focusIntensity)
@@ -530,7 +532,12 @@ export default React.memo(function ViewCard({
               className="relative size-full transition-opacity duration-300 ease-out"
               style={{ opacity: contentOpacity }}
             >
-              <ChartRenderer view={view} filter={view.filter} height="100%" />
+              <ChartRenderer
+                view={view}
+                filter={view.filter}
+                height="100%"
+                onDrillDown={onDrillDown}
+              />
             </div>
           </CardContent>
 
@@ -538,13 +545,21 @@ export default React.memo(function ViewCard({
 
         {/* Preview overlays */}
         {preview?.type === "MODIFY" && (
-          <ModifyOverlay view={preview.view} heightPx={heightPx} />
+          <ModifyOverlay
+            view={preview.view}
+            heightPx={heightPx}
+            onDrillDown={onDrillDown}
+          />
         )}
 
         {preview?.type === "REMOVE" && <RemoveOverlay />}
 
         {preview?.type === "ADD" && (
-          <AddOverlay view={preview.view} heightPx={heightPx} />
+          <AddOverlay
+            view={preview.view}
+            heightPx={heightPx}
+            onDrillDown={onDrillDown}
+          />
         )}
       </Card>
     </>
@@ -622,7 +637,15 @@ function RecommendationBanner({
    MODIFY overlay
 ======================================================= */
 
-function ModifyOverlay({ view, heightPx }: { view: View; heightPx: number }) {
+function ModifyOverlay({
+  view,
+  heightPx,
+  onDrillDown,
+}: {
+  view: View;
+  heightPx: number;
+  onDrillDown?: (viewId: string, category: string | null) => void;
+}) {
   return (
     <div className="absolute inset-0 z-10 pointer-events-none">
       <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
@@ -641,7 +664,12 @@ function ModifyOverlay({ view, heightPx }: { view: View; heightPx: number }) {
           className="flex p-0 overflow-hidden"
           style={{ height: `${heightPx}px` }}
         >
-          <ChartRenderer view={view} filter={view.filter} height="100%" />
+          <ChartRenderer
+            view={view}
+            filter={view.filter}
+            height="100%"
+            onDrillDown={onDrillDown}
+          />
         </CardContent>
       </div>
     </div>
@@ -666,7 +694,15 @@ function RemoveOverlay() {
    ADD overlay
 ======================================================= */
 
-function AddOverlay({ view, heightPx }: { view: View; heightPx: number }) {
+function AddOverlay({
+  view,
+  heightPx,
+  onDrillDown,
+}: {
+  view: View;
+  heightPx: number;
+  onDrillDown?: (viewId: string, category: string | null) => void;
+}) {
   return (
     <div className="absolute inset-0 z-10 pointer-events-none">
       <div className="absolute inset-0 bg-background/70 backdrop-blur-sm" />
@@ -685,7 +721,12 @@ function AddOverlay({ view, heightPx }: { view: View; heightPx: number }) {
           className="flex p-0 overflow-hidden"
           style={{ height: `${heightPx}px` }}
         >
-          <ChartRenderer view={view} filter={view.filter} height="100%" />
+          <ChartRenderer
+            view={view}
+            filter={view.filter}
+            height="100%"
+            onDrillDown={onDrillDown}
+          />
         </CardContent>
       </div>
     </div>

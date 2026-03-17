@@ -38,15 +38,16 @@ import { getRecColor } from "@/components/recommendation/RecommendationSidebar";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 import { SelectionProvider } from "@/context/SelectionContext";
 import { TimeFilterProvider } from "@/context/TimeFilterContext";
+import { useTimeFilter } from "@/context/TimeFilterContext";
 import {
   CategoryFilterProvider,
   useCategoryFilter,
 } from "@/context/CategoryFilterContext";
 import { useSystemMode } from "@/context/SystemModeContext";
 
-import { useExperimentLogger } from "@/hooks/useExperimentLogger";
 import type { ExperimentSession } from "@/hooks/useExperimentLogger";
 import type { VoiceUtterance } from "@/hooks/useVoiceInput";
+import { useLogging } from "@/hooks/useLogging";
 
 const AUTO_SAVE_INTERVAL_MS = 60_000;
 const AUTO_SAVE_STORAGE_KEY = "ld_dashboard_autosave_session";
@@ -717,7 +718,16 @@ function AppContent() {
     loadDemoDataset,
     restoreDataset,
   } = useDataset();
-  const { addFilter: addCategoryFilter } = useCategoryFilter();
+  const { timeFilter, selectedColumn, setSelectedColumn, setTimeFilter } =
+    useTimeFilter();
+  const {
+    addFilter: addCategoryFilter,
+    categoryFilters,
+    removeFilter: removeCategoryFilter,
+    selectAll: selectAllCategoryFilter,
+    deselectAll: deselectAllCategoryFilter,
+    toggleValue: toggleCategoryFilterValue,
+  } = useCategoryFilter();
 
   const {
     recommendations,
@@ -733,9 +743,9 @@ function AppContent() {
 
   const {
     session: experimentSession,
-    logEvent,
+    logUserEvent,
     restoreSession,
-  } = useExperimentLogger();
+  } = useLogging();
 
   /* ================= Recommendation SHOWN ================= */
 
@@ -750,11 +760,15 @@ function AppContent() {
 
       recommendations.forEach((r) => {
         if (!next.has(r.id)) {
-          logEvent("recommendation", {
-            recommendationId: r.id,
-            type: r.type,
-            action: "shown",
-          });
+          logUserEvent(
+            "recommendation_shown",
+            {
+              recommendationId: r.id,
+              recommendationType: r.type,
+            },
+            views,
+            focusScore
+          );
           next.add(r.id);
           changed = true;
         }
@@ -762,7 +776,7 @@ function AppContent() {
 
       return changed ? next : prev;
     });
-  }, [isLivingFeaturesEnabled, recommendations, logEvent]);
+  }, [focusScore, isLivingFeaturesEnabled, logUserEvent, recommendations, views]);
 
   useEffect(() => {
     if (isLivingFeaturesEnabled) return;
@@ -776,7 +790,16 @@ function AppContent() {
   const voice = useVoiceInput({
     lang: language,
     onFinal: (text) => {
-      logEvent("voice_input", { length: text.length });
+      logUserEvent(
+        "llm_request",
+        {
+          requestSource: "voice",
+          message: text,
+          messageLength: text.length,
+        },
+        views,
+        focusScore
+      );
 
       triggerRecommendation({
         views,
@@ -914,6 +937,24 @@ function AppContent() {
     }
   }, [restoreDashboardState, restoreDataset]);
 
+  const loggedReplyTimestampsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    llmReplies.forEach((reply) => {
+      if (loggedReplyTimestampsRef.current.has(reply.timestamp)) return;
+      loggedReplyTimestampsRef.current.add(reply.timestamp);
+      logUserEvent(
+        "llm_response",
+        {
+          message: reply.text,
+          messageLength: reply.text.length,
+        },
+        views,
+        focusScore
+      );
+    });
+  }, [focusScore, llmReplies, logUserEvent, views]);
+
   /* ================= PREVIEW ================= */
 
   const previewMap = useMemo<Record<string, PreviewState>>(() => {
@@ -993,12 +1034,6 @@ function AppContent() {
   /* ================= APPLY ================= */
 
   const apply = (r: Recommendation) => {
-    logEvent("recommendation", {
-      recommendationId: r.id,
-      type: r.type,
-      action: "accepted",
-    });
-
     setHoveredRec(null);
     setAcceptedRecommendationIds((prev) => [...prev, r.id]);
 
@@ -1022,13 +1057,15 @@ function AppContent() {
       });
       const payload = r.payload as AnyPayload;
 
+      let nextViews = prev;
+
       switch (r.type) {
         case "MODIFY_CONTENT":
         case "MODIFY_FILTER":
         case "RESIZE": {
           const targetId = getRecommendationTargetViewId(r);
           if (!targetId) return prev;
-          return prev.map((v) => {
+          nextViews = prev.map((v) => {
             if (v.id !== targetId) return v;
 
             const nextType: ChartType = payload?.chartType ?? v.chartType;
@@ -1042,6 +1079,7 @@ function AppContent() {
               ),
             };
           });
+          break;
         }
 
         case "REORDER": {
@@ -1051,13 +1089,14 @@ function AppContent() {
           const nextPriority: number | undefined = payload?.priority;
           if (typeof nextPriority !== "number") return prev;
 
-          return [...prev]
+          nextViews = [...prev]
             .map((v, i) =>
               v.id === id
                 ? { ...v, priority: nextPriority ?? v.priority ?? i }
                 : v
             )
             .sort((a, b) => a.priority - b.priority);
+          break;
         }
 
         case "NEW_CONTENT": {
@@ -1072,18 +1111,33 @@ function AppContent() {
               Array.isArray(rawData) ? rawData : []
             ),
           } as View;
-          return [...prev, next];
+          nextViews = [...prev, next];
+          break;
         }
 
         case "REMOVE_CONTENT": {
           const id: string | undefined = getRecommendationTargetViewId(r);
           if (!id) return prev;
-          return prev.filter((v) => v.id !== id);
+          nextViews = prev.filter((v) => v.id !== id);
+          break;
         }
 
         default:
           return prev;
       }
+
+      logUserEvent(
+        "recommendation_accepted",
+        {
+          recommendationId: r.id,
+          recommendationType: r.type,
+        },
+        prev,
+        focusScore,
+        { viewsOverride: nextViews }
+      );
+
+      return nextViews;
     });
 
     // Track color for "Applied" badge on the chart card (auto-fades after 10s)
@@ -1121,11 +1175,15 @@ function AppContent() {
   };
 
   const decline = (r: Recommendation) => {
-    logEvent("recommendation", {
-      recommendationId: r.id,
-      type: r.type,
-      action: "declined",
-    });
+    logUserEvent(
+      "recommendation_declined",
+      {
+        recommendationId: r.id,
+        recommendationType: r.type,
+      },
+      views,
+      focusScore
+    );
 
     setHoveredRec(null);
     acceptRecommendation(r);
@@ -1355,6 +1413,183 @@ function AppContent() {
     }
   }, [restoreDashboardState, restoreDataset]);
 
+  const handleViewFilterChange = useCallback(
+    (viewId: string, filter: View["filter"] | undefined) => {
+      setViews((prev) => {
+        const nextViews = prev.map((v) =>
+          v.id === viewId
+            ? {
+                ...v,
+                filter: sanitizeFilterForView(
+                  filter,
+                  v,
+                  Array.isArray(rawData) ? rawData : []
+                ),
+              }
+            : v
+        );
+
+        logUserEvent(
+          "data_filter",
+          {
+            filterScope: "view",
+            viewId,
+            triggeredBy: "manual_filter",
+          },
+          prev,
+          focusScore,
+          { viewsOverride: nextViews }
+        );
+
+        return nextViews;
+      });
+    },
+    [focusScore, logUserEvent, rawData]
+  );
+
+  const handleCategoryFilterAdd = useCallback(
+    (column: string, values: string[]) => {
+      addCategoryFilter(column, values);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "category",
+          action: "add",
+          column,
+          selectedValues: values,
+        },
+        views,
+        focusScore
+      );
+    },
+    [addCategoryFilter, focusScore, logUserEvent, views]
+  );
+
+  const handleCategoryFilterToggle = useCallback(
+    (column: string, value: string) => {
+      const active = categoryFilters.find((filter) => filter.column === column);
+      const isSelected = active?.selectedValues.has(value) ?? false;
+      toggleCategoryFilterValue(column, value);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "category",
+          action: isSelected ? "remove_value" : "add_value",
+          column,
+          value,
+        },
+        views,
+        focusScore
+      );
+    },
+    [categoryFilters, focusScore, logUserEvent, toggleCategoryFilterValue, views]
+  );
+
+  const handleCategoryFilterSelectAll = useCallback(
+    (column: string, values: string[]) => {
+      selectAllCategoryFilter(column, values);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "category",
+          action: "select_all",
+          column,
+          selectedValues: values,
+        },
+        views,
+        focusScore
+      );
+    },
+    [focusScore, logUserEvent, selectAllCategoryFilter, views]
+  );
+
+  const handleCategoryFilterDeselectAll = useCallback(
+    (column: string) => {
+      deselectAllCategoryFilter(column);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "category",
+          action: "deselect_all",
+          column,
+        },
+        views,
+        focusScore
+      );
+    },
+    [deselectAllCategoryFilter, focusScore, logUserEvent, views]
+  );
+
+  const handleCategoryFilterRemove = useCallback(
+    (column: string) => {
+      removeCategoryFilter(column);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "category",
+          action: "remove_filter",
+          column,
+        },
+        views,
+        focusScore
+      );
+    },
+    [focusScore, logUserEvent, removeCategoryFilter, views]
+  );
+
+  const handleTimeColumnChange = useCallback(
+    (column: string | null) => {
+      setSelectedColumn(column);
+      setTimeFilter(null);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "time",
+          action: "select_column",
+          column,
+        },
+        views,
+        focusScore
+      );
+    },
+    [focusScore, logUserEvent, setSelectedColumn, setTimeFilter, views]
+  );
+
+  const handleTimeFilterChange = useCallback(
+    (filter: { column: string; min: number; max: number } | null) => {
+      setTimeFilter(filter);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "time",
+          action: filter ? "update_range" : "clear_range",
+          column: filter?.column ?? selectedColumn,
+          min: filter?.min ?? null,
+          max: filter?.max ?? null,
+        },
+        views,
+        focusScore
+      );
+    },
+    [focusScore, logUserEvent, selectedColumn, setTimeFilter, views]
+  );
+
+  const handleDrillDown = useCallback(
+    (viewId: string, category: string | null) => {
+      logUserEvent(
+        "drill_down",
+        {
+          viewId,
+          category,
+          action: category ? "enter" : "exit",
+        },
+        views,
+        focusScore
+      );
+    },
+    [focusScore, logUserEvent, views]
+  );
+
   return (
     <>
       <SidebarInset className="bg-muted/10">
@@ -1388,7 +1623,7 @@ function AppContent() {
               }
               isInitializingDashboard={isInitializing}
               onSelect={(viewId) => {
-                logEvent("view_select", { viewId });
+                logUserEvent("view_select", { viewId }, views, focusScore);
 
                 if (selectedViewId === viewId) {
                   setSelectedViewId(null);
@@ -1398,26 +1633,17 @@ function AppContent() {
                   setSidebarMode("STRUCTURE");
                 }
               }}
-              onApplyFilter={(viewId, filter) => {
-                logEvent("view_modify", {
-                  viewId,
-                  triggeredBy: "manual_filter",
-                });
-                setViews((prev) =>
-                  prev.map((v) =>
-                    v.id === viewId
-                      ? {
-                          ...v,
-                          filter: sanitizeFilterForView(
-                            filter,
-                            v,
-                            Array.isArray(rawData) ? rawData : []
-                          ),
-                        }
-                      : v
-                  )
-                );
-              }}
+              onApplyFilter={handleViewFilterChange}
+              onAddCategoryFilter={handleCategoryFilterAdd}
+              onToggleCategoryFilter={handleCategoryFilterToggle}
+              onSelectAllCategoryFilter={handleCategoryFilterSelectAll}
+              onDeselectAllCategoryFilter={handleCategoryFilterDeselectAll}
+              onRemoveCategoryFilter={handleCategoryFilterRemove}
+              timeFilter={timeFilter}
+              selectedTimeColumn={selectedColumn}
+              onTimeColumnChange={handleTimeColumnChange}
+              onTimeFilterChange={handleTimeFilterChange}
+              onDrillDown={handleDrillDown}
             />
           </div>
         </div>
@@ -1430,7 +1656,12 @@ function AppContent() {
             value={sidebarMode}
             onValueChange={(v) => {
               if (v) {
-                logEvent("sidebar_mode_change", { mode: v });
+                logUserEvent(
+                  "sidebar_mode_change",
+                  { mode: v },
+                  views,
+                  focusScore
+                );
                 setSidebarMode(v as "FORMAT" | "STRUCTURE");
               }
             }}
@@ -1481,7 +1712,16 @@ function AppContent() {
             streamingText={streamingText}
             onChangeLanguage={(lang) => setLanguage(lang)}
             onSendTextChat={(msg) => {
-              logEvent("text_chat", { length: msg.length });
+              logUserEvent(
+                "llm_request",
+                {
+                  requestSource: "text",
+                  message: msg,
+                  messageLength: msg.length,
+                },
+                views,
+                focusScore
+              );
 
               setTextChats((prev) => [...prev, msg]);
 
@@ -1501,33 +1741,58 @@ function AppContent() {
           <ChartCreatorSidebar
             selectedView={views.find((v) => v.id === selectedViewId) || null}
             onEditView={(id: string, next: View) => {
-              logEvent("view_modify", {
-                viewId: id,
-                triggeredBy: "manual",
-              });
-
               setSelectedViewId(null);
               setSidebarMode("FORMAT");
 
-              setViews((prev) => prev.map((v) => (v.id === id ? next : v)));
+              setViews((prev) => {
+                const nextViews = prev.map((v) => (v.id === id ? next : v));
+                logUserEvent(
+                  "view_modify",
+                  {
+                    viewId: id,
+                    triggeredBy: "manual",
+                  },
+                  prev,
+                  focusScore,
+                  { viewsOverride: nextViews }
+                );
+                return nextViews;
+              });
             }}
             onAddView={(payload) => {
-              logEvent("view_create", {
-                triggeredBy: "manual",
-                chartType: payload.chartType,
-              });
-
               setSelectedViewId(null);
               setSidebarMode("FORMAT");
 
-              setViews((prev) => [
-                ...prev,
-                buildNewViewFromPayload(payload, prev.length + 1),
-              ]);
+              setViews((prev) => {
+                const nextViews = [
+                  ...prev,
+                  buildNewViewFromPayload(payload, prev.length + 1),
+                ];
+                logUserEvent(
+                  "view_create",
+                  {
+                    triggeredBy: "manual",
+                    chartType: payload.chartType,
+                  },
+                  prev,
+                  focusScore,
+                  { viewsOverride: nextViews }
+                );
+                return nextViews;
+              });
             }}
             onDeleteView={(viewId) => {
-              logEvent("view_delete", { viewId });
-              setViews((prev) => prev.filter((v) => v.id !== viewId));
+              setViews((prev) => {
+                const nextViews = prev.filter((v) => v.id !== viewId);
+                logUserEvent(
+                  "view_delete",
+                  { viewId },
+                  prev,
+                  focusScore,
+                  { viewsOverride: nextViews }
+                );
+                return nextViews;
+              });
             }}
           />
         )}
