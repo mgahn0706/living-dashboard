@@ -7,6 +7,7 @@ import type { DecayMode } from "@/types/dashboard";
 import { INITIAL_FOCUS_SCORE, useFocus } from "@/context/FocusContext";
 import { useDataset } from "@/context/DatasetContext";
 import { useCategoryFilter } from "@/context/CategoryFilterContext";
+import type { TimeFilter } from "@/context/TimeFilterContext";
 import ViewCard, { PreviewState } from "./ViewCard";
 import { Button } from "../ui/button";
 import { ArrowRight, Plus, X } from "lucide-react";
@@ -47,6 +48,16 @@ export default function DashboardView({
   setSidebarMode,
   onSelect,
   onApplyFilter,
+  onAddCategoryFilter,
+  onToggleCategoryFilter,
+  onSelectAllCategoryFilter,
+  onDeselectAllCategoryFilter,
+  onRemoveCategoryFilter,
+  timeFilter,
+  selectedTimeColumn,
+  onTimeColumnChange,
+  onTimeFilterChange,
+  onDrillDown,
 }: {
   views: View[];
   previewMap?: Record<string, PreviewState>;
@@ -67,6 +78,16 @@ export default function DashboardView({
   setSidebarMode: (mode: "FORMAT" | "STRUCTURE") => void;
   onSelect: (viewId: string) => void;
   onApplyFilter?: (viewId: string, filter: View["filter"] | undefined) => void;
+  onAddCategoryFilter?: (column: string, values: string[]) => void;
+  onToggleCategoryFilter?: (column: string, value: string) => void;
+  onSelectAllCategoryFilter?: (column: string, values: string[]) => void;
+  onDeselectAllCategoryFilter?: (column: string) => void;
+  onRemoveCategoryFilter?: (column: string) => void;
+  timeFilter?: TimeFilter | null;
+  selectedTimeColumn?: string | null;
+  onTimeColumnChange?: (column: string | null) => void;
+  onTimeFilterChange?: (filter: TimeFilter | null) => void;
+  onDrillDown?: (viewId: string, category: string | null) => void;
 }) {
   const { focusScore, reportPointerInteraction, reportClickInteraction, registerViewIds } =
     useFocus();
@@ -173,8 +194,19 @@ export default function DashboardView({
 
   return (
     <>
-    <TimeSlider />
-    <CategoryFilterBar />
+    <TimeSlider
+      timeFilter={timeFilter}
+      selectedColumn={selectedTimeColumn}
+      onSelectedColumnChange={onTimeColumnChange}
+      onTimeFilterChange={onTimeFilterChange}
+    />
+    <CategoryFilterBar
+      onAddFilter={onAddCategoryFilter}
+      onToggleValue={onToggleCategoryFilter}
+      onSelectAll={onSelectAllCategoryFilter}
+      onDeselectAll={onDeselectAllCategoryFilter}
+      onRemoveFilter={onRemoveCategoryFilter}
+    />
     <div className="flex flex-wrap gap-4 items-start">
       {sortedViews.map((view) => (
         <ViewCard
@@ -206,6 +238,7 @@ export default function DashboardView({
           }}
           onEditClick={() => onSelect(view.id)}
           onApplyFilter={onApplyFilter}
+          onDrillDown={onDrillDown}
         />
       ))}
 
@@ -236,7 +269,19 @@ export default function DashboardView({
    Category Filter Bar
 ======================================================= */
 
-function CategoryFilterBar() {
+function CategoryFilterBar({
+  onAddFilter,
+  onToggleValue,
+  onSelectAll,
+  onDeselectAll,
+  onRemoveFilter,
+}: {
+  onAddFilter?: (column: string, values: string[]) => void;
+  onToggleValue?: (column: string, value: string) => void;
+  onSelectAll?: (column: string, values: string[]) => void;
+  onDeselectAll?: (column: string) => void;
+  onRemoveFilter?: (column: string) => void;
+}) {
   const { attributeKeys, attributeTypes, resolveAttribute, rawData } = useDataset();
   const { categoryFilters, addFilter, removeFilter, toggleValue, selectAll, deselectAll } = useCategoryFilter();
   const [addOpen, setAddOpen] = React.useState(false);
@@ -261,10 +306,18 @@ function CategoryFilterBar() {
           key={cf.column}
           column={cf.column}
           selectedValues={cf.selectedValues}
-          onToggle={(val) => toggleValue(cf.column, val)}
-          onSelectAll={(vals) => selectAll(cf.column, vals)}
-          onDeselectAll={() => deselectAll(cf.column)}
-          onRemove={() => removeFilter(cf.column)}
+          onToggle={(val) =>
+            onToggleValue ? onToggleValue(cf.column, val) : toggleValue(cf.column, val)
+          }
+          onSelectAll={(vals) =>
+            onSelectAll ? onSelectAll(cf.column, vals) : selectAll(cf.column, vals)
+          }
+          onDeselectAll={() =>
+            onDeselectAll ? onDeselectAll(cf.column) : deselectAll(cf.column)
+          }
+          onRemove={() =>
+            onRemoveFilter ? onRemoveFilter(cf.column) : removeFilter(cf.column)
+          }
         />
       ))}
 
@@ -293,7 +346,11 @@ function CategoryFilterBar() {
                           .map((v: any) => String(v))
                       )
                     ).sort();
-                    addFilter(col, unique);
+                    if (onAddFilter) {
+                      onAddFilter(col, unique);
+                    } else {
+                      addFilter(col, unique);
+                    }
                     setAddOpen(false);
                   }}
                 >

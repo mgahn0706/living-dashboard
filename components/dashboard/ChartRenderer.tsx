@@ -807,10 +807,12 @@ export default React.memo(function ChartRenderer({
   view,
   height = "100%",
   filter,
+  onDrillDown,
 }: {
   view: View;
   height?: number | "100%";
   filter?: ChartRendererFilter;
+  onDrillDown?: (viewId: string, category: string | null) => void;
 }) {
   const { attributeTypes } = useDataset();
   const rawData = useTimeFilteredData();
@@ -970,7 +972,12 @@ export default React.memo(function ChartRenderer({
   /* ---- HORIZONTAL_BAR with drill-down ---- */
   if (view.chartType === "HORIZONTAL_BAR" && (view as ChartView).groupByColumn) {
     return (
-      <HorizontalBarDrillDown view={view as ChartView} height={height} filter={filter} />
+      <HorizontalBarDrillDown
+        view={view as ChartView}
+        height={height}
+        filter={filter}
+        onDrillDown={onDrillDown}
+      />
     );
   }
 
@@ -1808,10 +1815,12 @@ function HorizontalBarDrillDown({
   view,
   height,
   filter,
+  onDrillDown,
 }: {
   view: ChartView;
   height: number | "100%";
   filter?: ChartRendererFilter;
+  onDrillDown?: (viewId: string, category: string | null) => void;
 }) {
   const rawData = useTimeFilteredData();
   const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
@@ -1946,7 +1955,11 @@ function HorizontalBarDrillDown({
       {drillCategory && (
         <button
           className="self-start text-xs text-primary hover:underline px-1 py-0.5 flex items-center gap-1 shrink-0"
-          onClick={(e) => { e.stopPropagation(); setDrillCategory(null); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setDrillCategory(null);
+            onDrillDown?.(view.id, null);
+          }}
         >
           <span>&#8592;</span> Back to categories
         </button>
@@ -1976,6 +1989,7 @@ function HorizontalBarDrillDown({
                 if (!drillCategory) {
                   // Drill into category
                   setDrillCategory(String(clickedX));
+                  onDrillDown?.(view.id, String(clickedX));
                 } else {
                   // Normal cross-filter selection within drill level
                   const e = event?.nativeEvent ?? event;
