@@ -89,17 +89,25 @@ export default function DashboardView({
   onTimeFilterChange?: (filter: TimeFilter | null) => void;
   onDrillDown?: (viewId: string, category: string | null) => void;
 }) {
-  const { focusScore, reportPointerInteraction, reportClickInteraction, registerViewIds } =
-    useFocus();
+  const {
+    focusScore,
+    reportPointerInteraction,
+    reportClickInteraction,
+    registerViewIds,
+  } = useFocus();
+  const viewIds = useMemo(() => views.map((view) => view.id), [views]);
 
   // Register all view IDs so they start decaying immediately, not only on hover.
   useEffect(() => {
-    if (views.length > 0) {
-      registerViewIds(views.map((v) => v.id));
+    if (viewIds.length > 0) {
+      registerViewIds(viewIds);
     }
-  }, [views, registerViewIds]);
+  }, [viewIds, registerViewIds]);
 
-  const sortedViews = [...views].sort((a, b) => b.priority - a.priority);
+  const sortedViews = useMemo(
+    () => [...views].sort((a, b) => b.priority - a.priority),
+    [views]
+  );
   const focusIntensityByViewId = useMemo(() => {
     const map: Record<string, number> = {};
 
@@ -227,16 +235,9 @@ export default function DashboardView({
           }
           onAcceptRecommendation={onAcceptRecommendation}
           onDeclineRecommendation={onDeclineRecommendation}
-          onPointerMove={(e) =>
-            reportPointerInteraction(view.id, {
-              clientX: e.clientX,
-              clientY: e.clientY,
-            })
-          }
-          onCardClick={() => {
-            reportClickInteraction(view.id);
-          }}
-          onEditClick={() => onSelect(view.id)}
+          onPointerInteraction={reportPointerInteraction}
+          onCardClick={reportClickInteraction}
+          onEditClick={onSelect}
           onApplyFilter={onApplyFilter}
           onDrillDown={onDrillDown}
         />

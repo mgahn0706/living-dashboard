@@ -1,6 +1,13 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as XLSX from "xlsx";
 
 /* =====================================================
@@ -205,6 +212,7 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
     Record<string, PrimitiveType>
   >({});
   const [schema, setSchema] = useState<SchemaNode | null>(null);
+  const attributeValueCacheRef = useRef<Map<string, any[]>>(new Map());
 
   const ingestData = useCallback((data: any) => {
     if (typeof data !== "object" || data === null) {
@@ -224,6 +232,7 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
     setAttributeKeys(flatKeys);
     setAttributeTypes(typeMap);
     setSchema(hierarchicalSchema);
+    attributeValueCacheRef.current = new Map();
   }, []);
 
   const uploadDataset = useCallback(async (file: File) => {
@@ -252,24 +261,41 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
   }, [ingestData]);
 
   const resolveAttribute = useCallback(
-    (attr: string) => getValuesByAttribute(rawData, attr),
+    (attr: string) => {
+      const cached = attributeValueCacheRef.current.get(attr);
+      if (cached) return cached;
+
+      const values = getValuesByAttribute(rawData, attr);
+      attributeValueCacheRef.current.set(attr, values);
+      return values;
+    },
     [rawData]
   );
 
+  const value = useMemo(
+    () => ({
+      rawData,
+      attributeKeys,
+      attributeTypes,
+      schema,
+      resolveAttribute,
+      uploadDataset,
+      loadDemoDataset,
+      restoreDataset: ingestData,
+    }),
+    [
+      rawData,
+      attributeKeys,
+      attributeTypes,
+      schema,
+      resolveAttribute,
+      uploadDataset,
+      loadDemoDataset,
+      ingestData,
+    ]
+  );
+
   return (
-    <DatasetContext.Provider
-      value={{
-        rawData,
-        attributeKeys,
-        attributeTypes,
-        schema,
-        resolveAttribute,
-        uploadDataset,
-        loadDemoDataset,
-        restoreDataset: ingestData,
-      }}
-    >
-      {children}
-    </DatasetContext.Provider>
+    <DatasetContext.Provider value={value}>{children}</DatasetContext.Provider>
   );
 }
