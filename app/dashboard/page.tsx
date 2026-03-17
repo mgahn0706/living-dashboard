@@ -1333,12 +1333,13 @@ function AppContent() {
     }
   }, [activeRecommendations, areRecommendationsEnabled]);
   const exportDashboardState = useCallback(() => {
+    const exportedAt = new Date().toISOString();
     const payload: DashboardStateFile = {
       version: 1,
-      exportedAt: new Date().toISOString(),
+      exportedAt,
       dataset: rawData ?? null,
       dashboard: {
-        savedAt: new Date().toISOString(),
+        savedAt: exportedAt,
         systemMode,
         views,
         focusScore,
@@ -1359,13 +1360,37 @@ function AppContent() {
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const timestamp = payload.exportedAt.replace(/[:.]/g, "-");
+    const timestamp = exportedAt.replace(/[:.]/g, "-");
 
     a.href = url;
     a.download = `living-dashboard-state-${timestamp}.json`;
     a.click();
 
     URL.revokeObjectURL(url);
+
+    const logBlob = new Blob(
+      [
+        JSON.stringify(
+          {
+            exportedAt,
+            experimentSession: experimentSession ?? null,
+          },
+          null,
+          2
+        ),
+      ],
+      {
+        type: "application/json",
+      }
+    );
+    const logUrl = URL.createObjectURL(logBlob);
+    const logAnchor = document.createElement("a");
+
+    logAnchor.href = logUrl;
+    logAnchor.download = `living-dashboard-log-${timestamp}.json`;
+    logAnchor.click();
+
+    URL.revokeObjectURL(logUrl);
   }, [
     acceptedRecommendationIds,
     appliedRecommendations,
