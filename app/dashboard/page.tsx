@@ -81,7 +81,12 @@ type SavedDashboardState = {
   focusScore?: Record<string, number>;
   textChats?: string[];
   llmReplies?: (string | LlmReply)[];
-  appliedRecommendations?: Recommendation[];
+  appliedRecommendations?: Array<
+    Recommendation & {
+      _prevViews?: View[];
+      _historyBatchId?: string;
+    }
+  >;
   acceptedRecommendationIds?: string[];
   voiceConversation?: VoiceUtterance[];
   language?: "en-US" | "ko-KR" | "ja-JP";
@@ -686,7 +691,7 @@ function AppContent() {
     string[]
   >([]);
   const [appliedRecommendations, setAppliedRecommendations] = useState<
-    (Recommendation & { _prevViews: View[] })[]
+    (Recommendation & { _prevViews: View[]; _historyBatchId?: string })[]
   >([]);
   const [textChats, setTextChats] = useState<string[]>([]);
   const [hoveredRec, setHoveredRec] = useState<Recommendation | null>(null);
@@ -832,7 +837,9 @@ function AppContent() {
         Array.isArray(parsed.appliedRecommendations)
           ? parsed.appliedRecommendations.map((rec) => ({
               ...rec,
-              _prevViews: restoredViews,
+              _prevViews: Array.isArray(rec._prevViews)
+                ? rec._prevViews
+                : restoredViews,
             }))
           : []
       );
@@ -1033,145 +1040,199 @@ function AppContent() {
 
   /* ================= APPLY ================= */
 
-  const apply = (r: Recommendation) => {
-    setHoveredRec(null);
-    setAcceptedRecommendationIds((prev) => [...prev, r.id]);
-
-    setViews((prev) => {
-      setAppliedRecommendations((prevHistory) => {
-        const key = JSON.stringify({
-          type: r.type,
-          targetViewId: r.targetViewId ?? null,
-          payload: r.payload,
-        });
-        const exists = prevHistory.some(
-          (h) =>
-            JSON.stringify({
-              type: h.type,
-              targetViewId: h.targetViewId ?? null,
-              payload: h.payload,
-            }) === key
-        );
-        if (exists) return prevHistory;
-        return [{ ...r, _prevViews: prev }, ...prevHistory];
-      });
-      const payload = r.payload as AnyPayload;
-
-      let nextViews = prev;
-
-      switch (r.type) {
-        case "MODIFY_CONTENT":
-        case "MODIFY_FILTER":
-        case "RESIZE": {
-          const targetId = getRecommendationTargetViewId(r);
-          if (!targetId) return prev;
-          nextViews = prev.map((v) => {
-            if (v.id !== targetId) return v;
-
-            const nextType: ChartType = payload?.chartType ?? v.chartType;
-            const nextView = normalizeViewUpdate(v, payload, nextType);
-            return {
-              ...nextView,
-              filter: sanitizeFilterForView(
-                nextView.filter,
-                nextView,
-                Array.isArray(rawData) ? rawData : []
-              ),
-            };
-          });
-          break;
-        }
-
-        case "REORDER": {
-          const id: string | undefined = payload?.id;
-          if (!id) return prev;
-
-          const nextPriority: number | undefined = payload?.priority;
-          if (typeof nextPriority !== "number") return prev;
-
-          nextViews = [...prev]
-            .map((v, i) =>
-              v.id === id
-                ? { ...v, priority: nextPriority ?? v.priority ?? i }
-                : v
-            )
-            .sort((a, b) => a.priority - b.priority);
-          break;
-        }
-
-        case "NEW_CONTENT": {
-          const minPriority =
-            prev.length > 0 ? Math.min(...prev.map((v) => v.priority ?? 0)) : 0;
-          const built = buildNewViewFromPayload(payload, minPriority - 1);
-          const next = {
-            ...built,
-            filter: sanitizeFilterForView(
-              built.filter,
-              built,
-              Array.isArray(rawData) ? rawData : []
-            ),
-          } as View;
-          nextViews = [...prev, next];
-          break;
-        }
-
-        case "REMOVE_CONTENT": {
-          const id: string | undefined = getRecommendationTargetViewId(r);
-          if (!id) return prev;
-          nextViews = prev.filter((v) => v.id !== id);
-          break;
-        }
-
-        default:
-          return prev;
+  const applyRecommendationSet = useCallback(
+    (
+      recommendationsToApply: Recommendation[],
+      options?: {
+        historyBatchId?: string;
+        logEventType?: string;
       }
+    ) => {
+      if (recommendationsToApply.length === 0) return;
 
-      logUserEvent(
-        "recommendation_accepted",
-        {
-          recommendationId: r.id,
-          recommendationType: r.type,
-        },
-        prev,
-        focusScore,
-        { viewsOverride: nextViews }
-      );
-
-      return nextViews;
-    });
-
-    // Track color for "Applied" badge on the chart card (auto-fades after 10s)
-    const targetId = getRecommendationTargetViewId(r);
-    if (targetId) {
-      const orderIdx = recommendationOrderMap[r.id];
-      const color = orderIdx != null ? getRecColor(orderIdx - 1) : "#3b82f6";
-      setAppliedRecColorByViewId((prev) => ({
+      setHoveredRec(null);
+      setAcceptedRecommendationIds((prev) => [
         ...prev,
-        [targetId]: color,
-      }));
-      setTimeout(() => {
-        setAppliedRecColorByViewId((prev) => {
-          const next = { ...prev };
-          delete next[targetId];
-          return next;
-        });
-      }, 10_000);
-    }
+        ...recommendationsToApply.map((r) => r.id),
+      ]);
 
-    acceptRecommendation(r);
+      setViews((prev) => {
+        let nextViews = prev;
+        const historyEntries: (Recommendation & {
+          _prevViews: View[];
+          _historyBatchId?: string;
+        })[] = [];
+
+        recommendationsToApply.forEach((r) => {
+          const payload = r.payload as AnyPayload;
+
+          historyEntries.push({
+            ...r,
+            _prevViews: options?.historyBatchId ? prev : nextViews,
+            _historyBatchId: options?.historyBatchId,
+          });
+
+          switch (r.type) {
+            case "MODIFY_CONTENT":
+            case "MODIFY_FILTER":
+            case "RESIZE": {
+              const targetId = getRecommendationTargetViewId(r);
+              if (!targetId) return;
+              nextViews = nextViews.map((v) => {
+                if (v.id !== targetId) return v;
+
+                const nextType: ChartType = payload?.chartType ?? v.chartType;
+                const nextView = normalizeViewUpdate(v, payload, nextType);
+                return {
+                  ...nextView,
+                  filter: sanitizeFilterForView(
+                    nextView.filter,
+                    nextView,
+                    Array.isArray(rawData) ? rawData : []
+                  ),
+                };
+              });
+              return;
+            }
+
+            case "REORDER": {
+              const id: string | undefined = payload?.id;
+              const nextPriority: number | undefined = payload?.priority;
+              if (!id || typeof nextPriority !== "number") return;
+
+              nextViews = [...nextViews]
+                .map((v, i) =>
+                  v.id === id
+                    ? { ...v, priority: nextPriority ?? v.priority ?? i }
+                    : v
+                )
+                .sort((a, b) => a.priority - b.priority);
+              return;
+            }
+
+            case "NEW_CONTENT": {
+              const minPriority =
+                nextViews.length > 0
+                  ? Math.min(...nextViews.map((v) => v.priority ?? 0))
+                  : 0;
+              const built = buildNewViewFromPayload(payload, minPriority - 1);
+              const next = {
+                ...built,
+                filter: sanitizeFilterForView(
+                  built.filter,
+                  built,
+                  Array.isArray(rawData) ? rawData : []
+                ),
+              } as View;
+              nextViews = [...nextViews, next];
+              return;
+            }
+
+            case "REMOVE_CONTENT": {
+              const id: string | undefined = getRecommendationTargetViewId(r);
+              if (!id) return;
+              nextViews = nextViews.filter((v) => v.id !== id);
+              return;
+            }
+
+            default:
+              return;
+          }
+        });
+
+        setAppliedRecommendations((prevHistory) => [
+          ...historyEntries.reverse(),
+          ...prevHistory,
+        ]);
+
+        if (options?.logEventType) {
+          logUserEvent(
+            options.logEventType,
+            {
+              recommendationIds: recommendationsToApply.map((r) => r.id),
+              recommendationTypes: recommendationsToApply.map((r) => r.type),
+              recommendationCount: recommendationsToApply.length,
+            },
+            prev,
+            focusScore,
+            { viewsOverride: nextViews }
+          );
+        } else {
+          recommendationsToApply.forEach((r) => {
+            logUserEvent(
+              "recommendation_accepted",
+              {
+                recommendationId: r.id,
+                recommendationType: r.type,
+              },
+              prev,
+              focusScore,
+              { viewsOverride: nextViews }
+            );
+          });
+        }
+
+        return nextViews;
+      });
+
+      recommendationsToApply.forEach((r) => {
+        const targetId = getRecommendationTargetViewId(r);
+        if (targetId) {
+          const orderIdx = recommendationOrderMap[r.id];
+          const color = orderIdx != null ? getRecColor(orderIdx - 1) : "#3b82f6";
+          setAppliedRecColorByViewId((prev) => ({
+            ...prev,
+            [targetId]: color,
+          }));
+          setTimeout(() => {
+            setAppliedRecColorByViewId((prev) => {
+              const next = { ...prev };
+              delete next[targetId];
+              return next;
+            });
+          }, 10_000);
+        }
+
+        acceptRecommendation(r);
+      });
+    },
+    [acceptRecommendation, focusScore, logUserEvent, rawData, recommendationOrderMap]
+  );
+
+  const apply = (r: Recommendation) => {
+    applyRecommendationSet([r]);
   };
 
   const undoLatestRecommendation = () => {
     setAppliedRecommendations((prev) => {
       const latest = prev[0];
       if (!latest) return prev;
+      const latestBatchId = latest._historyBatchId;
+
+      if (latestBatchId) {
+        const batchedEntries = prev.filter(
+          (entry) => entry._historyBatchId === latestBatchId
+        );
+        const remainingEntries = prev.filter(
+          (entry) => entry._historyBatchId !== latestBatchId
+        );
+        const batchStartViews =
+          batchedEntries[batchedEntries.length - 1]?._prevViews ?? latest._prevViews;
+        setViews(batchStartViews);
+        return remainingEntries;
+      }
+
       setViews(latest._prevViews);
       return prev.slice(1);
     });
   };
 
   const applyAll = () => {
-    activeRecommendations.forEach((r) => apply(r));
+    const batchId = `apply_all_${Date.now()}`;
+    applyRecommendationSet(activeRecommendations, {
+      historyBatchId: batchId,
+      logEventType: "recommendation_apply_all",
+    });
   };
 
   const decline = (r: Recommendation) => {
@@ -1272,9 +1333,7 @@ function AppContent() {
       llmReplies,
       voiceConversation: voice.conversation,
       language,
-      appliedRecommendations: appliedRecommendations.map(
-        ({ _prevViews, ...rest }) => rest
-      ),
+      appliedRecommendations,
       acceptedRecommendationIds,
       experimentSession: experimentSession ?? null,
     };
@@ -1347,9 +1406,7 @@ function AppContent() {
         llmReplies,
         voiceConversation: voice.conversation,
         language,
-        appliedRecommendations: appliedRecommendations.map(
-          ({ _prevViews, ...rest }) => rest
-        ),
+        appliedRecommendations,
         acceptedRecommendationIds,
         experimentSession: experimentSession ?? null,
       },
