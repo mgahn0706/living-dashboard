@@ -372,20 +372,23 @@ function ChatLog({
 
 function ChatInputBar({
   isListening,
+  disabled = false,
   onStart,
   onStop,
   onSend,
 }: {
   isListening: boolean;
+  disabled?: boolean;
   onStart: () => void;
   onStop: () => void;
   onSend: (text: string) => void;
 }) {
   const [text, setText] = useState("");
+  const [isComposing, setIsComposing] = useState(false);
   const hasText = text.trim().length > 0;
 
   const submit = () => {
-    if (!hasText) return;
+    if (disabled || !hasText) return;
     onSend(text.trim());
     setText("");
   };
@@ -393,9 +396,14 @@ function ChatInputBar({
   return (
     <div className="flex items-center gap-2">
       <button
+        type="button"
         onClick={isListening ? onStop : onStart}
+        disabled={disabled}
         className={cn(
           "rounded-md p-2 border transition",
+          disabled
+            ? "cursor-not-allowed border-muted bg-muted/50 text-muted-foreground/50"
+            : "",
           isListening
             ? "bg-red-500/10 border-red-500/30 text-red-600"
             : "hover:bg-muted"
@@ -411,17 +419,27 @@ function ChatInputBar({
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && submit()}
-        placeholder="Type a message…"
+        onCompositionStart={() => setIsComposing(true)}
+        onCompositionEnd={() => setIsComposing(false)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          if (isComposing || e.nativeEvent.isComposing || e.keyCode === 229) {
+            return;
+          }
+          submit();
+        }}
+        placeholder={disabled ? "AI suggestions disabled in System B" : "Type a message…"}
+        disabled={disabled}
         className="flex-1 rounded-md border bg-background px-2 py-1.5 text-xs"
       />
 
       <button
+        type="button"
         onClick={submit}
-        disabled={!hasText}
+        disabled={disabled || !hasText}
         className={cn(
           "rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all duration-200 flex items-center gap-1",
-          hasText
+          !disabled && hasText
             ? "bg-gradient-to-r from-emerald-500 to-blue-500 text-white shadow-sm hover:shadow-md cursor-pointer"
             : "bg-muted text-muted-foreground/40 cursor-not-allowed border border-transparent"
         )}
@@ -466,6 +484,7 @@ export default function RecommendationSidebar({
   history = [],
   activeRecommendations = [],
   llmReplies = [],
+  recommendationsEnabled = true,
   voice,
   language,
   isGenerating = false,
@@ -482,6 +501,7 @@ export default function RecommendationSidebar({
   history?: Recommendation[];
   activeRecommendations?: Recommendation[];
   llmReplies?: LlmReply[];
+  recommendationsEnabled?: boolean;
   voice: UseVoiceInputReturn;
   language: "en-US" | "ko-KR" | "ja-JP";
   isGenerating?: boolean;
@@ -497,7 +517,7 @@ export default function RecommendationSidebar({
 }) {
   const { isListening, partial, conversation, start, stop } = voice;
   const [activeTab, setActiveTab] = useState<"suggestions" | "chat">(
-    "suggestions"
+    recommendationsEnabled ? "suggestions" : "chat"
   );
   const [justAppliedIds, setJustAppliedIds] = useState<Set<string>>(new Set());
   const [showOlderHistory, setShowOlderHistory] = useState(false);
@@ -557,6 +577,12 @@ export default function RecommendationSidebar({
   const appliedCount = history.length;
   const pendingCount = activeRecommendations.length;
 
+  useEffect(() => {
+    if (!recommendationsEnabled && activeTab !== "chat") {
+      setActiveTab("chat");
+    }
+  }, [activeTab, recommendationsEnabled]);
+
   // Combine just-applied recs (for success animation) with active recs
   const justAppliedRecs = useMemo(
     () => history.filter((r) => justAppliedIds.has(r.id)),
@@ -577,9 +603,13 @@ export default function RecommendationSidebar({
               <div className="flex items-center gap-2">
                 <IconSparkles className="size-5 text-primary" />
                 <div>
-                  <div className="text-sm font-semibold">AI Suggestions</div>
+                  <div className="text-sm font-semibold">
+                    {recommendationsEnabled ? "AI Suggestions" : "AI Assistant"}
+                  </div>
                   <div className="text-[10px] text-muted-foreground">
-                    {appliedCount} applied · {pendingCount} pending
+                    {recommendationsEnabled
+                      ? `${appliedCount} applied · ${pendingCount} pending`
+                      : "Chat available"}
                   </div>
                 </div>
               </div>
@@ -600,21 +630,24 @@ export default function RecommendationSidebar({
 
         {/* Tab navigation */}
         <div className="flex mt-2">
-          <button
-            onClick={() => setActiveTab("suggestions")}
-            className={cn(
-              "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
-              activeTab === "suggestions"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Suggestions ({pendingCount})
-          </button>
+          {recommendationsEnabled && (
+            <button
+              onClick={() => setActiveTab("suggestions")}
+              className={cn(
+                "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
+                activeTab === "suggestions"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Suggestions ({pendingCount})
+            </button>
+          )}
           <button
             onClick={() => setActiveTab("chat")}
             className={cn(
-              "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
+              "py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
+              recommendationsEnabled ? "flex-1" : "w-full",
               activeTab === "chat"
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -672,7 +705,7 @@ export default function RecommendationSidebar({
               )}
 
               {/* ===== Apply All Banner ===== */}
-              {activeRecommendations.length > 1 && (
+              {recommendationsEnabled && activeRecommendations.length > 1 && (
                 <button
                   onClick={handleApplyAll}
                   className="w-full flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs transition hover:bg-primary/10"
@@ -715,7 +748,7 @@ export default function RecommendationSidebar({
               </AnimatePresence>
 
               {/* ===== Active (Pending) Recommendations ===== */}
-              {activeRecommendations.length > 0 && (
+              {recommendationsEnabled && activeRecommendations.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <AnimatePresence>
                     {activeRecommendations.map((r, idx) => {
@@ -888,7 +921,9 @@ export default function RecommendationSidebar({
                 justAppliedRecs.length === 0 &&
                 !isGenerating && (
                   <div className="text-xs text-muted-foreground">
-                    No recommendations yet.
+                    {recommendationsEnabled
+                      ? "No recommendations yet."
+                      : "No chat history yet."}
                   </div>
                 )}
             </div>
@@ -922,7 +957,9 @@ export default function RecommendationSidebar({
           />
 
           <div className="text-[10px] text-muted-foreground/60">
-            Voice and text both influence recommendations.
+            {recommendationsEnabled
+              ? "Voice and text both influence recommendations."
+              : "System B uses the LLM as a chat assistant only."}
           </div>
         </SidebarFooter>
       </div>

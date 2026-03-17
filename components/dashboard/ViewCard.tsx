@@ -1,7 +1,7 @@
 "use client";
 
 import { Recommendation, View, ViewFilter } from "@/types/dashboard";
-import type { DecayMode } from "@/app/page";
+import type { DecayMode } from "@/types/dashboard";
 import {
   Card,
   CardHeader,
@@ -208,6 +208,12 @@ export default React.memo(function ViewCard({
   }, [view.id, view.filter]);
 
   const canManualFilter = Boolean(onApplyFilter) && preview == null;
+  const minCardWidth =
+    view.chartType === "KPI"
+      ? recommendation || canManualFilter
+        ? 240
+        : 180
+      : undefined;
 
   return (
     <>
@@ -243,6 +249,7 @@ export default React.memo(function ViewCard({
           backgroundColor: tintOpacity > 0 ? `rgba(180, 100, 20, ${tintOpacity.toFixed(4)})` : undefined,
           opacity: dissolveStrength > 0 ? dissolveOpacity : undefined,
           flexBasis,
+          minWidth: minCardWidth,
         }}
         className={cn(
           "relative overflow-hidden transition-all duration-300 ease-out cursor-pointer",
@@ -269,8 +276,8 @@ export default React.memo(function ViewCard({
         >
           {/* Header */}
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-1">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <CardTitle className="min-w-0 flex flex-1 flex-wrap items-center gap-1 text-sm">
                 {view.title || view.id}
 
                 {isEditing && (
@@ -280,7 +287,7 @@ export default React.memo(function ViewCard({
                 )}
               </CardTitle>
 
-              <div className="flex items-center gap-1">
+              <div className="ml-auto flex shrink-0 items-center gap-1">
                 {appliedRecColor && !recommendation && (
                   <span
                     className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"

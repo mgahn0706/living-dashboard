@@ -119,11 +119,11 @@ export function useFocusPathDetector(
 
       /* ===== decay defaults (longer context memory) ===== */
       decayIntervalMilliseconds: 200,
-      focusHalfLifeSeconds: 180, // ~3 minutes half-life for longer context
-      idleDecayGracePeriodMilliseconds: 45_000, // ~45s before blur starts to noticeably build
+      focusHalfLifeSeconds: 90, // keep attention stable long enough for normal dashboard scanning
+      idleDecayGracePeriodMilliseconds: 8_000, // give views time to sit before idle decay ramps up
 
       /* ===== dramatic decay ===== */
-      idleDecayAcceleration: 1.2,
+      idleDecayAcceleration: 1.05,
 
       /* ===== safety ===== */
       initialFocusScore: 1000,
@@ -391,15 +391,12 @@ export function useFocusPathDetector(
   }, [configuration.analysisWindowMilliseconds]);
 
   /* =======================================================
-     Register view IDs so they start decaying immediately
+     Register view IDs so they can participate in decay after the grace window
   ======================================================= */
 
   const registerViewIds = useCallback(
     (viewIds: string[]) => {
       const now = performance.now();
-      // Backdate so untouched views start already past the idle grace period,
-      // entering accelerated decay immediately.
-      const backdated = now - configuration.idleDecayGracePeriodMilliseconds;
       for (const viewId of viewIds) {
         if (!activeViewsRef.current.has(viewId)) {
           activeViewsRef.current.add(viewId);
@@ -410,7 +407,7 @@ export function useFocusPathDetector(
             );
           }
           if (lastInteractionTimestampRef.current[viewId] == null) {
-            lastInteractionTimestampRef.current[viewId] = backdated;
+            lastInteractionTimestampRef.current[viewId] = now;
           }
         }
       }

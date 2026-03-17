@@ -206,7 +206,7 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
   >({});
   const [schema, setSchema] = useState<SchemaNode | null>(null);
 
-  const ingestData = (data: any) => {
+  const ingestData = useCallback((data: any) => {
     if (typeof data !== "object" || data === null) {
       throw new Error("Invalid data");
     }
@@ -224,9 +224,9 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
     setAttributeKeys(flatKeys);
     setAttributeTypes(typeMap);
     setSchema(hierarchicalSchema);
-  };
+  }, []);
 
-  const uploadDataset = async (file: File) => {
+  const uploadDataset = useCallback(async (file: File) => {
     const text = await file.text();
     let data: any;
 
@@ -242,14 +242,14 @@ export function DatasetProvider({ children }: { children: React.ReactNode }) {
     }
 
     ingestData(data);
-  };
+  }, [ingestData]);
 
-  const loadDemoDataset = async () => {
+  const loadDemoDataset = useCallback(async () => {
     const res = await fetch("/data/Revenue.csv");
     const text = await res.text();
     const parsed = parseCSV(text);
     ingestData(parsed);
-  };
+  }, [ingestData]);
 
   const resolveAttribute = useCallback(
     (attr: string) => getValuesByAttribute(rawData, attr),
