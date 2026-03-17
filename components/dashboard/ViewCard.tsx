@@ -98,7 +98,7 @@ function buildFilterFromDraft(draft: {
    ViewCard
 ======================================================= */
 
-export default React.memo(function ViewCard({
+function ViewCard({
   view,
   focusIntensity,
   flexBasis = "32%",
@@ -111,7 +111,7 @@ export default React.memo(function ViewCard({
   recommendationIndex,
   onAcceptRecommendation,
   onDeclineRecommendation,
-  onPointerMove,
+  onPointerInteraction,
   onCardClick,
   onEditClick,
   onApplyFilter,
@@ -129,9 +129,12 @@ export default React.memo(function ViewCard({
   recommendationIndex?: number;
   onAcceptRecommendation?: (rec: Recommendation) => void;
   onDeclineRecommendation?: (rec: Recommendation) => void;
-  onPointerMove?: React.PointerEventHandler<HTMLDivElement>;
-  onCardClick?: () => void;
-  onEditClick?: () => void;
+  onPointerInteraction?: (
+    viewId: string,
+    event: { clientX: number; clientY: number }
+  ) => void;
+  onCardClick?: (viewId: string) => void;
+  onEditClick?: (viewId: string) => void;
   onApplyFilter?: (viewId: string, filter: ViewFilter | undefined) => void;
   onDrillDown?: (viewId: string, category: string | null) => void;
 }) {
@@ -216,6 +219,21 @@ export default React.memo(function ViewCard({
         ? 240
         : 180
       : undefined;
+  const handlePointerMove = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      onPointerInteraction?.(view.id, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+    },
+    [onPointerInteraction, view.id]
+  );
+  const handleCardClick = React.useCallback(() => {
+    onCardClick?.(view.id);
+  }, [onCardClick, view.id]);
+  const handleEditClick = React.useCallback(() => {
+    onEditClick?.(view.id);
+  }, [onEditClick, view.id]);
 
   return (
     <>
@@ -235,8 +253,8 @@ export default React.memo(function ViewCard({
 
       <Card
         data-view-id={view.id}
-        onPointerMove={onPointerMove}
-        onClick={onCardClick}
+        onPointerMove={handlePointerMove}
+        onClick={handleCardClick}
         style={{
           borderColor: dissolveStrength > 0
             ? `rgba(59, 130, 246, ${dissolveBorderOpacity.toFixed(3)})`
@@ -507,7 +525,7 @@ export default React.memo(function ViewCard({
                   size="icon"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onEditClick?.();
+                    handleEditClick();
                   }}
                 >
                   {isEditing ? (
@@ -563,6 +581,29 @@ export default React.memo(function ViewCard({
         )}
       </Card>
     </>
+  );
+}
+
+function areViewFiltersEqual(
+  left: ViewFilter | undefined,
+  right: ViewFilter | undefined
+) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+export default React.memo(ViewCard, (prev, next) => {
+  return (
+    prev.view === next.view &&
+    prev.focusIntensity === next.focusIntensity &&
+    prev.flexBasis === next.flexBasis &&
+    prev.heightPx === next.heightPx &&
+    prev.decayMode === next.decayMode &&
+    prev.isSelected === next.isSelected &&
+    prev.preview === next.preview &&
+    prev.appliedRecColor === next.appliedRecColor &&
+    prev.recommendation === next.recommendation &&
+    prev.recommendationIndex === next.recommendationIndex &&
+    areViewFiltersEqual(prev.view.filter, next.view.filter)
   );
 });
 

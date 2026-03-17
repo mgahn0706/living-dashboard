@@ -25,6 +25,9 @@ export default function TimeSlider({
     controlledSelectedColumn === undefined
       ? selectedColumn
       : controlledSelectedColumn;
+  const [draftRange, setDraftRange] = React.useState<[number, number] | null>(
+    null
+  );
 
   const dateColumns = React.useMemo(
     () =>
@@ -55,6 +58,33 @@ export default function TimeSlider({
 
   const currentMin = activeTimeFilter?.min ?? minTs;
   const currentMax = activeTimeFilter?.max ?? maxTs;
+  const sliderValue = draftRange ?? [currentMin, currentMax];
+
+  React.useEffect(() => {
+    setDraftRange(null);
+  }, [activeSelectedColumn, activeTimeFilter?.min, activeTimeFilter?.max]);
+
+  const commitTimeFilter = React.useCallback(
+    (nextValue: number[]) => {
+      if (!activeSelectedColumn) return;
+
+      const [newMin, newMax] = nextValue;
+      const nextFilter = {
+        column: activeSelectedColumn,
+        min: newMin,
+        max: newMax,
+      };
+
+      React.startTransition(() => {
+        if (onTimeFilterChange) {
+          onTimeFilterChange(nextFilter);
+        } else {
+          setTimeFilter(nextFilter);
+        }
+      });
+    },
+    [activeSelectedColumn, onTimeFilterChange, setTimeFilter]
+  );
 
   const formatDate = (ts: number) =>
     new Date(ts).toLocaleDateString(undefined, {
@@ -99,19 +129,11 @@ export default function TimeSlider({
             min={minTs}
             max={maxTs}
             step={86400000}
-            value={[currentMin, currentMax]}
-            onValueChange={([newMin, newMax]) => {
-              const nextFilter = {
-                column: activeSelectedColumn,
-                min: newMin,
-                max: newMax,
-              };
-              if (onTimeFilterChange) {
-                onTimeFilterChange(nextFilter);
-              } else {
-                setTimeFilter(nextFilter);
-              }
-            }}
+            value={sliderValue}
+            onValueChange={(nextValue) =>
+              setDraftRange(nextValue as [number, number])
+            }
+            onValueCommit={commitTimeFilter}
           />
           <span className="text-[11px] text-muted-foreground whitespace-nowrap">
             {formatDate(currentMax)}
