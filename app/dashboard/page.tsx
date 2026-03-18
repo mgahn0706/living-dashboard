@@ -38,15 +38,16 @@ import { getRecColor } from "@/components/recommendation/RecommendationSidebar";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
 import { SelectionProvider } from "@/context/SelectionContext";
 import { TimeFilterProvider } from "@/context/TimeFilterContext";
+import { useTimeFilter } from "@/context/TimeFilterContext";
 import {
   CategoryFilterProvider,
   useCategoryFilter,
 } from "@/context/CategoryFilterContext";
 import { useSystemMode } from "@/context/SystemModeContext";
 
-import { useExperimentLogger } from "@/hooks/useExperimentLogger";
 import type { ExperimentSession } from "@/hooks/useExperimentLogger";
 import type { VoiceUtterance } from "@/hooks/useVoiceInput";
+import { useLogging } from "@/hooks/useLogging";
 
 const AUTO_SAVE_INTERVAL_MS = 60_000;
 const AUTO_SAVE_STORAGE_KEY = "ld_dashboard_autosave_session";
@@ -80,7 +81,12 @@ type SavedDashboardState = {
   focusScore?: Record<string, number>;
   textChats?: string[];
   llmReplies?: (string | LlmReply)[];
-  appliedRecommendations?: Recommendation[];
+  appliedRecommendations?: Array<
+    Recommendation & {
+      _prevViews?: View[];
+      _historyBatchId?: string;
+    }
+  >;
   acceptedRecommendationIds?: string[];
   voiceConversation?: VoiceUtterance[];
   language?: "en-US" | "ko-KR" | "ja-JP";
@@ -685,7 +691,7 @@ function AppContent() {
     string[]
   >([]);
   const [appliedRecommendations, setAppliedRecommendations] = useState<
-    (Recommendation & { _prevViews: View[] })[]
+    (Recommendation & { _prevViews: View[]; _historyBatchId?: string })[]
   >([]);
   const [textChats, setTextChats] = useState<string[]>([]);
   const [hoveredRec, setHoveredRec] = useState<Recommendation | null>(null);
@@ -717,7 +723,16 @@ function AppContent() {
     loadDemoDataset,
     restoreDataset,
   } = useDataset();
-  const { addFilter: addCategoryFilter } = useCategoryFilter();
+  const { timeFilter, selectedColumn, setSelectedColumn, setTimeFilter } =
+    useTimeFilter();
+  const {
+    addFilter: addCategoryFilter,
+    categoryFilters,
+    removeFilter: removeCategoryFilter,
+    selectAll: selectAllCategoryFilter,
+    deselectAll: deselectAllCategoryFilter,
+    toggleValue: toggleCategoryFilterValue,
+  } = useCategoryFilter();
 
   const {
     recommendations,
@@ -733,9 +748,9 @@ function AppContent() {
 
   const {
     session: experimentSession,
-    logEvent,
+    logUserEvent,
     restoreSession,
-  } = useExperimentLogger();
+  } = useLogging();
 
   /* ================= Recommendation SHOWN ================= */
 
@@ -750,11 +765,15 @@ function AppContent() {
 
       recommendations.forEach((r) => {
         if (!next.has(r.id)) {
-          logEvent("recommendation", {
-            recommendationId: r.id,
-            type: r.type,
-            action: "shown",
-          });
+          logUserEvent(
+            "recommendation_shown",
+            {
+              recommendationId: r.id,
+              recommendationType: r.type,
+            },
+            views,
+            focusScore
+          );
           next.add(r.id);
           changed = true;
         }
@@ -762,7 +781,7 @@ function AppContent() {
 
       return changed ? next : prev;
     });
-  }, [isLivingFeaturesEnabled, recommendations, logEvent]);
+  }, [focusScore, isLivingFeaturesEnabled, logUserEvent, recommendations, views]);
 
   useEffect(() => {
     if (isLivingFeaturesEnabled) return;
@@ -776,7 +795,16 @@ function AppContent() {
   const voice = useVoiceInput({
     lang: language,
     onFinal: (text) => {
-      logEvent("voice_input", { length: text.length });
+      logUserEvent(
+        "llm_request",
+        {
+          requestSource: "voice",
+          message: text,
+          messageLength: text.length,
+        },
+        views,
+        focusScore
+      );
 
       triggerRecommendation({
         views,
@@ -809,7 +837,9 @@ function AppContent() {
         Array.isArray(parsed.appliedRecommendations)
           ? parsed.appliedRecommendations.map((rec) => ({
               ...rec,
-              _prevViews: restoredViews,
+              _prevViews: Array.isArray(rec._prevViews)
+                ? rec._prevViews
+                : restoredViews,
             }))
           : []
       );
@@ -914,6 +944,24 @@ function AppContent() {
     }
   }, [restoreDashboardState, restoreDataset]);
 
+  const loggedReplyTimestampsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    llmReplies.forEach((reply) => {
+      if (loggedReplyTimestampsRef.current.has(reply.timestamp)) return;
+      loggedReplyTimestampsRef.current.add(reply.timestamp);
+      logUserEvent(
+        "llm_response",
+        {
+          message: reply.text,
+          messageLength: reply.text.length,
+        },
+        views,
+        focusScore
+      );
+    });
+  }, [focusScore, llmReplies, logUserEvent, views]);
+
   /* ================= PREVIEW ================= */
 
   const previewMap = useMemo<Record<string, PreviewState>>(() => {
@@ -992,140 +1040,211 @@ function AppContent() {
 
   /* ================= APPLY ================= */
 
-  const apply = (r: Recommendation) => {
-    logEvent("recommendation", {
-      recommendationId: r.id,
-      type: r.type,
-      action: "accepted",
-    });
+  const applyRecommendationSet = useCallback(
+    (
+      recommendationsToApply: Recommendation[],
+      options?: {
+        historyBatchId?: string;
+        logEventType?: string;
+      }
+    ) => {
+      if (recommendationsToApply.length === 0) return;
 
-    setHoveredRec(null);
-    setAcceptedRecommendationIds((prev) => [...prev, r.id]);
+      setHoveredRec(null);
+      setAcceptedRecommendationIds((prev) => [
+        ...prev,
+        ...recommendationsToApply.map((r) => r.id),
+      ]);
 
-    setViews((prev) => {
-      setAppliedRecommendations((prevHistory) => {
-        const key = JSON.stringify({
-          type: r.type,
-          targetViewId: r.targetViewId ?? null,
-          payload: r.payload,
+      setViews((prev) => {
+        let nextViews = prev;
+        const historyEntries: (Recommendation & {
+          _prevViews: View[];
+          _historyBatchId?: string;
+        })[] = [];
+
+        recommendationsToApply.forEach((r) => {
+          const payload = r.payload as AnyPayload;
+
+          historyEntries.push({
+            ...r,
+            _prevViews: options?.historyBatchId ? prev : nextViews,
+            _historyBatchId: options?.historyBatchId,
+          });
+
+          switch (r.type) {
+            case "MODIFY_CONTENT":
+            case "MODIFY_FILTER":
+            case "RESIZE": {
+              const targetId = getRecommendationTargetViewId(r);
+              if (!targetId) return;
+              nextViews = nextViews.map((v) => {
+                if (v.id !== targetId) return v;
+
+                const nextType: ChartType = payload?.chartType ?? v.chartType;
+                const nextView = normalizeViewUpdate(v, payload, nextType);
+                return {
+                  ...nextView,
+                  filter: sanitizeFilterForView(
+                    nextView.filter,
+                    nextView,
+                    Array.isArray(rawData) ? rawData : []
+                  ),
+                };
+              });
+              return;
+            }
+
+            case "REORDER": {
+              const id: string | undefined = payload?.id;
+              const nextPriority: number | undefined = payload?.priority;
+              if (!id || typeof nextPriority !== "number") return;
+
+              nextViews = [...nextViews]
+                .map((v, i) =>
+                  v.id === id
+                    ? { ...v, priority: nextPriority ?? v.priority ?? i }
+                    : v
+                )
+                .sort((a, b) => a.priority - b.priority);
+              return;
+            }
+
+            case "NEW_CONTENT": {
+              const minPriority =
+                nextViews.length > 0
+                  ? Math.min(...nextViews.map((v) => v.priority ?? 0))
+                  : 0;
+              const built = buildNewViewFromPayload(payload, minPriority - 1);
+              const next = {
+                ...built,
+                filter: sanitizeFilterForView(
+                  built.filter,
+                  built,
+                  Array.isArray(rawData) ? rawData : []
+                ),
+              } as View;
+              nextViews = [...nextViews, next];
+              return;
+            }
+
+            case "REMOVE_CONTENT": {
+              const id: string | undefined = getRecommendationTargetViewId(r);
+              if (!id) return;
+              nextViews = nextViews.filter((v) => v.id !== id);
+              return;
+            }
+
+            default:
+              return;
+          }
         });
-        const exists = prevHistory.some(
-          (h) =>
-            JSON.stringify({
-              type: h.type,
-              targetViewId: h.targetViewId ?? null,
-              payload: h.payload,
-            }) === key
-        );
-        if (exists) return prevHistory;
-        return [{ ...r, _prevViews: prev }, ...prevHistory];
-      });
-      const payload = r.payload as AnyPayload;
 
-      switch (r.type) {
-        case "MODIFY_CONTENT":
-        case "MODIFY_FILTER":
-        case "RESIZE": {
-          const targetId = getRecommendationTargetViewId(r);
-          if (!targetId) return prev;
-          return prev.map((v) => {
-            if (v.id !== targetId) return v;
+        setAppliedRecommendations((prevHistory) => [
+          ...historyEntries.reverse(),
+          ...prevHistory,
+        ]);
 
-            const nextType: ChartType = payload?.chartType ?? v.chartType;
-            const nextView = normalizeViewUpdate(v, payload, nextType);
-            return {
-              ...nextView,
-              filter: sanitizeFilterForView(
-                nextView.filter,
-                nextView,
-                Array.isArray(rawData) ? rawData : []
-              ),
-            };
+        if (options?.logEventType) {
+          logUserEvent(
+            options.logEventType,
+            {
+              recommendationIds: recommendationsToApply.map((r) => r.id),
+              recommendationTypes: recommendationsToApply.map((r) => r.type),
+              recommendationCount: recommendationsToApply.length,
+            },
+            prev,
+            focusScore,
+            { viewsOverride: nextViews }
+          );
+        } else {
+          recommendationsToApply.forEach((r) => {
+            logUserEvent(
+              "recommendation_accepted",
+              {
+                recommendationId: r.id,
+                recommendationType: r.type,
+              },
+              prev,
+              focusScore,
+              { viewsOverride: nextViews }
+            );
           });
         }
 
-        case "REORDER": {
-          const id: string | undefined = payload?.id;
-          if (!id) return prev;
+        return nextViews;
+      });
 
-          const nextPriority: number | undefined = payload?.priority;
-          if (typeof nextPriority !== "number") return prev;
-
-          return [...prev]
-            .map((v, i) =>
-              v.id === id
-                ? { ...v, priority: nextPriority ?? v.priority ?? i }
-                : v
-            )
-            .sort((a, b) => a.priority - b.priority);
+      recommendationsToApply.forEach((r) => {
+        const targetId = getRecommendationTargetViewId(r);
+        if (targetId) {
+          const orderIdx = recommendationOrderMap[r.id];
+          const color = orderIdx != null ? getRecColor(orderIdx - 1) : "#3b82f6";
+          setAppliedRecColorByViewId((prev) => ({
+            ...prev,
+            [targetId]: color,
+          }));
+          setTimeout(() => {
+            setAppliedRecColorByViewId((prev) => {
+              const next = { ...prev };
+              delete next[targetId];
+              return next;
+            });
+          }, 10_000);
         }
 
-        case "NEW_CONTENT": {
-          const minPriority =
-            prev.length > 0 ? Math.min(...prev.map((v) => v.priority ?? 0)) : 0;
-          const built = buildNewViewFromPayload(payload, minPriority - 1);
-          const next = {
-            ...built,
-            filter: sanitizeFilterForView(
-              built.filter,
-              built,
-              Array.isArray(rawData) ? rawData : []
-            ),
-          } as View;
-          return [...prev, next];
-        }
+        acceptRecommendation(r);
+      });
+    },
+    [acceptRecommendation, focusScore, logUserEvent, rawData, recommendationOrderMap]
+  );
 
-        case "REMOVE_CONTENT": {
-          const id: string | undefined = getRecommendationTargetViewId(r);
-          if (!id) return prev;
-          return prev.filter((v) => v.id !== id);
-        }
-
-        default:
-          return prev;
-      }
-    });
-
-    // Track color for "Applied" badge on the chart card (auto-fades after 10s)
-    const targetId = getRecommendationTargetViewId(r);
-    if (targetId) {
-      const orderIdx = recommendationOrderMap[r.id];
-      const color = orderIdx != null ? getRecColor(orderIdx - 1) : "#3b82f6";
-      setAppliedRecColorByViewId((prev) => ({
-        ...prev,
-        [targetId]: color,
-      }));
-      setTimeout(() => {
-        setAppliedRecColorByViewId((prev) => {
-          const next = { ...prev };
-          delete next[targetId];
-          return next;
-        });
-      }, 10_000);
-    }
-
-    acceptRecommendation(r);
+  const apply = (r: Recommendation) => {
+    applyRecommendationSet([r]);
   };
 
   const undoLatestRecommendation = () => {
     setAppliedRecommendations((prev) => {
       const latest = prev[0];
       if (!latest) return prev;
+      const latestBatchId = latest._historyBatchId;
+
+      if (latestBatchId) {
+        const batchedEntries = prev.filter(
+          (entry) => entry._historyBatchId === latestBatchId
+        );
+        const remainingEntries = prev.filter(
+          (entry) => entry._historyBatchId !== latestBatchId
+        );
+        const batchStartViews =
+          batchedEntries[batchedEntries.length - 1]?._prevViews ?? latest._prevViews;
+        setViews(batchStartViews);
+        return remainingEntries;
+      }
+
       setViews(latest._prevViews);
       return prev.slice(1);
     });
   };
 
   const applyAll = () => {
-    activeRecommendations.forEach((r) => apply(r));
+    const batchId = `apply_all_${Date.now()}`;
+    applyRecommendationSet(activeRecommendations, {
+      historyBatchId: batchId,
+      logEventType: "recommendation_apply_all",
+    });
   };
 
   const decline = (r: Recommendation) => {
-    logEvent("recommendation", {
-      recommendationId: r.id,
-      type: r.type,
-      action: "declined",
-    });
+    logUserEvent(
+      "recommendation_declined",
+      {
+        recommendationId: r.id,
+        recommendationType: r.type,
+      },
+      views,
+      focusScore
+    );
 
     setHoveredRec(null);
     acceptRecommendation(r);
@@ -1214,9 +1333,7 @@ function AppContent() {
       llmReplies,
       voiceConversation: voice.conversation,
       language,
-      appliedRecommendations: appliedRecommendations.map(
-        ({ _prevViews, ...rest }) => rest
-      ),
+      appliedRecommendations,
       acceptedRecommendationIds,
       experimentSession: experimentSession ?? null,
     };
@@ -1275,12 +1392,13 @@ function AppContent() {
     }
   }, [activeRecommendations, areRecommendationsEnabled]);
   const exportDashboardState = useCallback(() => {
+    const exportedAt = new Date().toISOString();
     const payload: DashboardStateFile = {
       version: 1,
-      exportedAt: new Date().toISOString(),
+      exportedAt,
       dataset: rawData ?? null,
       dashboard: {
-        savedAt: new Date().toISOString(),
+        savedAt: exportedAt,
         systemMode,
         views,
         focusScore,
@@ -1288,9 +1406,7 @@ function AppContent() {
         llmReplies,
         voiceConversation: voice.conversation,
         language,
-        appliedRecommendations: appliedRecommendations.map(
-          ({ _prevViews, ...rest }) => rest
-        ),
+        appliedRecommendations,
         acceptedRecommendationIds,
         experimentSession: experimentSession ?? null,
       },
@@ -1301,13 +1417,37 @@ function AppContent() {
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const timestamp = payload.exportedAt.replace(/[:.]/g, "-");
+    const timestamp = exportedAt.replace(/[:.]/g, "-");
 
     a.href = url;
     a.download = `living-dashboard-state-${timestamp}.json`;
     a.click();
 
     URL.revokeObjectURL(url);
+
+    const logBlob = new Blob(
+      [
+        JSON.stringify(
+          {
+            exportedAt,
+            experimentSession: experimentSession ?? null,
+          },
+          null,
+          2
+        ),
+      ],
+      {
+        type: "application/json",
+      }
+    );
+    const logUrl = URL.createObjectURL(logBlob);
+    const logAnchor = document.createElement("a");
+
+    logAnchor.href = logUrl;
+    logAnchor.download = `living-dashboard-log-${timestamp}.json`;
+    logAnchor.click();
+
+    URL.revokeObjectURL(logUrl);
   }, [
     acceptedRecommendationIds,
     appliedRecommendations,
@@ -1355,6 +1495,183 @@ function AppContent() {
     }
   }, [restoreDashboardState, restoreDataset]);
 
+  const handleViewFilterChange = useCallback(
+    (viewId: string, filter: View["filter"] | undefined) => {
+      setViews((prev) => {
+        const nextViews = prev.map((v) =>
+          v.id === viewId
+            ? {
+                ...v,
+                filter: sanitizeFilterForView(
+                  filter,
+                  v,
+                  Array.isArray(rawData) ? rawData : []
+                ),
+              }
+            : v
+        );
+
+        logUserEvent(
+          "data_filter",
+          {
+            filterScope: "view",
+            viewId,
+            triggeredBy: "manual_filter",
+          },
+          prev,
+          focusScore,
+          { viewsOverride: nextViews }
+        );
+
+        return nextViews;
+      });
+    },
+    [focusScore, logUserEvent, rawData]
+  );
+
+  const handleCategoryFilterAdd = useCallback(
+    (column: string, values: string[]) => {
+      addCategoryFilter(column, values);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "category",
+          action: "add",
+          column,
+          selectedValues: values,
+        },
+        views,
+        focusScore
+      );
+    },
+    [addCategoryFilter, focusScore, logUserEvent, views]
+  );
+
+  const handleCategoryFilterToggle = useCallback(
+    (column: string, value: string) => {
+      const active = categoryFilters.find((filter) => filter.column === column);
+      const isSelected = active?.selectedValues.has(value) ?? false;
+      toggleCategoryFilterValue(column, value);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "category",
+          action: isSelected ? "remove_value" : "add_value",
+          column,
+          value,
+        },
+        views,
+        focusScore
+      );
+    },
+    [categoryFilters, focusScore, logUserEvent, toggleCategoryFilterValue, views]
+  );
+
+  const handleCategoryFilterSelectAll = useCallback(
+    (column: string, values: string[]) => {
+      selectAllCategoryFilter(column, values);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "category",
+          action: "select_all",
+          column,
+          selectedValues: values,
+        },
+        views,
+        focusScore
+      );
+    },
+    [focusScore, logUserEvent, selectAllCategoryFilter, views]
+  );
+
+  const handleCategoryFilterDeselectAll = useCallback(
+    (column: string) => {
+      deselectAllCategoryFilter(column);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "category",
+          action: "deselect_all",
+          column,
+        },
+        views,
+        focusScore
+      );
+    },
+    [deselectAllCategoryFilter, focusScore, logUserEvent, views]
+  );
+
+  const handleCategoryFilterRemove = useCallback(
+    (column: string) => {
+      removeCategoryFilter(column);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "category",
+          action: "remove_filter",
+          column,
+        },
+        views,
+        focusScore
+      );
+    },
+    [focusScore, logUserEvent, removeCategoryFilter, views]
+  );
+
+  const handleTimeColumnChange = useCallback(
+    (column: string | null) => {
+      setSelectedColumn(column);
+      setTimeFilter(null);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "time",
+          action: "select_column",
+          column,
+        },
+        views,
+        focusScore
+      );
+    },
+    [focusScore, logUserEvent, setSelectedColumn, setTimeFilter, views]
+  );
+
+  const handleTimeFilterChange = useCallback(
+    (filter: { column: string; min: number; max: number } | null) => {
+      setTimeFilter(filter);
+      logUserEvent(
+        "data_filter",
+        {
+          filterScope: "time",
+          action: filter ? "update_range" : "clear_range",
+          column: filter?.column ?? selectedColumn,
+          min: filter?.min ?? null,
+          max: filter?.max ?? null,
+        },
+        views,
+        focusScore
+      );
+    },
+    [focusScore, logUserEvent, selectedColumn, setTimeFilter, views]
+  );
+
+  const handleDrillDown = useCallback(
+    (viewId: string, category: string | null) => {
+      logUserEvent(
+        "drill_down",
+        {
+          viewId,
+          category,
+          action: category ? "enter" : "exit",
+        },
+        views,
+        focusScore
+      );
+    },
+    [focusScore, logUserEvent, views]
+  );
+
   return (
     <>
       <SidebarInset className="bg-muted/10">
@@ -1388,7 +1705,7 @@ function AppContent() {
               }
               isInitializingDashboard={isInitializing}
               onSelect={(viewId) => {
-                logEvent("view_select", { viewId });
+                logUserEvent("view_select", { viewId }, views, focusScore);
 
                 if (selectedViewId === viewId) {
                   setSelectedViewId(null);
@@ -1398,26 +1715,17 @@ function AppContent() {
                   setSidebarMode("STRUCTURE");
                 }
               }}
-              onApplyFilter={(viewId, filter) => {
-                logEvent("view_modify", {
-                  viewId,
-                  triggeredBy: "manual_filter",
-                });
-                setViews((prev) =>
-                  prev.map((v) =>
-                    v.id === viewId
-                      ? {
-                          ...v,
-                          filter: sanitizeFilterForView(
-                            filter,
-                            v,
-                            Array.isArray(rawData) ? rawData : []
-                          ),
-                        }
-                      : v
-                  )
-                );
-              }}
+              onApplyFilter={handleViewFilterChange}
+              onAddCategoryFilter={handleCategoryFilterAdd}
+              onToggleCategoryFilter={handleCategoryFilterToggle}
+              onSelectAllCategoryFilter={handleCategoryFilterSelectAll}
+              onDeselectAllCategoryFilter={handleCategoryFilterDeselectAll}
+              onRemoveCategoryFilter={handleCategoryFilterRemove}
+              timeFilter={timeFilter}
+              selectedTimeColumn={selectedColumn}
+              onTimeColumnChange={handleTimeColumnChange}
+              onTimeFilterChange={handleTimeFilterChange}
+              onDrillDown={handleDrillDown}
             />
           </div>
         </div>
@@ -1430,7 +1738,12 @@ function AppContent() {
             value={sidebarMode}
             onValueChange={(v) => {
               if (v) {
-                logEvent("sidebar_mode_change", { mode: v });
+                logUserEvent(
+                  "sidebar_mode_change",
+                  { mode: v },
+                  views,
+                  focusScore
+                );
                 setSidebarMode(v as "FORMAT" | "STRUCTURE");
               }
             }}
@@ -1481,7 +1794,16 @@ function AppContent() {
             streamingText={streamingText}
             onChangeLanguage={(lang) => setLanguage(lang)}
             onSendTextChat={(msg) => {
-              logEvent("text_chat", { length: msg.length });
+              logUserEvent(
+                "llm_request",
+                {
+                  requestSource: "text",
+                  message: msg,
+                  messageLength: msg.length,
+                },
+                views,
+                focusScore
+              );
 
               setTextChats((prev) => [...prev, msg]);
 
@@ -1501,33 +1823,58 @@ function AppContent() {
           <ChartCreatorSidebar
             selectedView={views.find((v) => v.id === selectedViewId) || null}
             onEditView={(id: string, next: View) => {
-              logEvent("view_modify", {
-                viewId: id,
-                triggeredBy: "manual",
-              });
-
               setSelectedViewId(null);
               setSidebarMode("FORMAT");
 
-              setViews((prev) => prev.map((v) => (v.id === id ? next : v)));
+              setViews((prev) => {
+                const nextViews = prev.map((v) => (v.id === id ? next : v));
+                logUserEvent(
+                  "view_modify",
+                  {
+                    viewId: id,
+                    triggeredBy: "manual",
+                  },
+                  prev,
+                  focusScore,
+                  { viewsOverride: nextViews }
+                );
+                return nextViews;
+              });
             }}
             onAddView={(payload) => {
-              logEvent("view_create", {
-                triggeredBy: "manual",
-                chartType: payload.chartType,
-              });
-
               setSelectedViewId(null);
               setSidebarMode("FORMAT");
 
-              setViews((prev) => [
-                ...prev,
-                buildNewViewFromPayload(payload, prev.length + 1),
-              ]);
+              setViews((prev) => {
+                const nextViews = [
+                  ...prev,
+                  buildNewViewFromPayload(payload, prev.length + 1),
+                ];
+                logUserEvent(
+                  "view_create",
+                  {
+                    triggeredBy: "manual",
+                    chartType: payload.chartType,
+                  },
+                  prev,
+                  focusScore,
+                  { viewsOverride: nextViews }
+                );
+                return nextViews;
+              });
             }}
             onDeleteView={(viewId) => {
-              logEvent("view_delete", { viewId });
-              setViews((prev) => prev.filter((v) => v.id !== viewId));
+              setViews((prev) => {
+                const nextViews = prev.filter((v) => v.id !== viewId);
+                logUserEvent(
+                  "view_delete",
+                  { viewId },
+                  prev,
+                  focusScore,
+                  { viewsOverride: nextViews }
+                );
+                return nextViews;
+              });
             }}
           />
         )}

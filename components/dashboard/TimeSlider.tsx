@@ -2,13 +2,32 @@
 
 import React from "react";
 import { useDataset } from "@/context/DatasetContext";
-import { useTimeFilter } from "@/context/TimeFilterContext";
+import { useTimeFilter, type TimeFilter } from "@/context/TimeFilterContext";
 import { Slider } from "@/components/ui/slider";
 
-export default function TimeSlider() {
+export default function TimeSlider({
+  timeFilter: controlledTimeFilter,
+  selectedColumn: controlledSelectedColumn,
+  onTimeFilterChange,
+  onSelectedColumnChange,
+}: {
+  timeFilter?: TimeFilter | null;
+  selectedColumn?: string | null;
+  onTimeFilterChange?: (filter: TimeFilter | null) => void;
+  onSelectedColumnChange?: (column: string | null) => void;
+}) {
   const { attributeTypes, rawData, resolveAttribute } = useDataset();
   const { timeFilter, setTimeFilter, selectedColumn, setSelectedColumn } =
     useTimeFilter();
+  const activeTimeFilter =
+    controlledTimeFilter === undefined ? timeFilter : controlledTimeFilter;
+  const activeSelectedColumn =
+    controlledSelectedColumn === undefined
+      ? selectedColumn
+      : controlledSelectedColumn;
+  const [draftRange, setDraftRange] = React.useState<[number, number] | null>(
+    null
+  );
 
   const dateColumns = React.useMemo(
     () =>
@@ -19,8 +38,8 @@ export default function TimeSlider() {
   );
 
   const { minTs, maxTs } = React.useMemo(() => {
-    if (!selectedColumn || !rawData) return { minTs: 0, maxTs: 0 };
-    const values = resolveAttribute(selectedColumn);
+    if (!activeSelectedColumn || !rawData) return { minTs: 0, maxTs: 0 };
+    const values = resolveAttribute(activeSelectedColumn);
     const timestamps = values
       .map((v: any) => {
         if (v == null || v === "") return NaN;
@@ -33,12 +52,39 @@ export default function TimeSlider() {
       minTs: Math.min(...timestamps),
       maxTs: Math.max(...timestamps),
     };
-  }, [selectedColumn, rawData, resolveAttribute]);
+  }, [activeSelectedColumn, rawData, resolveAttribute]);
 
   if (dateColumns.length === 0 || !rawData) return null;
 
-  const currentMin = timeFilter?.min ?? minTs;
-  const currentMax = timeFilter?.max ?? maxTs;
+  const currentMin = activeTimeFilter?.min ?? minTs;
+  const currentMax = activeTimeFilter?.max ?? maxTs;
+  const sliderValue = draftRange ?? [currentMin, currentMax];
+
+  React.useEffect(() => {
+    setDraftRange(null);
+  }, [activeSelectedColumn, activeTimeFilter?.min, activeTimeFilter?.max]);
+
+  const commitTimeFilter = React.useCallback(
+    (nextValue: number[]) => {
+      if (!activeSelectedColumn) return;
+
+      const [newMin, newMax] = nextValue;
+      const nextFilter = {
+        column: activeSelectedColumn,
+        min: newMin,
+        max: newMax,
+      };
+
+      React.startTransition(() => {
+        if (onTimeFilterChange) {
+          onTimeFilterChange(nextFilter);
+        } else {
+          setTimeFilter(nextFilter);
+        }
+      });
+    },
+    [activeSelectedColumn, onTimeFilterChange, setTimeFilter]
+  );
 
   const formatDate = (ts: number) =>
     new Date(ts).toLocaleDateString(undefined, {
@@ -54,11 +100,15 @@ export default function TimeSlider() {
 
       <select
         className="rounded border px-2 py-1 text-xs bg-background"
-        value={selectedColumn ?? ""}
+        value={activeSelectedColumn ?? ""}
         onChange={(e) => {
           const col = e.target.value || null;
-          setSelectedColumn(col);
-          setTimeFilter(null);
+          if (onSelectedColumnChange) {
+            onSelectedColumnChange(col);
+          } else {
+            setSelectedColumn(col);
+            setTimeFilter(null);
+          }
         }}
       >
         <option value="">Select column</option>
@@ -69,7 +119,7 @@ export default function TimeSlider() {
         ))}
       </select>
 
-      {selectedColumn && minTs < maxTs && (
+      {activeSelectedColumn && minTs < maxTs && (
         <>
           <span className="text-[11px] text-muted-foreground whitespace-nowrap">
             {formatDate(currentMin)}
@@ -79,14 +129,11 @@ export default function TimeSlider() {
             min={minTs}
             max={maxTs}
             step={86400000}
-            value={[currentMin, currentMax]}
-            onValueChange={([newMin, newMax]) => {
-              setTimeFilter({
-                column: selectedColumn,
-                min: newMin,
-                max: newMax,
-              });
-            }}
+            value={sliderValue}
+            onValueChange={(nextValue) =>
+              setDraftRange(nextValue as [number, number])
+            }
+            onValueCommit={commitTimeFilter}
           />
           <span className="text-[11px] text-muted-foreground whitespace-nowrap">
             {formatDate(currentMax)}
@@ -94,10 +141,12 @@ export default function TimeSlider() {
         </>
       )}
 
-      {timeFilter && (
+      {activeTimeFilter && (
         <button
           className="text-xs text-muted-foreground hover:text-foreground ml-1"
-          onClick={() => setTimeFilter(null)}
+          onClick={() =>
+            onTimeFilterChange ? onTimeFilterChange(null) : setTimeFilter(null)
+          }
         >
           Clear
         </button>

@@ -98,7 +98,7 @@ function buildFilterFromDraft(draft: {
    ViewCard
 ======================================================= */
 
-export default React.memo(function ViewCard({
+function ViewCard({
   view,
   focusIntensity,
   flexBasis = "32%",
@@ -111,10 +111,11 @@ export default React.memo(function ViewCard({
   recommendationIndex,
   onAcceptRecommendation,
   onDeclineRecommendation,
-  onPointerMove,
+  onPointerInteraction,
   onCardClick,
   onEditClick,
   onApplyFilter,
+  onDrillDown,
 }: {
   view: View;
   focusIntensity: number;
@@ -128,10 +129,14 @@ export default React.memo(function ViewCard({
   recommendationIndex?: number;
   onAcceptRecommendation?: (rec: Recommendation) => void;
   onDeclineRecommendation?: (rec: Recommendation) => void;
-  onPointerMove?: React.PointerEventHandler<HTMLDivElement>;
-  onCardClick?: () => void;
-  onEditClick?: () => void;
+  onPointerInteraction?: (
+    viewId: string,
+    event: { clientX: number; clientY: number }
+  ) => void;
+  onCardClick?: (viewId: string) => void;
+  onEditClick?: (viewId: string) => void;
   onApplyFilter?: (viewId: string, filter: ViewFilter | undefined) => void;
+  onDrillDown?: (viewId: string, category: string | null) => void;
 }) {
   const isEditing = isSelected;
   const normalizedFocus = Number.isFinite(focusIntensity)
@@ -214,6 +219,21 @@ export default React.memo(function ViewCard({
         ? 240
         : 180
       : undefined;
+  const handlePointerMove = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      onPointerInteraction?.(view.id, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+    },
+    [onPointerInteraction, view.id]
+  );
+  const handleCardClick = React.useCallback(() => {
+    onCardClick?.(view.id);
+  }, [onCardClick, view.id]);
+  const handleEditClick = React.useCallback(() => {
+    onEditClick?.(view.id);
+  }, [onEditClick, view.id]);
 
   return (
     <>
@@ -233,8 +253,8 @@ export default React.memo(function ViewCard({
 
       <Card
         data-view-id={view.id}
-        onPointerMove={onPointerMove}
-        onClick={onCardClick}
+        onPointerMove={handlePointerMove}
+        onClick={handleCardClick}
         style={{
           borderColor: dissolveStrength > 0
             ? `rgba(59, 130, 246, ${dissolveBorderOpacity.toFixed(3)})`
@@ -505,7 +525,7 @@ export default React.memo(function ViewCard({
                   size="icon"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onEditClick?.();
+                    handleEditClick();
                   }}
                 >
                   {isEditing ? (
@@ -530,7 +550,12 @@ export default React.memo(function ViewCard({
               className="relative size-full transition-opacity duration-300 ease-out"
               style={{ opacity: contentOpacity }}
             >
-              <ChartRenderer view={view} filter={view.filter} height="100%" />
+              <ChartRenderer
+                view={view}
+                filter={view.filter}
+                height="100%"
+                onDrillDown={onDrillDown}
+              />
             </div>
           </CardContent>
 
@@ -538,16 +563,47 @@ export default React.memo(function ViewCard({
 
         {/* Preview overlays */}
         {preview?.type === "MODIFY" && (
-          <ModifyOverlay view={preview.view} heightPx={heightPx} />
+          <ModifyOverlay
+            view={preview.view}
+            heightPx={heightPx}
+            onDrillDown={onDrillDown}
+          />
         )}
 
         {preview?.type === "REMOVE" && <RemoveOverlay />}
 
         {preview?.type === "ADD" && (
-          <AddOverlay view={preview.view} heightPx={heightPx} />
+          <AddOverlay
+            view={preview.view}
+            heightPx={heightPx}
+            onDrillDown={onDrillDown}
+          />
         )}
       </Card>
     </>
+  );
+}
+
+function areViewFiltersEqual(
+  left: ViewFilter | undefined,
+  right: ViewFilter | undefined
+) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+export default React.memo(ViewCard, (prev, next) => {
+  return (
+    prev.view === next.view &&
+    prev.focusIntensity === next.focusIntensity &&
+    prev.flexBasis === next.flexBasis &&
+    prev.heightPx === next.heightPx &&
+    prev.decayMode === next.decayMode &&
+    prev.isSelected === next.isSelected &&
+    prev.preview === next.preview &&
+    prev.appliedRecColor === next.appliedRecColor &&
+    prev.recommendation === next.recommendation &&
+    prev.recommendationIndex === next.recommendationIndex &&
+    areViewFiltersEqual(prev.view.filter, next.view.filter)
   );
 });
 
@@ -622,7 +678,15 @@ function RecommendationBanner({
    MODIFY overlay
 ======================================================= */
 
-function ModifyOverlay({ view, heightPx }: { view: View; heightPx: number }) {
+function ModifyOverlay({
+  view,
+  heightPx,
+  onDrillDown,
+}: {
+  view: View;
+  heightPx: number;
+  onDrillDown?: (viewId: string, category: string | null) => void;
+}) {
   return (
     <div className="absolute inset-0 z-10 pointer-events-none">
       <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
@@ -641,7 +705,12 @@ function ModifyOverlay({ view, heightPx }: { view: View; heightPx: number }) {
           className="flex p-0 overflow-hidden"
           style={{ height: `${heightPx}px` }}
         >
-          <ChartRenderer view={view} filter={view.filter} height="100%" />
+          <ChartRenderer
+            view={view}
+            filter={view.filter}
+            height="100%"
+            onDrillDown={onDrillDown}
+          />
         </CardContent>
       </div>
     </div>
@@ -666,7 +735,15 @@ function RemoveOverlay() {
    ADD overlay
 ======================================================= */
 
-function AddOverlay({ view, heightPx }: { view: View; heightPx: number }) {
+function AddOverlay({
+  view,
+  heightPx,
+  onDrillDown,
+}: {
+  view: View;
+  heightPx: number;
+  onDrillDown?: (viewId: string, category: string | null) => void;
+}) {
   return (
     <div className="absolute inset-0 z-10 pointer-events-none">
       <div className="absolute inset-0 bg-background/70 backdrop-blur-sm" />
@@ -685,7 +762,12 @@ function AddOverlay({ view, heightPx }: { view: View; heightPx: number }) {
           className="flex p-0 overflow-hidden"
           style={{ height: `${heightPx}px` }}
         >
-          <ChartRenderer view={view} filter={view.filter} height="100%" />
+          <ChartRenderer
+            view={view}
+            filter={view.filter}
+            height="100%"
+            onDrillDown={onDrillDown}
+          />
         </CardContent>
       </div>
     </div>
