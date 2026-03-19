@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useSystemMode } from "@/context/SystemModeContext";
 
-const AUTO_SAVE_STORAGE_KEY = "ld_dashboard_autosave_session";
+const IMPORT_STORAGE_KEY = "ld_dashboard_import_session";
 
 type UploadState = {
   filename: string;
@@ -45,7 +45,7 @@ export default function Page() {
         throw new Error("Invalid dashboard state payload");
       }
 
-      localStorage.setItem(AUTO_SAVE_STORAGE_KEY, JSON.stringify(parsed));
+      sessionStorage.setItem(IMPORT_STORAGE_KEY, JSON.stringify(parsed));
       setUploadState({
         filename: file.name,
         message: "View state uploaded. You can now continue with either system.",
