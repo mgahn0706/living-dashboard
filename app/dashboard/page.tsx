@@ -29,6 +29,7 @@ import {
 import { SiteHeader } from "@/components/SiteHeader";
 
 import useVoiceInput from "@/hooks/useVoiceInput";
+import useRealtimeVoice from "@/hooks/useRealtimeVoice";
 import ChartCreatorSidebar from "@/components/chartCreator/chartCreatorSidebar";
 
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -743,6 +744,8 @@ function AppContent() {
     resetAccepted,
   } = useRecommendation();
 
+  const realtimeVoice = useRealtimeVoice();
+
   const {
     session: experimentSession,
     logUserEvent,
@@ -792,6 +795,11 @@ function AppContent() {
   const voice = useVoiceInput({
     lang: language,
     onFinal: (text) => {
+      // Barge-in: stop AI audio if it's currently speaking
+      if (realtimeVoice.isSpeaking) {
+        realtimeVoice.interrupt();
+      }
+
       logUserEvent(
         "llm_request",
         {
@@ -803,6 +811,12 @@ function AppContent() {
         focusScore
       );
 
+      // Branch A: low-latency spoken reply via Realtime API
+      if (realtimeVoice.isConnected) {
+        realtimeVoice.sendText(text);
+      }
+
+      // Branch B: structured recommendations (unchanged)
       triggerRecommendation({
         views,
         textChats: [...textChats, text],
@@ -813,6 +827,41 @@ function AppContent() {
       });
     },
   });
+
+  // Connect Realtime API when voice listening starts
+  useEffect(() => {
+    if (voice.isListening && !realtimeVoice.isConnected) {
+      realtimeVoice.connect();
+    }
+  }, [voice.isListening, realtimeVoice]);
+
+  // Narrate Branch B recommendations via Branch A when they arrive
+  const lastNarratedTimestampRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!realtimeVoice.isConnected) return;
+    if (llmReplies.length === 0) return;
+
+    const latestReply = llmReplies[llmReplies.length - 1];
+    if (latestReply.timestamp <= lastNarratedTimestampRef.current) return;
+    lastNarratedTimestampRef.current = latestReply.timestamp;
+
+    const recSummary = recommendations
+      .slice(0, 3)
+      .map((r, i) => `${i + 1}. ${r.title}`)
+      .join(". ");
+
+    const narrationText = recSummary
+      ? `The analysis system has responded: "${latestReply.text}" It suggested these changes: ${recSummary}`
+      : `The analysis system responded: "${latestReply.text}"`;
+
+    // Delay to avoid overlapping with initial voice response
+    setTimeout(() => {
+      if (realtimeVoice.isConnected && !realtimeVoice.isSpeaking) {
+        realtimeVoice.sendNarration(narrationText);
+      }
+    }, 500);
+  }, [llmReplies, recommendations, realtimeVoice]);
 
   const restoreDashboardState = useCallback(
     (parsed: SavedDashboardState) => {
@@ -1698,6 +1747,7 @@ function AppContent() {
             onDeclineRecommendation={decline}
             onAcceptAllRecommendations={applyAll}
             voice={voice}
+            realtimeVoice={realtimeVoice}
             textChats={textChats}
             isGenerating={isLoading}
             streamingText={streamingText}
@@ -1715,6 +1765,11 @@ function AppContent() {
               );
 
               setTextChats((prev) => [...prev, msg]);
+
+              // Branch A: spoken reply for text input too
+              if (realtimeVoice.isConnected) {
+                realtimeVoice.sendText(msg);
+              }
 
               triggerRecommendation({
                 views,

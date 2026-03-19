@@ -27,9 +27,12 @@ import {
   IconArrowUpRight,
   IconSend,
   IconChevronDown,
+  IconVolume,
+  IconVolumeOff,
 } from "@tabler/icons-react";
 
 import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
+import type { UseRealtimeVoiceReturn } from "@/hooks/useRealtimeVoice";
 import type { LlmReply } from "@/hooks/useRecommendation";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
@@ -245,6 +248,32 @@ function LiveTranscript({
         <span className="ml-1 inline-block w-1.5 animate-pulse bg-muted-foreground/60">
           &nbsp;
         </span>
+      </div>
+    </div>
+  );
+}
+
+/* ===================== Speaking Indicator ===================== */
+
+function SpeakingIndicator({ isSpeaking }: { isSpeaking: boolean }) {
+  if (!isSpeaking) return null;
+
+  return (
+    <div className="border-t bg-background/95 backdrop-blur px-3 py-2">
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-0.5">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="w-0.5 rounded-full bg-sky-500"
+              style={{
+                height: `${6 + (i % 2 === 0 ? 6 : 10)}px`,
+                animation: `pulse 0.6s ease-in-out ${i * 150}ms infinite alternate`,
+              }}
+            />
+          ))}
+        </div>
+        <span className="text-sky-600 font-medium">AI is speaking…</span>
       </div>
     </div>
   );
@@ -486,6 +515,7 @@ export default function RecommendationSidebar({
   llmReplies = [],
   recommendationsEnabled = true,
   voice,
+  realtimeVoice,
   language,
   isGenerating = false,
   streamingText = "",
@@ -503,6 +533,7 @@ export default function RecommendationSidebar({
   llmReplies?: LlmReply[];
   recommendationsEnabled?: boolean;
   voice: UseVoiceInputReturn;
+  realtimeVoice?: UseRealtimeVoiceReturn;
   language: "en-US" | "ko-KR" | "ja-JP";
   isGenerating?: boolean;
   streamingText?: string;
@@ -942,6 +973,7 @@ export default function RecommendationSidebar({
 
       {/* Bottom Stack */}
       <div className="sticky bottom-0 z-10">
+        <SpeakingIndicator isSpeaking={realtimeVoice?.isSpeaking ?? false} />
         <LiveTranscript
           isListening={isListening}
           partial={partial}
@@ -949,12 +981,50 @@ export default function RecommendationSidebar({
         />
 
         <SidebarFooter className="border-t p-3 space-y-2 bg-background/95 backdrop-blur">
-          <ChatInputBar
-            isListening={isListening}
-            onStart={start}
-            onStop={stop}
-            onSend={(text) => onSendTextChat?.(text)}
-          />
+          {realtimeVoice && (
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <div
+                className={cn(
+                  "size-1.5 rounded-full",
+                  realtimeVoice.isConnected
+                    ? "bg-emerald-500"
+                    : "bg-muted-foreground/40"
+                )}
+              />
+              <span>
+                {realtimeVoice.isConnected ? "Voice connected" : "Voice idle"}
+              </span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <ChatInputBar
+              isListening={isListening}
+              onStart={start}
+              onStop={stop}
+              onSend={(text) => onSendTextChat?.(text)}
+            />
+
+            {realtimeVoice?.isConnected && (
+              <button
+                type="button"
+                onClick={realtimeVoice.toggleMute}
+                className={cn(
+                  "rounded-md p-2 border transition shrink-0",
+                  realtimeVoice.isMuted
+                    ? "bg-amber-500/10 border-amber-500/30 text-amber-600"
+                    : "hover:bg-muted text-muted-foreground"
+                )}
+                title={realtimeVoice.isMuted ? "Unmute AI voice" : "Mute AI voice"}
+              >
+                {realtimeVoice.isMuted ? (
+                  <IconVolumeOff className="size-4" />
+                ) : (
+                  <IconVolume className="size-4" />
+                )}
+              </button>
+            )}
+          </div>
 
           <div className="text-[10px] text-muted-foreground/60">
             {recommendationsEnabled
