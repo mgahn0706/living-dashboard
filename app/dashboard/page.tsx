@@ -1381,6 +1381,17 @@ function AppContent() {
     return () => window.removeEventListener("pagehide", persistOnPageHide);
   }, [isAutoSaveEnabled]);
 
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
+
   /* Auto-scroll to first recommendation target when new recommendations arrive */
   useEffect(() => {
     if (!areRecommendationsEnabled || activeRecommendations.length === 0) return;
