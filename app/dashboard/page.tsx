@@ -48,6 +48,7 @@ import { useSystemMode } from "@/context/SystemModeContext";
 import type { ExperimentSession } from "@/hooks/useExperimentLogger";
 import type { VoiceUtterance } from "@/hooks/useVoiceInput";
 import { useLogging } from "@/hooks/useLogging";
+import { useChat, type ChatEntry } from "@/hooks/useChat";
 
 const IMPORT_STORAGE_KEY = "ld_dashboard_import_session";
 
@@ -89,6 +90,7 @@ type SavedDashboardState = {
   acceptedRecommendationIds?: string[];
   voiceConversation?: VoiceUtterance[];
   language?: "en-US" | "ko-KR" | "ja-JP";
+  chatMessages?: ChatEntry[];
   experimentSession?: unknown;
 };
 
@@ -744,6 +746,15 @@ function AppContent() {
   } = useRecommendation();
 
   const {
+    messages: chatMessages,
+    isLoading: isChatLoading,
+    streamingText: chatStreamingText,
+    sendMessage: sendChatMessage,
+    restoreMessages: restoreChatMessages,
+    clearMessages: clearChatMessages,
+  } = useChat();
+
+  const {
     session: experimentSession,
     logUserEvent,
     restoreSession,
@@ -803,14 +814,23 @@ function AppContent() {
         focusScore
       );
 
-      triggerRecommendation({
-        views,
-        textChats: [...textChats, text],
-        focusScore,
-        dataSchema: schema,
-        conversation: voice.conversation,
-        suppressRecommendations: !areRecommendationsEnabled,
-      });
+      if (areRecommendationsEnabled) {
+        triggerRecommendation({
+          views,
+          textChats: [...textChats, text],
+          focusScore,
+          dataSchema: schema,
+          conversation: voice.conversation,
+          suppressRecommendations: false,
+        });
+      } else {
+        sendChatMessage({
+          text,
+          source: "voice",
+          views,
+          dataSchema: schema,
+        });
+      }
     },
   });
 
@@ -884,6 +904,10 @@ function AppContent() {
         dismissedRecommendationIds: restoredAcceptedIds,
       });
 
+      restoreChatMessages(
+        Array.isArray(parsed.chatMessages) ? parsed.chatMessages : []
+      );
+
       const nextExperimentSession =
         parsed.experimentSession &&
         typeof parsed.experimentSession === "object" &&
@@ -894,6 +918,7 @@ function AppContent() {
     },
     [
       resetAccepted,
+      restoreChatMessages,
       restoreFocusScore,
       restoreHistory,
       restoreSession,
@@ -1348,6 +1373,7 @@ function AppContent() {
         focusScore,
         textChats,
         llmReplies,
+        chatMessages,
         voiceConversation: voice.conversation,
         language,
         appliedRecommendations,
@@ -1699,8 +1725,9 @@ function AppContent() {
             onAcceptAllRecommendations={applyAll}
             voice={voice}
             textChats={textChats}
-            isGenerating={isLoading}
-            streamingText={streamingText}
+            isGenerating={areRecommendationsEnabled ? isLoading : isChatLoading}
+            streamingText={areRecommendationsEnabled ? streamingText : chatStreamingText}
+            chatMessages={chatMessages}
             onChangeLanguage={(lang) => setLanguage(lang)}
             onSendTextChat={(msg) => {
               logUserEvent(
@@ -1714,16 +1741,24 @@ function AppContent() {
                 focusScore
               );
 
-              setTextChats((prev) => [...prev, msg]);
-
-              triggerRecommendation({
-                views,
-                textChats: [...textChats, msg],
-                focusScore,
-                dataSchema: schema,
-                conversation: voice.conversation,
-                suppressRecommendations: !areRecommendationsEnabled,
-              });
+              if (areRecommendationsEnabled) {
+                setTextChats((prev) => [...prev, msg]);
+                triggerRecommendation({
+                  views,
+                  textChats: [...textChats, msg],
+                  focusScore,
+                  dataSchema: schema,
+                  conversation: voice.conversation,
+                  suppressRecommendations: false,
+                });
+              } else {
+                sendChatMessage({
+                  text: msg,
+                  source: "text",
+                  views,
+                  dataSchema: schema,
+                });
+              }
             }}
           />
         )}

@@ -12,3 +12,4 @@ The following changes need to be implemented:
 
 
 
+Lock the view which you are currently hovering, it is very distracting otherwise
