@@ -14,8 +14,6 @@ import type { DecayMode } from "@/types/dashboard";
 
 interface SiteHeaderProps {
   onExportDashboardState?: () => void;
-  hasSavedDashboardState?: boolean;
-  onLoadSavedDashboardState?: () => void;
   decayMode?: DecayMode;
   onDecayModeChange?: (mode: DecayMode) => void;
 }
@@ -28,8 +26,6 @@ const DECAY_OPTIONS: { value: DecayMode; label: string }[] = [
 
 export function SiteHeader({
   onExportDashboardState,
-  hasSavedDashboardState = false,
-  onLoadSavedDashboardState,
   decayMode = "shrink",
   onDecayModeChange,
 }: SiteHeaderProps = {}) {
@@ -82,17 +78,6 @@ export function SiteHeader({
             >
               <IconDownload className="size-4" />
               <span>Export State</span>
-            </Button>
-          )}
-
-          {hasDataset && hasSavedDashboardState && onLoadSavedDashboardState && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="hidden sm:flex gap-2 text-muted-foreground"
-              onClick={onLoadSavedDashboardState}
-            >
-              <span>Load Saved View</span>
             </Button>
           )}
 

@@ -49,8 +49,7 @@ import type { ExperimentSession } from "@/hooks/useExperimentLogger";
 import type { VoiceUtterance } from "@/hooks/useVoiceInput";
 import { useLogging } from "@/hooks/useLogging";
 
-const AUTO_SAVE_INTERVAL_MS = 60_000;
-const AUTO_SAVE_STORAGE_KEY = "ld_dashboard_autosave_session";
+const IMPORT_STORAGE_KEY = "ld_dashboard_import_session";
 
 /* =====================================================
    Types / guards
@@ -703,8 +702,6 @@ function AppContent() {
     "en-US"
   );
   const [isInitializing, setIsInitializing] = useState(false);
-  const [isAutoSaveEnabled] = useState(false);
-  const [hasSavedDashboardState, setHasSavedDashboardState] = useState(false);
   const [decayMode, setDecayMode] = useState<DecayMode>("shrink");
   const [appliedRecColorByViewId, setAppliedRecColorByViewId] = useState<
     Record<string, string>
@@ -909,13 +906,8 @@ function AppContent() {
     if (restoredFromStorageRef.current) return;
     restoredFromStorageRef.current = true;
 
-    const stored = localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
-    if (!stored) {
-      setHasSavedDashboardState(false);
-      return;
-    }
-
-    setHasSavedDashboardState(true);
+    const stored = sessionStorage.getItem(IMPORT_STORAGE_KEY);
+    if (!stored) return;
 
     try {
       const parsed = JSON.parse(stored) as unknown;
@@ -938,9 +930,10 @@ function AppContent() {
       }
 
       restoreDashboardState(importedDashboard as SavedDashboardState);
+      sessionStorage.removeItem(IMPORT_STORAGE_KEY);
     } catch {
-      console.warn("Failed to restore auto-saved dashboard session.");
-      setHasSavedDashboardState(false);
+      console.warn("Failed to restore imported dashboard session.");
+      sessionStorage.removeItem(IMPORT_STORAGE_KEY);
     }
   }, [restoreDashboardState, restoreDataset]);
 
@@ -1321,66 +1314,6 @@ function AppContent() {
     }
   };
 
-  /* ================= Save Dashboard State ================= */
-
-  const saveDashboardState = useCallback(() => {
-    const payload: SavedDashboardState = {
-      savedAt: new Date().toISOString(),
-      systemMode,
-      views,
-      focusScore,
-      textChats,
-      llmReplies,
-      voiceConversation: voice.conversation,
-      language,
-      appliedRecommendations,
-      acceptedRecommendationIds,
-      experimentSession: experimentSession ?? null,
-    };
-
-    localStorage.setItem(AUTO_SAVE_STORAGE_KEY, JSON.stringify(payload));
-    setHasSavedDashboardState(true);
-  }, [
-    views,
-    focusScore,
-    textChats,
-    llmReplies,
-    voice.conversation,
-    language,
-    appliedRecommendations,
-    acceptedRecommendationIds,
-    experimentSession,
-    systemMode,
-  ]);
-
-  const saveDashboardStateRef = useRef(saveDashboardState);
-
-  useEffect(() => {
-    saveDashboardStateRef.current = saveDashboardState;
-  }, [saveDashboardState]);
-
-  useEffect(() => {
-    if (!isAutoSaveEnabled) return;
-
-    const intervalId = window.setInterval(() => {
-      saveDashboardStateRef.current();
-    }, AUTO_SAVE_INTERVAL_MS);
-
-    return () => window.clearInterval(intervalId);
-  }, [isAutoSaveEnabled]);
-
-  useEffect(() => {
-    if (!isAutoSaveEnabled) return;
-
-    const persistOnPageHide = () => {
-      saveDashboardStateRef.current();
-    };
-
-    window.addEventListener("pagehide", persistOnPageHide);
-
-    return () => window.removeEventListener("pagehide", persistOnPageHide);
-  }, [isAutoSaveEnabled]);
-
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -1472,39 +1405,6 @@ function AppContent() {
     views,
     voice.conversation,
   ]);
-
-  const loadSavedDashboardState = useCallback(() => {
-    const stored = localStorage.getItem(AUTO_SAVE_STORAGE_KEY);
-    if (!stored) {
-      setHasSavedDashboardState(false);
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(stored) as unknown;
-      if (!parsed || typeof parsed !== "object") {
-        throw new Error("Invalid stored dashboard state");
-      }
-
-      const importedDashboard =
-        "dashboard" in parsed &&
-        parsed.dashboard &&
-        typeof parsed.dashboard === "object"
-          ? parsed.dashboard
-          : parsed;
-
-      const importedDataset = "dataset" in parsed ? parsed.dataset : undefined;
-
-      if (importedDataset !== undefined && importedDataset !== null) {
-        restoreDataset(importedDataset);
-      }
-
-      restoreDashboardState(importedDashboard as SavedDashboardState);
-    } catch {
-      console.warn("Failed to restore auto-saved dashboard session.");
-      setHasSavedDashboardState(false);
-    }
-  }, [restoreDashboardState, restoreDataset]);
 
   const handleViewFilterChange = useCallback(
     (viewId: string, filter: View["filter"] | undefined) => {
@@ -1688,8 +1588,6 @@ function AppContent() {
       <SidebarInset className="bg-muted/10">
         <SiteHeader
           onExportDashboardState={exportDashboardState}
-          hasSavedDashboardState={hasSavedDashboardState}
-          onLoadSavedDashboardState={loadSavedDashboardState}
           decayMode={decayMode}
           onDecayModeChange={setDecayMode}
         />
