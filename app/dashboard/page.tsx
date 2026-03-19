@@ -36,7 +36,7 @@ import { Edit, Plus } from "lucide-react";
 import { IconSparkles } from "@tabler/icons-react";
 import { getRecColor } from "@/components/recommendation/RecommendationSidebar";
 import { DatasetProvider, useDataset } from "@/context/DatasetContext";
-import { SelectionProvider } from "@/context/SelectionContext";
+import { SelectionProvider, useSelection } from "@/context/SelectionContext";
 import { TimeFilterProvider } from "@/context/TimeFilterContext";
 import { useTimeFilter } from "@/context/TimeFilterContext";
 import {
@@ -518,6 +518,23 @@ function getDemoViews(): View[] {
         includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
       },
     },
+    // KPI 5: Total Lost Deals
+  
+    // KPI 6: Total Revenue Lost
+    {
+      id: "demo_kpi_revlost",
+      chartType: "KPI",
+      xColumn: "",
+      yColumn: "Revenue",
+      size: "sm",
+      priority: 97,
+      title: "Total Revenue Lost",
+      aggregation: "sum",
+      yLabel: "$",
+      filter: {
+        includeByColumn: [{ column: "Status", includeValues: ["Lost"] }],
+      },
+    },
     // Funnel Chart — Revenue by Stage
     {
       id: "demo_funnel",
@@ -573,16 +590,6 @@ function getDemoViews(): View[] {
       priority: 92,
       title: "Revenue by Segment",
     },
-    // Revenue by Product Category — Donut chart
-    {
-      id: "demo_rev_prodcat",
-      chartType: "DONUT",
-      xColumn: "Product Category",
-      yColumn: "Revenue",
-      size: "md",
-      priority: 92,
-      title: "Revenue by Product Category",
-    },
     // Won vs Lost by Industry — Stacked bar chart
     {
       id: "demo_wr_industry",
@@ -594,18 +601,6 @@ function getDemoViews(): View[] {
       size: "md",
       priority: 91,
       title: "Won vs Lost by Industry",
-    },
-    // Won vs Lost by Campaign Type — Stacked bar chart
-    {
-      id: "demo_wr_campaign",
-      chartType: "STACKED_BAR",
-      xColumn: "CampaignType",
-      yColumn: "Revenue",
-      groupByColumn: "Status",
-      aggregation: "count",
-      size: "md",
-      priority: 90,
-      title: "Won vs Lost by Campaign Type",
     },
     // Won vs Lost by Experience Level — Grouped bar
     {
@@ -631,17 +626,6 @@ function getDemoViews(): View[] {
       filter: {
         includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
       },
-    },
-    // Deal Duration Timeline — Range bar by Stage
-    {
-      id: "demo_velocity",
-      chartType: "RANGE_BAR",
-      xColumn: "Created Date",
-      x2Column: "CloseDate",
-      yColumn: "Stage",
-      size: "md",
-      priority: 87,
-      title: "Deal Duration Timeline",
     },
     // Revenue by Market Maturity — Column chart
     {
@@ -713,6 +697,7 @@ function AppContent() {
   const isLivingFeaturesEnabled = systemMode !== "B";
   const areRecommendationsEnabled = systemMode !== "B";
 
+  const { clearSelection } = useSelection();
   const { focusScore, restoreFocusScore } = useFocus();
   const {
     schema,
@@ -731,6 +716,7 @@ function AppContent() {
     selectAll: selectAllCategoryFilter,
     deselectAll: deselectAllCategoryFilter,
     toggleValue: toggleCategoryFilterValue,
+    clearAll: clearAllCategoryFilters,
   } = useCategoryFilter();
 
   const {
@@ -1609,11 +1595,23 @@ function AppContent() {
     [focusScore, logUserEvent, views]
   );
 
+  const handleResetAllFilters = useCallback(() => {
+    setViews((prev) =>
+      prev.map((v) => ({ ...v, filter: undefined }))
+    );
+    clearAllCategoryFilters();
+    clearSelection();
+    setTimeFilter(null);
+
+    logUserEvent("data_filter", { filterScope: "reset_all" }, views, focusScore);
+  }, [clearAllCategoryFilters, clearSelection, focusScore, logUserEvent, setTimeFilter, views]);
+
   return (
     <>
       <SidebarInset className="bg-muted/10">
         <SiteHeader
           onExportDashboardState={exportDashboardState}
+          onResetAllFilters={handleResetAllFilters}
           decayMode={decayMode}
           onDecayModeChange={setDecayMode}
         />
