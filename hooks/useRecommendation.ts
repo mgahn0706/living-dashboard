@@ -4,6 +4,8 @@ import { useCallback, useRef, useState } from "react";
 import { Recommendation } from "@/types/dashboard";
 import { VoiceUtterance } from "./useVoiceInput";
 import { makePrompt } from "@/lib/llm/makePrompt";
+import { scoreViewRelevance } from "@/lib/recommendation/viewRelevance";
+import { summarizeRecentRequest, buildRecentRequestMessages } from "@/lib/recommendation/requestSummary";
 
 /* ===================== Types ===================== */
 
@@ -60,12 +62,23 @@ export function useRecommendation() {
       setStreamingText("");
 
       try {
+        // Pre-LLM step: compute view relevance scores and filter eligibility
+        const userQuery = summarizeRecentRequest(
+          buildRecentRequestMessages({ conversation, textChats })
+        );
+        const relevanceResult = scoreViewRelevance(views, userQuery, dataSchema);
+
+        console.log("View Relevance:", relevanceResult.entries);
+        console.log("Drill-down view:", relevanceResult.drillDownViewId);
+
         const prompt = makePrompt({
           views,
           focusScore,
           conversation,
           textChats,
           dataSchema,
+          viewRelevance: relevanceResult.entries,
+          drillDownViewId: relevanceResult.drillDownViewId,
         });
 
         console.log("LLM Prompt:", prompt.content);
@@ -118,6 +131,11 @@ export function useRecommendation() {
           typeof parsed.reply === "string"
             ? parsed.reply.trim()
             : "";
+
+        // Log reasoning block for debugging (not shown in UI)
+        if (parsed?.reasoning) {
+          console.log("LLM Reasoning:", parsed.reasoning);
+        }
 
         setRecs(
           suppressRecommendations

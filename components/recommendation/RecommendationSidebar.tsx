@@ -27,6 +27,8 @@ import {
   IconArrowUpRight,
   IconSend,
   IconChevronDown,
+  IconArrowMergeRight,
+  IconHandClick,
 } from "@tabler/icons-react";
 
 import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
@@ -126,6 +128,8 @@ export function getActionLabel(r: Recommendation): string {
     REMOVE_CONTENT: "REMOVE",
     REORDER: "REORDER",
     RESIZE: "RESIZE",
+    DRILL_DOWN: "DRILL INTO",
+    CLICK: "CLICK",
   };
   const prefix = verbMap[r.type] || "UPDATE";
   const nouns = words
@@ -149,6 +153,10 @@ function recIcon(type: Recommendation["type"]) {
       return <IconFilter className="size-4" />;
     case "MODIFY_CONTENT":
       return <IconPencil className="size-4" />;
+    case "DRILL_DOWN":
+      return <IconArrowMergeRight className="size-4" />;
+    case "CLICK":
+      return <IconHandClick className="size-4" />;
     default:
       return <IconTrash className="size-4" />;
   }
@@ -251,119 +259,74 @@ function LiveTranscript({
   );
 }
 
-/* ===================== Unified Chat Log ===================== */
+/* ===================== Unified Feed Entry Types ===================== */
 
-type ChatEntry =
+type UnifiedFeedEntry =
   | { kind: "user"; msg: RecentRequestMessage }
-  | { kind: "assistant"; reply: LlmReply };
+  | { kind: "assistant"; reply: LlmReply }
+  | {
+      kind: "recommendations";
+      recs: Recommendation[];
+      justApplied: Recommendation[];
+    };
 
-function ChatLog({
-  userMessages,
-  assistantReplies,
-  fullHeight = false,
-}: {
-  userMessages: RecentRequestMessage[];
-  assistantReplies: LlmReply[];
-  fullHeight?: boolean;
-}) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+/* ===================== User Message Bubble ===================== */
 
-  const entries = useMemo<ChatEntry[]>(() => {
-    const all: ChatEntry[] = [
-      ...userMessages.map((msg) => ({ kind: "user" as const, msg })),
-      ...assistantReplies.map((reply) => ({
-        kind: "assistant" as const,
-        reply,
-      })),
-    ];
-    return all.sort((a, b) => {
-      const tA = a.kind === "user" ? a.msg.timestamp : a.reply.timestamp;
-      const tB = b.kind === "user" ? b.msg.timestamp : b.reply.timestamp;
-      return tA - tB;
-    });
-  }, [userMessages, assistantReplies]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [entries.length]);
-
+function UserMessageBubble({ msg }: { msg: RecentRequestMessage }) {
+  const isVoice = msg.source === "voice";
   return (
     <div
       className={cn(
-        "bg-background/95 backdrop-blur px-3 py-2 overflow-y-auto",
-        fullHeight ? "h-full" : "max-h-52"
+        "rounded-md border px-2 py-1 text-[11px] border-l-4",
+        isVoice
+          ? "bg-emerald-500/5 border-emerald-500/20 border-l-emerald-500"
+          : "bg-violet-500/5 border-violet-500/20 border-l-violet-500"
       )}
     >
-      <div className="flex flex-col gap-1.5">
-        {entries.length === 0 && (
-          <div className="text-[10px] text-muted-foreground/60">
-            No conversation yet
-          </div>
+      <div className="mb-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+        {isVoice ? (
+          <IconMicrophone className="size-3 text-emerald-600" />
+        ) : (
+          <IconMessageDots className="size-3 text-violet-600" />
         )}
+        {msg.lang && (
+          <>
+            <span>·</span>
+            <span>{msg.lang}</span>
+          </>
+        )}
+        <span>·</span>
+        <span>
+          {new Date(msg.timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
+      </div>
+      <div className="leading-snug">{msg.text}</div>
+    </div>
+  );
+}
 
-        {entries.map((entry, i) => {
-          if (entry.kind === "user") {
-            const m = entry.msg;
-            const isVoice = m.source === "voice";
-            return (
-              <div
-                key={m.id}
-                className={cn(
-                  "rounded-md border px-2 py-1 text-[11px] border-l-4",
-                  isVoice
-                    ? "bg-emerald-500/5 border-emerald-500/20 border-l-emerald-500"
-                    : "bg-violet-500/5 border-violet-500/20 border-l-violet-500"
-                )}
-              >
-                <div className="mb-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                  {isVoice ? (
-                    <IconMicrophone className="size-3 text-emerald-600" />
-                  ) : (
-                    <IconMessageDots className="size-3 text-violet-600" />
-                  )}
-                  {m.lang && (
-                    <>
-                      <span>·</span>
-                      <span>{m.lang}</span>
-                    </>
-                  )}
-                  <span>·</span>
-                  <span>
-                    {new Date(m.timestamp).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-                <div className="leading-snug">{m.text}</div>
-              </div>
-            );
-          }
+/* ===================== Assistant Reply Bubble ===================== */
 
-          // assistant
-          const r = entry.reply;
-          return (
-            <div key={`ai-${i}`} className="flex justify-end">
-              <div className="max-w-[88%] rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] leading-snug text-foreground shadow-sm">
-                <div className="mb-0.5 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
-                    <IconSparkles className="size-3" />
-                    <span>Assistant</span>
-                  </div>
-                  <span className="text-[10px] text-muted-foreground">
-                    {new Date(r.timestamp).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-                <div className="mt-1 whitespace-pre-wrap">{r.text}</div>
-              </div>
-            </div>
-          );
-        })}
-
-        <div ref={bottomRef} />
+function AssistantReplyBubble({ reply }: { reply: LlmReply }) {
+  return (
+    <div className="flex justify-end">
+      <div className="max-w-[88%] rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] leading-snug text-foreground shadow-sm">
+        <div className="mb-0.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700 dark:text-sky-400">
+            <IconSparkles className="size-3" />
+            <span>Assistant</span>
+          </div>
+          <span className="text-[10px] text-muted-foreground">
+            {new Date(reply.timestamp).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+        </div>
+        <div className="mt-1 whitespace-pre-wrap">{reply.text}</div>
       </div>
     </div>
   );
@@ -629,11 +592,9 @@ export default function RecommendationSidebar({
   onChangeLanguage: (lang: "en-US" | "ko-KR" | "ja-JP") => void;
 }) {
   const { isListening, partial, conversation, start, stop } = voice;
-  const [activeTab, setActiveTab] = useState<"suggestions" | "chat">(
-    recommendationsEnabled ? "suggestions" : "chat"
-  );
   const [justAppliedIds, setJustAppliedIds] = useState<Set<string>>(new Set());
   const [showOlderHistory, setShowOlderHistory] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   // Stable color assignment: remember each rec's original palette index so
   // colors don't shift when earlier recommendations are applied/removed.
@@ -653,10 +614,19 @@ export default function RecommendationSidebar({
       ? "話してください…"
       : "Speak now…";
 
+  // Cache text-message timestamps so they don't shift on every recalculation.
+  // buildRecentRequestMessages uses Date.now() as a synthetic base, which would
+  // regenerate timestamps and break chronological ordering against llmReplies.
+  const textTsCache = useRef<Map<string, number>>(new Map());
+
   const unifiedMessages = useMemo(() => {
-    return buildRecentRequestMessages({
-      conversation,
-      textChats,
+    const msgs = buildRecentRequestMessages({ conversation, textChats });
+    return msgs.map((m) => {
+      if (m.source !== "text") return m; // voice timestamps are already stable
+      const cached = textTsCache.current.get(m.id);
+      if (cached != null) return { ...m, timestamp: cached };
+      textTsCache.current.set(m.id, m.timestamp);
+      return m;
     });
   }, [conversation, textChats]);
 
@@ -690,12 +660,6 @@ export default function RecommendationSidebar({
   const appliedCount = history.length;
   const pendingCount = activeRecommendations.length;
 
-  useEffect(() => {
-    if (!recommendationsEnabled && activeTab !== "chat") {
-      setActiveTab("chat");
-    }
-  }, [activeTab, recommendationsEnabled]);
-
   // Combine just-applied recs (for success animation) with active recs
   const justAppliedRecs = useMemo(
     () => history.filter((r) => justAppliedIds.has(r.id)),
@@ -705,6 +669,53 @@ export default function RecommendationSidebar({
     () => history.filter((r) => !justAppliedIds.has(r.id)),
     [history, justAppliedIds]
   );
+
+  // Build the unified chronological feed for System A
+  const unifiedFeed = useMemo<UnifiedFeedEntry[]>(() => {
+    const entries: UnifiedFeedEntry[] = [
+      ...unifiedMessages.map((msg) => ({ kind: "user" as const, msg })),
+      ...llmReplies.map((reply) => ({
+        kind: "assistant" as const,
+        reply,
+      })),
+    ];
+
+    // Sort by timestamp
+    const ts = (e: UnifiedFeedEntry) =>
+      e.kind === "user"
+        ? e.msg.timestamp
+        : e.kind === "assistant"
+        ? e.reply.timestamp
+        : 0;
+    entries.sort((a, b) => ts(a) - ts(b));
+
+    // Insert recommendations after the latest assistant reply
+    const hasRecContent =
+      activeRecommendations.length > 0 || justAppliedRecs.length > 0;
+    if (hasRecContent) {
+      let lastAssistantIdx = -1;
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i].kind === "assistant") {
+          lastAssistantIdx = i;
+          break;
+        }
+      }
+      const insertAt =
+        lastAssistantIdx >= 0 ? lastAssistantIdx + 1 : entries.length;
+      entries.splice(insertAt, 0, {
+        kind: "recommendations",
+        recs: activeRecommendations,
+        justApplied: justAppliedRecs,
+      });
+    }
+
+    return entries;
+  }, [unifiedMessages, llmReplies, activeRecommendations, justAppliedRecs]);
+
+  // Auto-scroll to bottom when new content arrives
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [unifiedFeed.length, isGenerating]);
 
   return (
     <>
@@ -741,45 +752,18 @@ export default function RecommendationSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
 
-        {/* Tab navigation */}
+        {/* Section label (no tabs) */}
         <div className="flex mt-2">
-          {recommendationsEnabled ? (
-            <>
-              <button
-                onClick={() => setActiveTab("suggestions")}
-                className={cn(
-                  "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
-                  activeTab === "suggestions"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Suggestions ({pendingCount})
-              </button>
-              <button
-                onClick={() => setActiveTab("chat")}
-                className={cn(
-                  "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
-                  activeTab === "chat"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Chat Log
-              </button>
-            </>
-          ) : (
-            <div className="w-full py-2 text-[11px] font-semibold uppercase tracking-wide text-primary border-b-2 border-primary text-center">
-              Data Chat
-            </div>
-          )}
+          <div className="w-full py-2 text-[11px] font-semibold uppercase tracking-wide text-primary border-b-2 border-primary text-center">
+            {recommendationsEnabled ? "Conversation" : "Data Chat"}
+          </div>
         </div>
       </SidebarHeader>
 
       {/* Main scroll area */}
       <SidebarContent className="flex-1 overflow-hidden">
         {!recommendationsEnabled ? (
-          /* ===== System B: Chat Conversation ===== */
+          /* ===== System B: Chat Conversation (unchanged) ===== */
           <ScrollArea className="h-full">
             <ChatConversation
               messages={chatMessages}
@@ -787,9 +771,276 @@ export default function RecommendationSidebar({
               isLoading={isGenerating}
             />
           </ScrollArea>
-        ) : activeTab === "suggestions" ? (
+        ) : (
+          /* ===== System A: Unified Feed ===== */
           <ScrollArea className="h-full p-4">
-            <div className="flex flex-col gap-3 pr-1">
+            <div className="flex flex-col gap-2 pr-1">
+
+              {/* ===== Applied History (collapsible, at top) ===== */}
+              {appliedHistory.length > 0 && (
+                <div className="flex flex-col gap-2 mb-1">
+                  {onUndoLatest && (
+                    <button
+                      onClick={onUndoLatest}
+                      className="w-full rounded-md border bg-background/70 px-3 py-2 text-xs font-semibold text-primary hover:bg-muted"
+                    >
+                      Undo last change
+                    </button>
+                  )}
+
+                  <Collapsible
+                    open={showOlderHistory}
+                    onOpenChange={setShowOlderHistory}
+                  >
+                    <CollapsibleTrigger asChild>
+                      <button className="flex w-full items-center justify-between rounded-md border bg-background/70 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
+                        <span>
+                          Previous suggestions ({appliedHistory.length})
+                        </span>
+                        <IconChevronDown
+                          className={cn(
+                            "size-4 transition-transform",
+                            showOlderHistory && "rotate-180"
+                          )}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+
+                    <CollapsibleContent className="mt-2 space-y-2">
+                      <AnimatePresence initial={false}>
+                        {appliedHistory.map((r, idx) => (
+                          <motion.div
+                            key={`${r.id}-${idx}`}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                          >
+                            <AppliedHistoryItem recommendation={r} />
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </div>
+              )}
+
+              {/* ===== Chronological Unified Feed ===== */}
+              {unifiedFeed.map((entry, i) => {
+                if (entry.kind === "user") {
+                  return (
+                    <UserMessageBubble key={entry.msg.id} msg={entry.msg} />
+                  );
+                }
+
+                if (entry.kind === "assistant") {
+                  return (
+                    <AssistantReplyBubble
+                      key={`ai-${i}`}
+                      reply={entry.reply}
+                    />
+                  );
+                }
+
+                if (entry.kind === "recommendations") {
+                  return (
+                    <div key="rec-group" className="flex flex-col gap-2">
+                      {/* Apply All banner */}
+                      {entry.recs.length > 1 && (
+                        <button
+                          onClick={handleApplyAll}
+                          className="w-full flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs transition hover:bg-primary/10"
+                        >
+                          <span className="flex items-center gap-1.5 font-semibold text-primary">
+                            <IconBolt className="size-3.5" />
+                            Apply all {entry.recs.length} recommendations
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            1-click
+                          </span>
+                        </button>
+                      )}
+
+                      {/* Just-Applied success cards */}
+                      <AnimatePresence>
+                        {entry.justApplied.map((r, idx) => (
+                          <motion.div
+                            key={`applied-${r.id}-${idx}`}
+                            initial={{ opacity: 1, scale: 1 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{
+                              opacity: 0,
+                              height: 0,
+                              marginBottom: 0,
+                            }}
+                            transition={{ duration: 0.3 }}
+                          >
+                            <div className="w-full min-w-0 flex items-center gap-2 rounded-lg border-2 border-emerald-400/50 bg-emerald-50/40 dark:bg-emerald-950/30 px-3 py-2.5 text-xs">
+                              <div className="inline-flex size-7 items-center justify-center rounded-full bg-emerald-500 text-white">
+                                <IconCheck className="size-4" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="font-medium text-emerald-700 dark:text-emerald-300">
+                                  Applied to dashboard
+                                </div>
+                                <div className="text-[11px] text-muted-foreground truncate">
+                                  {r.title}
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+
+                      {/* Active recommendation cards */}
+                      {entry.recs.length > 0 && (
+                        <div className="flex flex-col gap-2">
+                          <AnimatePresence>
+                            {entry.recs.map((r, idx) => {
+                              const confidence = getConfidence(
+                                idx,
+                                entry.recs.length
+                              );
+                              const targetId = getRecTargetViewId(r);
+                              const targetTitle = targetId
+                                ? viewTitles[targetId]
+                                : undefined;
+                              const color = getRecColor(
+                                colorMapRef.current.get(r.id) ?? idx
+                              );
+
+                              return (
+                                <motion.div
+                                  key={r.id}
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{
+                                    opacity: 0,
+                                    scale: 0.95,
+                                    height: 0,
+                                  }}
+                                  transition={{ duration: 0.25 }}
+                                >
+                                  <div
+                                    className="w-full min-w-0 rounded-lg border-2 text-xs overflow-hidden"
+                                    style={{
+                                      borderColor: `${color}40`,
+                                      backgroundColor: `${color}08`,
+                                    }}
+                                  >
+                                    {/* Card header: rank + type + confidence */}
+                                    <div
+                                      className="flex items-center gap-2 px-2.5 py-2 border-b"
+                                      style={{
+                                        borderBottomColor: `${color}20`,
+                                      }}
+                                    >
+                                      <div
+                                        className="inline-flex size-6 items-center justify-center rounded-md font-bold text-[11px] shrink-0"
+                                        style={{
+                                          backgroundColor: `${color}20`,
+                                          color,
+                                        }}
+                                      >
+                                        {idx + 1}
+                                      </div>
+                                      <span
+                                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                                        style={{
+                                          backgroundColor: `${color}15`,
+                                          color,
+                                        }}
+                                      >
+                                        {recIcon(r.type)}
+                                        {getActionLabel(r)}
+                                      </span>
+                                      <span className="ml-auto text-[10px] font-semibold text-muted-foreground">
+                                        {confidence}% match
+                                      </span>
+                                    </div>
+
+                                    {/* Card body */}
+                                    <div className="px-2.5 py-2">
+                                      <div className="font-medium leading-snug break-words">
+                                        {r.title}
+                                      </div>
+                                      <div className="mt-1 break-words text-[11px] text-muted-foreground">
+                                        {r.reason}
+                                      </div>
+
+                                      {/* Target chart link */}
+                                      {targetTitle && targetId && (
+                                        <button
+                                          onClick={() =>
+                                            scrollToChart(targetId, color)
+                                          }
+                                          className="mt-2 inline-flex items-center gap-1 rounded-md border bg-background/60 px-2 py-1 text-[10px] text-muted-foreground cursor-pointer transition-colors hover:bg-muted group"
+                                        >
+                                          <IconArrowUpRight
+                                            className="size-3"
+                                            style={{ color }}
+                                          />
+                                          <span className="truncate max-w-[160px] group-hover:underline">
+                                            {targetTitle}
+                                          </span>
+                                        </button>
+                                      )}
+
+                                      {/* Confidence bar */}
+                                      <div className="mt-2">
+                                        <ConfidenceBar
+                                          confidence={confidence}
+                                          index={idx}
+                                          color={color}
+                                        />
+                                      </div>
+
+                                      {/* Actions */}
+                                      <div className="mt-2.5 flex items-center gap-1">
+                                        <button
+                                          className="inline-flex items-center gap-1 rounded-md h-6 px-2 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+                                          style={{ backgroundColor: color }}
+                                          onClick={() => handleApply(r)}
+                                        >
+                                          <IconCheck className="size-3" />
+                                          Apply
+                                        </button>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-6 w-6"
+                                          onClick={() =>
+                                            onDeclineRecommendation?.(r)
+                                          }
+                                          aria-label="Decline"
+                                        >
+                                          <IconX className="size-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
+                          </AnimatePresence>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return null;
+              })}
+
+              {/* ===== Empty state ===== */}
+              {unifiedFeed.length === 0 &&
+                appliedHistory.length === 0 &&
+                !isGenerating && (
+                  <div className="text-xs text-muted-foreground py-4 text-center">
+                    No conversation yet. Use voice or text to interact with your
+                    dashboard.
+                  </div>
+                )}
+
+              {/* ===== Streaming / Loading indicator ===== */}
               {isGenerating && !isListening && (
                 <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
                   <div className="flex items-center gap-2 text-xs font-medium text-primary">
@@ -831,238 +1082,8 @@ export default function RecommendationSidebar({
                 </div>
               )}
 
-              {/* ===== Apply All Banner ===== */}
-              {recommendationsEnabled && activeRecommendations.length > 1 && (
-                <button
-                  onClick={handleApplyAll}
-                  className="w-full flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs transition hover:bg-primary/10"
-                >
-                  <span className="flex items-center gap-1.5 font-semibold text-primary">
-                    <IconBolt className="size-3.5" />
-                    Apply all {activeRecommendations.length} recommendations
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    1-click
-                  </span>
-                </button>
-              )}
-
-              {/* ===== Just-Applied Success Cards ===== */}
-              <AnimatePresence>
-                {justAppliedRecs.map((r) => (
-                  <motion.div
-                    key={`applied-${r.id}`}
-                    initial={{ opacity: 1, scale: 1 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <div className="w-full min-w-0 flex items-center gap-2 rounded-lg border-2 border-emerald-400/50 bg-emerald-50/40 dark:bg-emerald-950/30 px-3 py-2.5 text-xs">
-                      <div className="inline-flex size-7 items-center justify-center rounded-full bg-emerald-500 text-white">
-                        <IconCheck className="size-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium text-emerald-700 dark:text-emerald-300">
-                          Applied to dashboard
-                        </div>
-                        <div className="text-[11px] text-muted-foreground truncate">
-                          {r.title}
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-
-              {/* ===== Active (Pending) Recommendations ===== */}
-              {recommendationsEnabled && activeRecommendations.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  <AnimatePresence>
-                    {activeRecommendations.map((r, idx) => {
-                      const confidence = getConfidence(
-                        idx,
-                        activeRecommendations.length
-                      );
-                      const targetId = getRecTargetViewId(r);
-                      const targetTitle = targetId
-                        ? viewTitles[targetId]
-                        : undefined;
-                      const color = getRecColor(colorMapRef.current.get(r.id) ?? idx);
-
-                      return (
-                        <motion.div
-                          key={r.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95, height: 0 }}
-                          transition={{ duration: 0.25 }}
-                        >
-                          <div
-                            className="w-full min-w-0 rounded-lg border-2 text-xs overflow-hidden"
-                            style={{
-                              borderColor: `${color}40`,
-                              backgroundColor: `${color}08`,
-                            }}
-                          >
-                            {/* Card header: rank + type + confidence */}
-                            <div
-                              className="flex items-center gap-2 px-2.5 py-2 border-b"
-                              style={{ borderBottomColor: `${color}20` }}
-                            >
-                              <div
-                                className="inline-flex size-6 items-center justify-center rounded-md font-bold text-[11px] shrink-0"
-                                style={{
-                                  backgroundColor: `${color}20`,
-                                  color,
-                                }}
-                              >
-                                {idx + 1}
-                              </div>
-                              <span
-                                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                                style={{
-                                  backgroundColor: `${color}15`,
-                                  color,
-                                }}
-                              >
-                                {recIcon(r.type)}
-                                {getActionLabel(r)}
-                              </span>
-                              <span className="ml-auto text-[10px] font-semibold text-muted-foreground">
-                                {confidence}% match
-                              </span>
-                            </div>
-
-                            {/* Card body */}
-                            <div className="px-2.5 py-2">
-                              <div className="font-medium leading-snug break-words">
-                                {r.title}
-                              </div>
-                              <div className="mt-1 break-words text-[11px] text-muted-foreground">
-                                {r.reason}
-                              </div>
-
-                              {/* Target chart link */}
-                              {targetTitle && targetId && (
-                                <button
-                                  onClick={() => scrollToChart(targetId, color)}
-                                  className="mt-2 inline-flex items-center gap-1 rounded-md border bg-background/60 px-2 py-1 text-[10px] text-muted-foreground cursor-pointer transition-colors hover:bg-muted group"
-                                >
-                                  <IconArrowUpRight
-                                    className="size-3"
-                                    style={{ color }}
-                                  />
-                                  <span className="truncate max-w-[160px] group-hover:underline">
-                                    {targetTitle}
-                                  </span>
-                                </button>
-                              )}
-
-                              {/* Confidence bar */}
-                              <div className="mt-2">
-                                <ConfidenceBar
-                                  confidence={confidence}
-                                  index={idx}
-                                  color={color}
-                                />
-                              </div>
-
-                              {/* Actions */}
-                              <div className="mt-2.5 flex items-center gap-1">
-                                <button
-                                  className="inline-flex items-center gap-1 rounded-md h-6 px-2 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
-                                  style={{ backgroundColor: color }}
-                                  onClick={() => handleApply(r)}
-                                >
-                                  <IconCheck className="size-3" />
-                                  Apply
-                                </button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-6 w-6"
-                                  onClick={() => onDeclineRecommendation?.(r)}
-                                  aria-label="Decline"
-                                >
-                                  <IconX className="size-3" />
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </AnimatePresence>
-                </div>
-              )}
-
-              {/* ===== Applied History (all in collapsible) ===== */}
-              {appliedHistory.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  {onUndoLatest && (
-                    <button
-                      onClick={onUndoLatest}
-                      className="w-full rounded-md border bg-background/70 px-3 py-2 text-xs font-semibold text-primary hover:bg-muted"
-                    >
-                      Undo last change
-                    </button>
-                  )}
-
-                  <Collapsible
-                    open={showOlderHistory}
-                    onOpenChange={setShowOlderHistory}
-                  >
-                    <CollapsibleTrigger asChild>
-                      <button className="flex w-full items-center justify-between rounded-md border bg-background/70 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">
-                        <span>
-                          Previous suggestions ({appliedHistory.length})
-                        </span>
-                        <IconChevronDown
-                          className={cn(
-                            "size-4 transition-transform",
-                            showOlderHistory && "rotate-180"
-                          )}
-                        />
-                      </button>
-                    </CollapsibleTrigger>
-
-                    <CollapsibleContent className="mt-2 space-y-2">
-                      <AnimatePresence initial={false}>
-                        {appliedHistory.map((r) => (
-                          <motion.div
-                            key={r.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                          >
-                            <AppliedHistoryItem recommendation={r} />
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
-                    </CollapsibleContent>
-                  </Collapsible>
-                </div>
-              )}
-
-              {history.length === 0 &&
-                activeRecommendations.length === 0 &&
-                justAppliedRecs.length === 0 &&
-                !isGenerating && (
-                  <div className="text-xs text-muted-foreground">
-                    {recommendationsEnabled
-                      ? "No recommendations yet."
-                      : "No chat history yet."}
-                  </div>
-                )}
+              <div ref={bottomRef} />
             </div>
-          </ScrollArea>
-        ) : (
-          /* ===== Chat Log Tab ===== */
-          <ScrollArea className="h-full">
-            <ChatLog
-              userMessages={unifiedMessages}
-              assistantReplies={llmReplies}
-              fullHeight
-            />
           </ScrollArea>
         )}
       </SidebarContent>
