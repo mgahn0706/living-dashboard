@@ -182,6 +182,13 @@ function ViewCard({
   const contentOpacity = isEditing ? 1 : 0.6 + normalizedFocus * 0.4;
   const cardChromeHeight = recommendation ? 140 : 104;
   const reservedCardHeight = slotHeightPx + cardChromeHeight;
+  const widthScale = Number.isFinite(Number.parseFloat(widthPercent))
+    ? Math.max(0.25, Math.min(1, Number.parseFloat(widthPercent) / 100))
+    : 1;
+  const heightScale = Math.max(
+    0.25,
+    Math.min(1, (heightPx + cardChromeHeight) / reservedCardHeight)
+  );
   const hasLowFocusScore =
     typeof focusScoreValue === "number" &&
     focusScoreValue < INITIAL_FOCUS_SCORE - 5;
@@ -360,12 +367,14 @@ function ViewCard({
                 : baseShadow,
           backgroundColor: tintOpacity > 0 ? `rgba(180, 100, 20, ${tintOpacity.toFixed(4)})` : undefined,
           opacity: dissolveStrength > 0 ? dissolveOpacity : undefined,
-          width: widthPercent,
-          maxWidth: "100%",
-          minWidth: minCardWidth ? `min(100%, ${minCardWidth}px)` : 0,
+          width: "100%",
+          minWidth: 0,
+          transform: `scale(${widthScale}, ${heightScale})`,
+          transformOrigin: "top left",
+          willChange: "transform, opacity",
         }}
         className={cn(
-          "relative overflow-hidden transition-all duration-300 ease-out cursor-pointer",
+          "relative overflow-hidden transition-[transform,opacity,box-shadow,background-color,border-color] duration-300 ease-out cursor-pointer",
           "h-full",
           "hover:ring-1 hover:ring-ring",
           isEditing &&
@@ -653,7 +662,7 @@ function ViewCard({
           <CardContent
             className="relative flex p-0 overflow-hidden transition-[height,filter] duration-300 ease-out"
             style={{
-              height: `${heightPx}px`,
+              height: `${slotHeightPx}px`,
               filter: dissolveBlur > 0 ? `blur(${dissolveBlur.toFixed(1)}px)` : undefined,
             }}
           >
