@@ -688,7 +688,7 @@ function AppContent() {
     "en-US"
   );
   const [isInitializing, setIsInitializing] = useState(false);
-  const [decayMode, setDecayMode] = useState<DecayMode>("shrink");
+  const [decayMode, setDecayMode] = useState<DecayMode>("vignette");
   const [isFocusScoreVisible, setIsFocusScoreVisible] = useState(false);
   const [appliedRecColorByViewId, setAppliedRecColorByViewId] = useState<
     Record<string, string>
