@@ -172,14 +172,20 @@ function ViewCard({
   const normalizedFocus = Number.isFinite(focusIntensity)
     ? Math.max(0, Math.min(1, focusIntensity))
     : 0.2;
-  const borderOpacity = 0.1 + normalizedFocus * 0.18;
+
+  // Hover state: readability effects (dissolve, burn, opacity) clear instantly
+  // on hover while sizing stays driven by the slow-recovering focusIntensity.
+  const [isHovered, setIsHovered] = React.useState(false);
+  const readabilityFocus = isHovered ? 1 : normalizedFocus;
+
+  const borderOpacity = 0.1 + readabilityFocus * 0.18;
   const borderColor = `rgba(59, 130, 246, ${borderOpacity.toFixed(3)})`;
   const baseShadow = "0 1px 2px rgba(0, 0, 0, 0.08)";
   const recColor =
     recommendation && recommendationIndex != null
       ? getRecColor(recommendationIndex - 1)
       : undefined;
-  const contentOpacity = isEditing ? 1 : 0.6 + normalizedFocus * 0.4;
+  const contentOpacity = isEditing ? 1 : 0.6 + readabilityFocus * 0.4;
   const cardChromeHeight = recommendation ? 140 : 104;
   const reservedCardHeight = slotHeightPx + cardChromeHeight;
   const widthScale = Number.isFinite(Number.parseFloat(widthPercent))
@@ -210,19 +216,21 @@ function ViewCard({
   const skipDecayEffects = hasActiveRec || isEditing;
 
   // ---- Burn mode: vignette + tint (only when decayMode === "burn") ----
+  // Uses readabilityFocus so effects clear instantly on hover.
   const vignetteStrength =
     decayMode === "burn" && !skipDecayEffects
-      ? Math.max(0, Math.min(1, (0.7 - normalizedFocus) / (0.7 - 0.25)))
+      ? Math.max(0, Math.min(1, (0.7 - readabilityFocus) / (0.7 - 0.25)))
       : 0;
   const tintOpacity =
     decayMode === "burn" && !skipDecayEffects
-      ? Math.max(0, Math.min(1, (0.4 - normalizedFocus) / (0.4 - 0.25))) * 0.025
+      ? Math.max(0, Math.min(1, (0.4 - readabilityFocus) / (0.4 - 0.25))) * 0.025
       : 0;
 
   // ---- Dissolve mode: opacity, border, blur (only when decayMode === "dissolve") ----
+  // Uses readabilityFocus so effects clear instantly on hover.
   const dissolveStrength =
     decayMode === "dissolve" && !skipDecayEffects
-      ? Math.max(0, Math.min(1, (0.7 - normalizedFocus) / (0.7 - 0.25)))
+      ? Math.max(0, Math.min(1, (0.7 - readabilityFocus) / (0.7 - 0.25)))
       : 0;
   const dissolveOpacity = 1 - dissolveStrength * 0.75; // 1.0 → 0.25
   const dissolveBorderOpacity = borderOpacity * (1 - dissolveStrength * 0.95); // fades to ~5%
@@ -319,9 +327,11 @@ function ViewCard({
     onCardClick?.(view.id);
   }, [onCardClick, view.id]);
   const handlePointerEnterCard = React.useCallback(() => {
+    setIsHovered(true);
     onPointerEnter?.(view.id);
   }, [onPointerEnter, view.id]);
   const handlePointerLeaveCard = React.useCallback(() => {
+    setIsHovered(false);
     onPointerLeave?.(view.id);
   }, [onPointerLeave, view.id]);
   const handleEditClick = React.useCallback(() => {
