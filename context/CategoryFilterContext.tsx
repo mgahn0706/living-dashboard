@@ -14,6 +14,7 @@ type CategoryFilterContextType = {
   toggleValue: (column: string, value: string) => void;
   selectAll: (column: string, allValues: string[]) => void;
   deselectAll: (column: string) => void;
+  clearAll: () => void;
 };
 
 const CategoryFilterContext = createContext<CategoryFilterContextType | null>(null);
@@ -60,9 +61,13 @@ export function CategoryFilterProvider({ children }: { children: React.ReactNode
     );
   }, []);
 
+  const clearAll = useCallback(() => {
+    setCategoryFilters([]);
+  }, []);
+
   const value = useMemo(
-    () => ({ categoryFilters, addFilter, removeFilter, toggleValue, selectAll, deselectAll }),
-    [categoryFilters, addFilter, removeFilter, toggleValue, selectAll, deselectAll]
+    () => ({ categoryFilters, addFilter, removeFilter, toggleValue, selectAll, deselectAll, clearAll }),
+    [categoryFilters, addFilter, removeFilter, toggleValue, selectAll, deselectAll, clearAll]
   );
 
   return (

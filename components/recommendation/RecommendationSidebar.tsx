@@ -31,6 +31,7 @@ import {
 
 import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
 import type { LlmReply } from "@/hooks/useRecommendation";
+import type { ChatEntry } from "@/hooks/useChat";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -368,6 +369,116 @@ function ChatLog({
   );
 }
 
+/* ===================== Chat Conversation (System B) ===================== */
+
+function ChatConversation({
+  messages,
+  streamingText,
+  isLoading,
+}: {
+  messages: ChatEntry[];
+  streamingText?: string;
+  isLoading?: boolean;
+}) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length, streamingText]);
+
+  return (
+    <div className="h-full bg-background/95 backdrop-blur px-3 py-2">
+      <div className="flex flex-col gap-1.5">
+        {messages.length === 0 && !isLoading && (
+          <div className="text-[10px] text-muted-foreground/60 py-4 text-center">
+            Ask a question about your data...
+          </div>
+        )}
+
+        {messages.map((entry) => {
+          if (entry.role === "user") {
+            const isVoice = entry.source === "voice";
+            return (
+              <div
+                key={entry.id}
+                className={cn(
+                  "rounded-md border px-2 py-1 text-[11px] border-l-4",
+                  isVoice
+                    ? "bg-emerald-500/5 border-emerald-500/20 border-l-emerald-500"
+                    : "bg-violet-500/5 border-violet-500/20 border-l-violet-500"
+                )}
+              >
+                <div className="mb-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                  {isVoice ? (
+                    <IconMicrophone className="size-3 text-emerald-600" />
+                  ) : (
+                    <IconMessageDots className="size-3 text-violet-600" />
+                  )}
+                  <span>
+                    {new Date(entry.timestamp).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+                <div className="leading-snug">{entry.content}</div>
+              </div>
+            );
+          }
+
+          return (
+            <div key={entry.id} className="flex justify-end">
+              <div className="max-w-[88%] rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] leading-snug text-foreground shadow-sm">
+                <div className="mb-0.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700 dark:text-sky-400">
+                    <IconSparkles className="size-3" />
+                    <span>Assistant</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(entry.timestamp).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+                <div className="mt-1 whitespace-pre-wrap">{entry.content}</div>
+              </div>
+            </div>
+          );
+        })}
+
+        {isLoading && streamingText && (
+          <div className="flex justify-end">
+            <div className="max-w-[88%] rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] leading-snug text-foreground shadow-sm">
+              <div className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700 dark:text-sky-400">
+                <IconSparkles className="size-3 animate-pulse" />
+                <span>Assistant</span>
+              </div>
+              <div className="mt-1 whitespace-pre-wrap">
+                {streamingText}
+                <span className="inline-block w-1.5 h-3.5 bg-sky-500/60 animate-pulse ml-0.5 align-middle" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isLoading && !streamingText && (
+          <div className="flex justify-end">
+            <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2">
+              <div className="flex items-center gap-2 text-[10px] text-sky-700 dark:text-sky-400">
+                <IconSparkles className="size-3 animate-pulse" />
+                <span>Thinking...</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
 /* ===================== Chat Input ===================== */
 
 function ChatInputBar({
@@ -491,6 +602,7 @@ export default function RecommendationSidebar({
   streamingText = "",
   textChats = [],
   viewTitles = {},
+  chatMessages = [],
   onChangeLanguage,
   onUndoLatest,
   onSendTextChat,
@@ -508,6 +620,7 @@ export default function RecommendationSidebar({
   streamingText?: string;
   textChats?: string[];
   viewTitles?: Record<string, string>;
+  chatMessages?: ChatEntry[];
   onUndoLatest?: () => void;
   onSendTextChat?: (text: string) => void;
   onAcceptRecommendation?: (rec: Recommendation) => void;
@@ -630,37 +743,51 @@ export default function RecommendationSidebar({
 
         {/* Tab navigation */}
         <div className="flex mt-2">
-          {recommendationsEnabled && (
-            <button
-              onClick={() => setActiveTab("suggestions")}
-              className={cn(
-                "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
-                activeTab === "suggestions"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Suggestions ({pendingCount})
-            </button>
+          {recommendationsEnabled ? (
+            <>
+              <button
+                onClick={() => setActiveTab("suggestions")}
+                className={cn(
+                  "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
+                  activeTab === "suggestions"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Suggestions ({pendingCount})
+              </button>
+              <button
+                onClick={() => setActiveTab("chat")}
+                className={cn(
+                  "flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
+                  activeTab === "chat"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Chat Log
+              </button>
+            </>
+          ) : (
+            <div className="w-full py-2 text-[11px] font-semibold uppercase tracking-wide text-primary border-b-2 border-primary text-center">
+              Data Chat
+            </div>
           )}
-          <button
-            onClick={() => setActiveTab("chat")}
-            className={cn(
-              "py-2 text-[11px] font-semibold uppercase tracking-wide transition-colors border-b-2",
-              recommendationsEnabled ? "flex-1" : "w-full",
-              activeTab === "chat"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Chat Log
-          </button>
         </div>
       </SidebarHeader>
 
       {/* Main scroll area */}
       <SidebarContent className="flex-1 overflow-hidden">
-        {activeTab === "suggestions" ? (
+        {!recommendationsEnabled ? (
+          /* ===== System B: Chat Conversation ===== */
+          <ScrollArea className="h-full">
+            <ChatConversation
+              messages={chatMessages}
+              streamingText={streamingText}
+              isLoading={isGenerating}
+            />
+          </ScrollArea>
+        ) : activeTab === "suggestions" ? (
           <ScrollArea className="h-full p-4">
             <div className="flex flex-col gap-3 pr-1">
               {isGenerating && !isListening && (

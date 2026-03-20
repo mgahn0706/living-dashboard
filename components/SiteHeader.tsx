@@ -4,6 +4,7 @@ import { useRef } from "react";
 import {
   IconDownload,
   IconUpload,
+  IconFilterOff,
 } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import type { DecayMode } from "@/types/dashboard";
 
 interface SiteHeaderProps {
   onExportDashboardState?: () => void;
+  onResetAllFilters?: () => void;
   decayMode?: DecayMode;
   onDecayModeChange?: (mode: DecayMode) => void;
 }
@@ -26,6 +28,7 @@ const DECAY_OPTIONS: { value: DecayMode; label: string }[] = [
 
 export function SiteHeader({
   onExportDashboardState,
+  onResetAllFilters,
   decayMode = "shrink",
   onDecayModeChange,
 }: SiteHeaderProps = {}) {
@@ -78,6 +81,18 @@ export function SiteHeader({
             >
               <IconDownload className="size-4" />
               <span>Export State</span>
+            </Button>
+          )}
+
+          {hasDataset && onResetAllFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden sm:flex gap-2 text-muted-foreground"
+              onClick={onResetAllFilters}
+            >
+              <IconFilterOff className="size-4" />
+              <span>Reset Filters</span>
             </Button>
           )}
 

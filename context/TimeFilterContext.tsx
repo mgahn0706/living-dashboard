@@ -19,7 +19,7 @@ const TimeFilterContext = createContext<TimeFilterContextType | null>(null);
 
 export function TimeFilterProvider({ children }: { children: React.ReactNode }) {
   const [timeFilter, setTimeFilterState] = useState<TimeFilter | null>(null);
-  const [selectedColumn, setSelectedColumn] = useState<string | null>(null);
+  const [selectedColumn, setSelectedColumn] = useState<string | null>("Created Date");
 
   const setTimeFilter = useCallback((filter: TimeFilter | null) => {
     setTimeFilterState(filter);
