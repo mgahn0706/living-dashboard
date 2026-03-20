@@ -1,11 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import {
-  IconDownload,
-  IconUpload,
-  IconFilterOff,
-} from "@tabler/icons-react";
+import { IconDownload, IconUpload, IconFilterOff } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -132,11 +128,11 @@ export function SiteHeader({
             <>
               <Separator orientation="vertical" className="mx-1 h-4" />
               <label className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
-                <span>Show focus score</span>
+                <span>Explain the view change</span>
                 <Switch
                   checked={isFocusScoreVisible}
                   onCheckedChange={onFocusScoreVisibilityChange}
-                  aria-label="Toggle focus score display"
+                  aria-label="Toggle focus information display"
                 />
               </label>
             </>
