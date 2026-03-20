@@ -23,9 +23,14 @@ const CHART_BASIS = { min: 16, max: 32 };
 const CHART_HEIGHT = { min: 100, max: 260 };
 const KPI_BASIS = { min: 8, max: 11.5 };
 const KPI_HEIGHT = { min: 56, max: 100 };
+const VISUAL_FOCUS_STEPS = 10;
 
 function lerp(min: number, max: number, t: number) {
   return min + t * (max - min);
+}
+
+function quantizeVisualFocus(t: number) {
+  return Math.round(t * VISUAL_FOCUS_STEPS) / VISUAL_FOCUS_STEPS;
 }
 
 export default function DashboardView({
@@ -33,6 +38,7 @@ export default function DashboardView({
   previewMap = {},
   addPreview = null,
   decayMode = "shrink",
+  showFocusScore = false,
   recommendationsByViewId = {},
   recommendationOrderMap = {},
   appliedRecColorByViewId = {},
@@ -63,6 +69,7 @@ export default function DashboardView({
   previewMap?: Record<string, PreviewState>;
   addPreview?: View | null;
   decayMode?: DecayMode;
+  showFocusScore?: boolean;
   recommendationsByViewId?: Record<string, Recommendation>;
   recommendationOrderMap?: Record<string, number>;
   appliedRecColorByViewId?: Record<string, string>;
@@ -92,6 +99,9 @@ export default function DashboardView({
   const {
     focusScore,
     reportPointerInteraction,
+    reportPointerEnter,
+    reportPointerLeave,
+    reportViewEngagement,
     reportClickInteraction,
     registerViewIds,
   } = useFocus();
@@ -134,15 +144,27 @@ export default function DashboardView({
   }, [views, focusScore]);
 
   const sizingByViewId = useMemo(() => {
-    const map: Record<string, { flexBasis: string; heightPx: number }> = {};
+    const map: Record<
+      string,
+      {
+        columnSpan: number;
+        widthPercent: string;
+        heightPx: number;
+        slotHeightPx: number;
+      }
+    > = {};
     views.forEach((view) => {
-      const t = focusIntensityByViewId[view.id] ?? 0.25;
+      const t = quantizeVisualFocus(focusIntensityByViewId[view.id] ?? 0.25);
       const isKpi = view.chartType === "KPI";
       const basis = isKpi ? KPI_BASIS : CHART_BASIS;
       const height = isKpi ? KPI_HEIGHT : CHART_HEIGHT;
+      const basisPercent = lerp(basis.min, basis.max, t);
+      const maxSpan = isKpi ? 3 : 4;
       map[view.id] = {
-        flexBasis: `${lerp(basis.min, basis.max, t).toFixed(1)}%`,
+        columnSpan: maxSpan,
+        widthPercent: `${((basisPercent / basis.max) * 100).toFixed(1)}%`,
         heightPx: Math.round(lerp(height.min, height.max, t)),
+        slotHeightPx: height.max,
       };
     });
     return map;
@@ -215,14 +237,21 @@ export default function DashboardView({
       onDeselectAll={onDeselectAllCategoryFilter}
       onRemoveFilter={onRemoveCategoryFilter}
     />
-    <div className="flex flex-wrap gap-4 items-start">
+    <div className="grid grid-cols-12 gap-4 items-start">
       {sortedViews.map((view) => (
         <ViewCard
           key={view.id}
           view={view}
-          focusIntensity={focusIntensityByViewId[view.id] ?? 0.2}
-          flexBasis={sizingByViewId[view.id]?.flexBasis ?? "32%"}
+          columnSpan={sizingByViewId[view.id]?.columnSpan}
+          focusIntensity={quantizeVisualFocus(focusIntensityByViewId[view.id] ?? 0.2)}
+          focusScoreValue={
+            showFocusScore ? focusScore[view.id] ?? INITIAL_FOCUS_SCORE : undefined
+          }
+          showFocusScore={showFocusScore}
+          isFocusEngaged={selectedViewId === view.id}
+          widthPercent={sizingByViewId[view.id]?.widthPercent ?? "100%"}
           heightPx={sizingByViewId[view.id]?.heightPx ?? 260}
+          slotHeightPx={sizingByViewId[view.id]?.slotHeightPx ?? 260}
           decayMode={decayMode}
           isSelected={selectedViewId === view.id}
           preview={previewMap[view.id] ?? null}
@@ -235,6 +264,9 @@ export default function DashboardView({
           }
           onAcceptRecommendation={onAcceptRecommendation}
           onDeclineRecommendation={onDeclineRecommendation}
+          onPointerEnter={reportPointerEnter}
+          onPointerLeave={reportPointerLeave}
+          onFocusEngagementChange={reportViewEngagement}
           onPointerInteraction={reportPointerInteraction}
           onCardClick={reportClickInteraction}
           onEditClick={onSelect}
@@ -246,9 +278,13 @@ export default function DashboardView({
       {addPreview && (
         <ViewCard
           view={addPreview}
+          columnSpan={4}
           focusIntensity={0.2}
-          flexBasis="32%"
+          showFocusScore={showFocusScore}
+          isFocusEngaged={false}
+          widthPercent="100%"
           heightPx={260}
+          slotHeightPx={260}
           preview={{ type: "ADD", view: addPreview }}
           isSelected={false}
           recommendation={newContentRecommendation}
@@ -257,6 +293,7 @@ export default function DashboardView({
               ? recommendationOrderMap[newContentRecommendation.id]
               : undefined
           }
+          onFocusEngagementChange={reportViewEngagement}
           onAcceptRecommendation={onAcceptRecommendation}
           onDeclineRecommendation={onDeclineRecommendation}
         />

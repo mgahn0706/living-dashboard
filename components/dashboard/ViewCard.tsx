@@ -18,11 +18,15 @@ import * as Popover from "@radix-ui/react-popover";
 import {
   IconCheck,
   IconFilter,
+  IconInfoCircle,
   IconPencil,
   IconSparkles,
   IconX,
 } from "@tabler/icons-react";
 import { getRecColor, getActionLabel } from "@/components/recommendation/RecommendationSidebar";
+import { INITIAL_FOCUS_SCORE } from "@/context/FocusContext";
+
+const SIGNIFICANT_FOCUS_SCORE_THRESHOLD = 700;
 
 /* =======================================================
    Layout constants
@@ -94,15 +98,30 @@ function buildFilterFromDraft(draft: {
   return next;
 }
 
+function estimateInactivityMinutes(focusScore: number) {
+  const clampedScore = Math.max(1, Math.min(INITIAL_FOCUS_SCORE, focusScore));
+  const halfLifeSeconds = 90;
+  const idleGraceSeconds = 8;
+  const decaySeconds =
+    halfLifeSeconds * Math.log2(INITIAL_FOCUS_SCORE / clampedScore);
+
+  return Math.max(0, (decaySeconds + idleGraceSeconds) / 60);
+}
+
 /* =======================================================
    ViewCard
 ======================================================= */
 
 function ViewCard({
   view,
+  columnSpan,
   focusIntensity,
-  flexBasis = "32%",
+  focusScoreValue,
+  showFocusScore = false,
+  isFocusEngaged = false,
+  widthPercent = "100%",
   heightPx = 260,
+  slotHeightPx = 260,
   decayMode = "shrink",
   isSelected,
   preview = null,
@@ -111,6 +130,9 @@ function ViewCard({
   recommendationIndex,
   onAcceptRecommendation,
   onDeclineRecommendation,
+  onPointerEnter,
+  onPointerLeave,
+  onFocusEngagementChange,
   onPointerInteraction,
   onCardClick,
   onEditClick,
@@ -118,9 +140,14 @@ function ViewCard({
   onDrillDown,
 }: {
   view: View;
+  columnSpan?: number;
   focusIntensity: number;
-  flexBasis?: string;
+  focusScoreValue?: number;
+  showFocusScore?: boolean;
+  isFocusEngaged?: boolean;
+  widthPercent?: string;
   heightPx?: number;
+  slotHeightPx?: number;
   decayMode?: DecayMode;
   isSelected: boolean;
   preview?: PreviewState;
@@ -129,6 +156,9 @@ function ViewCard({
   recommendationIndex?: number;
   onAcceptRecommendation?: (rec: Recommendation) => void;
   onDeclineRecommendation?: (rec: Recommendation) => void;
+  onPointerEnter?: (viewId: string) => void;
+  onPointerLeave?: (viewId: string) => void;
+  onFocusEngagementChange?: (viewId: string, engaged: boolean) => void;
   onPointerInteraction?: (
     viewId: string,
     event: { clientX: number; clientY: number }
@@ -142,37 +172,96 @@ function ViewCard({
   const normalizedFocus = Number.isFinite(focusIntensity)
     ? Math.max(0, Math.min(1, focusIntensity))
     : 0.2;
-  const borderOpacity = 0.1 + normalizedFocus * 0.18;
+
+  // Hover state: readability effects (dissolve, burn, opacity) clear instantly
+  // on hover while sizing stays driven by the slow-recovering focusIntensity.
+  const [isHovered, setIsHovered] = React.useState(false);
+  const readabilityFocus = isHovered ? 1 : normalizedFocus;
+
+  const borderOpacity = 0.1 + readabilityFocus * 0.18;
   const borderColor = `rgba(59, 130, 246, ${borderOpacity.toFixed(3)})`;
   const baseShadow = "0 1px 2px rgba(0, 0, 0, 0.08)";
   const recColor =
     recommendation && recommendationIndex != null
       ? getRecColor(recommendationIndex - 1)
       : undefined;
-  const contentOpacity = isEditing ? 1 : 0.6 + normalizedFocus * 0.4;
+  const contentOpacity = isEditing ? 1 : 0.6 + readabilityFocus * 0.4;
+  const cardChromeHeight = recommendation ? 140 : 104;
+  const reservedCardHeight = slotHeightPx + cardChromeHeight;
+  const widthScale = Number.isFinite(Number.parseFloat(widthPercent))
+    ? Math.max(0.25, Math.min(1, Number.parseFloat(widthPercent) / 100))
+    : 1;
+  const heightScale = Math.max(
+    0.25,
+    Math.min(1, (heightPx + cardChromeHeight) / reservedCardHeight)
+  );
+  const hasLowFocusScore =
+    typeof focusScoreValue === "number" &&
+    focusScoreValue < INITIAL_FOCUS_SCORE - 5;
+  const shouldShowFocusAnnotation =
+    showFocusScore &&
+    hasLowFocusScore &&
+    typeof focusScoreValue === "number" &&
+    focusScoreValue <= SIGNIFICANT_FOCUS_SCORE_THRESHOLD;
+  const estimatedInactiveMinutes = shouldShowFocusAnnotation
+    ? estimateInactivityMinutes(focusScoreValue)
+    : 0;
+  const focusExplanation =
+    decayMode === "shrink" || decayMode === "vignette"
+      ? `Shrunk due to inactivity for ~${estimatedInactiveMinutes.toFixed(1)} min`
+      : `Deemphasized due to inactivity for ~${estimatedInactiveMinutes.toFixed(1)} min`;
 
   // Shared: skip all decay effects on cards with pending recommendations
   const hasActiveRec = Boolean(recColor);
   const skipDecayEffects = hasActiveRec || isEditing;
 
   // ---- Burn mode: vignette + tint (only when decayMode === "burn") ----
+  // Uses readabilityFocus so effects clear instantly on hover.
   const vignetteStrength =
     decayMode === "burn" && !skipDecayEffects
-      ? Math.max(0, Math.min(1, (0.7 - normalizedFocus) / (0.7 - 0.25)))
+      ? Math.max(0, Math.min(1, (0.7 - readabilityFocus) / (0.7 - 0.25)))
       : 0;
   const tintOpacity =
     decayMode === "burn" && !skipDecayEffects
-      ? Math.max(0, Math.min(1, (0.4 - normalizedFocus) / (0.4 - 0.25))) * 0.025
+      ? Math.max(0, Math.min(1, (0.4 - readabilityFocus) / (0.4 - 0.25))) * 0.025
       : 0;
 
   // ---- Dissolve mode: opacity, border, blur (only when decayMode === "dissolve") ----
+  // Uses readabilityFocus so effects clear instantly on hover.
   const dissolveStrength =
     decayMode === "dissolve" && !skipDecayEffects
-      ? Math.max(0, Math.min(1, (0.7 - normalizedFocus) / (0.7 - 0.25)))
+      ? Math.max(0, Math.min(1, (0.7 - readabilityFocus) / (0.7 - 0.25)))
       : 0;
   const dissolveOpacity = 1 - dissolveStrength * 0.75; // 1.0 → 0.25
   const dissolveBorderOpacity = borderOpacity * (1 - dissolveStrength * 0.95); // fades to ~5%
   const dissolveBlur = dissolveStrength * 2; // 0 → 2px
+
+  // ---- Vignette mode: three-stage progressive decay ----
+  // Stage 1 (1000→700): shrink only (handled by widthScale/heightScale)
+  // Stage 2 (700→250):  mild dissolve — opacity fade, no blur
+  // Stage 3 (250→150):  burnt paper edges fade in at the card perimeter
+  // All readability effects use readabilityFocus so they clear on hover.
+  const isVignette = decayMode === "vignette" && !skipDecayEffects;
+
+  // Stage 2: mild opacity fade (onset at 0.7, full at 0.25)
+  const vignetteMildDissolve = isVignette
+    ? Math.max(0, Math.min(1, (0.7 - readabilityFocus) / (0.7 - 0.25)))
+    : 0;
+  const vignetteOpacity = 1 - vignetteMildDissolve * 0.45; // 1.0 → 0.55 (milder than dissolve)
+  const vignetteBorderOpacity = borderOpacity * (1 - vignetteMildDissolve * 0.7);
+
+  // Stage 3: burnt paper edges (onset at intensity 0.4 ≈ score 200, full at 0.25 ≈ score 0)
+  const burnEdgeStrength = isVignette
+    ? Math.max(0, Math.min(1, (0.4 - readabilityFocus) / (0.4 - 0.25)))
+    : 0;
+  // Scale the vignette inset to current card size so it stays proportional at thumbnail
+  const cardScale = Math.min(widthScale, heightScale);
+  const burnBlur = 16 * burnEdgeStrength * cardScale;
+  const burnSpread = 8 * burnEdgeStrength * cardScale;
+  const burnEdgeShadow = burnEdgeStrength > 0
+    ? `inset 0 0 ${burnBlur.toFixed(1)}px ${burnSpread.toFixed(1)}px rgba(30, 10, 0, ${(0.22 * burnEdgeStrength).toFixed(3)}), ` +
+      `inset 0 0 ${(burnBlur * 1.6).toFixed(1)}px ${(burnSpread * 0.5).toFixed(1)}px rgba(160, 80, 10, ${(0.12 * burnEdgeStrength).toFixed(3)})`
+    : "";
   const { attributeKeys, resolveAttribute } = useDataset();
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [draft, setDraft] = React.useState({
@@ -212,6 +301,14 @@ function ViewCard({
     });
   }, [view.id, view.filter]);
 
+  React.useEffect(() => {
+    onFocusEngagementChange?.(view.id, isFocusEngaged || isFilterOpen);
+
+    return () => {
+      onFocusEngagementChange?.(view.id, false);
+    };
+  }, [isFilterOpen, isFocusEngaged, onFocusEngagementChange, view.id]);
+
   const canManualFilter = Boolean(onApplyFilter) && preview == null;
   const minCardWidth =
     view.chartType === "KPI"
@@ -219,6 +316,31 @@ function ViewCard({
         ? 240
         : 180
       : undefined;
+  const clampedSpan = Math.max(1, Math.min(12, columnSpan ?? 4));
+  const gridSpanClass =
+    clampedSpan === 1
+      ? "col-span-12 sm:col-span-1"
+      : clampedSpan === 2
+        ? "col-span-12 sm:col-span-2"
+        : clampedSpan === 3
+          ? "col-span-12 md:col-span-3"
+          : clampedSpan === 4
+            ? "col-span-12 md:col-span-4"
+            : clampedSpan === 5
+              ? "col-span-12 md:col-span-5"
+              : clampedSpan === 6
+                ? "col-span-12 md:col-span-6"
+                : clampedSpan === 7
+                  ? "col-span-12 md:col-span-7"
+                  : clampedSpan === 8
+                    ? "col-span-12 md:col-span-8"
+                    : clampedSpan === 9
+                      ? "col-span-12 md:col-span-9"
+                      : clampedSpan === 10
+                        ? "col-span-12 md:col-span-10"
+                        : clampedSpan === 11
+                          ? "col-span-12 md:col-span-11"
+                          : "col-span-12";
   const handlePointerMove = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       onPointerInteraction?.(view.id, {
@@ -231,6 +353,14 @@ function ViewCard({
   const handleCardClick = React.useCallback(() => {
     onCardClick?.(view.id);
   }, [onCardClick, view.id]);
+  const handlePointerEnterCard = React.useCallback(() => {
+    setIsHovered(true);
+    onPointerEnter?.(view.id);
+  }, [onPointerEnter, view.id]);
+  const handlePointerLeaveCard = React.useCallback(() => {
+    setIsHovered(false);
+    onPointerLeave?.(view.id);
+  }, [onPointerLeave, view.id]);
   const handleEditClick = React.useCallback(() => {
     onEditClick?.(view.id);
   }, [onEditClick, view.id]);
@@ -251,28 +381,46 @@ function ViewCard({
         }
       `}</style>
 
+      <div
+        className={cn("relative w-full min-w-0 self-start", gridSpanClass)}
+        style={{ minHeight: `${reservedCardHeight}px` }}
+      >
       <Card
         data-view-id={view.id}
+        onPointerEnter={handlePointerEnterCard}
+        onPointerLeave={handlePointerLeaveCard}
         onPointerMove={handlePointerMove}
         onClick={handleCardClick}
         style={{
           borderColor: dissolveStrength > 0
             ? `rgba(59, 130, 246, ${dissolveBorderOpacity.toFixed(3)})`
-            : borderColor,
+            : vignetteMildDissolve > 0
+              ? `rgba(59, 130, 246, ${vignetteBorderOpacity.toFixed(3)})`
+              : borderColor,
           borderStyle: dissolveStrength > 0.5 ? "dashed" : undefined,
           boxShadow:
             !isEditing && recColor
               ? `0 0 0 2px ${recColor}33, 0 4px 24px ${recColor}22`
-              : vignetteStrength > 0
-                ? `${baseShadow}, inset 0 0 ${(32 * vignetteStrength).toFixed(1)}px ${(16 * vignetteStrength).toFixed(1)}px rgba(120, 60, 0, ${(0.18 * vignetteStrength).toFixed(3)})`
-                : baseShadow,
+              : burnEdgeStrength > 0
+                ? `${baseShadow}, ${burnEdgeShadow}`
+                : vignetteStrength > 0
+                  ? `${baseShadow}, inset 0 0 ${(32 * vignetteStrength).toFixed(1)}px ${(16 * vignetteStrength).toFixed(1)}px rgba(120, 60, 0, ${(0.18 * vignetteStrength).toFixed(3)})`
+                  : baseShadow,
           backgroundColor: tintOpacity > 0 ? `rgba(180, 100, 20, ${tintOpacity.toFixed(4)})` : undefined,
-          opacity: dissolveStrength > 0 ? dissolveOpacity : undefined,
-          flexBasis,
-          minWidth: minCardWidth,
+          opacity: dissolveStrength > 0
+            ? dissolveOpacity
+            : vignetteMildDissolve > 0
+              ? vignetteOpacity
+              : undefined,
+          width: "100%",
+          minWidth: 0,
+          transform: `scale(${widthScale}, ${heightScale})`,
+          transformOrigin: "top left",
+          willChange: "transform, opacity",
         }}
         className={cn(
-          "relative overflow-hidden transition-all duration-300 ease-out cursor-pointer",
+          "relative overflow-hidden transition-[transform,opacity,box-shadow,background-color,border-color] duration-300 ease-out cursor-pointer",
+          "h-full",
           "hover:ring-1 hover:ring-ring",
           isEditing &&
             "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]"
@@ -297,15 +445,32 @@ function ViewCard({
           {/* Header */}
           <CardHeader className="pb-2">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <CardTitle className="min-w-0 flex flex-1 flex-wrap items-center gap-1 text-sm">
-                {view.title || view.id}
+              <div className="min-w-0 flex flex-1 flex-col gap-1">
+                <CardTitle className="min-w-0 flex flex-wrap items-center gap-1 text-sm">
+                  {view.title || view.id}
 
-                {isEditing && (
-                  <span className="text-[10px] text-primary font-medium">
-                    (Editing)
-                  </span>
+                  {isEditing && (
+                    <span className="text-[10px] text-primary font-medium">
+                      (Editing)
+                    </span>
+                  )}
+
+                  {showFocusScore && typeof focusScoreValue === "number" && (
+                    <span className="rounded-full border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      Focus {Math.round(focusScoreValue)}
+                    </span>
+                  )}
+                </CardTitle>
+
+                {shouldShowFocusAnnotation && (
+                  <div className="flex items-start gap-1.5 rounded-md border border-amber-300/60 bg-amber-50 px-2 py-1 text-[10px] leading-snug text-amber-900">
+                    <IconInfoCircle className="mt-0.5 size-3 shrink-0 text-amber-700" />
+                    <CardDescription className="text-[10px] leading-snug text-amber-900">
+                      {focusExplanation}
+                    </CardDescription>
+                  </div>
                 )}
-              </CardTitle>
+              </div>
 
               <div className="ml-auto flex shrink-0 items-center gap-1">
                 {appliedRecColor && !recommendation && (
@@ -542,7 +707,7 @@ function ViewCard({
           <CardContent
             className="relative flex p-0 overflow-hidden transition-[height,filter] duration-300 ease-out"
             style={{
-              height: `${heightPx}px`,
+              height: `${slotHeightPx}px`,
               filter: dissolveBlur > 0 ? `blur(${dissolveBlur.toFixed(1)}px)` : undefined,
             }}
           >
@@ -555,6 +720,7 @@ function ViewCard({
                 filter={view.filter}
                 height="100%"
                 onDrillDown={onDrillDown}
+                onEngagementChange={onFocusEngagementChange}
               />
             </div>
           </CardContent>
@@ -580,6 +746,7 @@ function ViewCard({
           />
         )}
       </Card>
+      </div>
     </>
   );
 }
@@ -592,11 +759,18 @@ function areViewFiltersEqual(
 }
 
 export default React.memo(ViewCard, (prev, next) => {
+  const isSameFocusInfo =
+    prev.showFocusScore === next.showFocusScore &&
+    (!next.showFocusScore || prev.focusScoreValue === next.focusScoreValue);
+
   return (
     prev.view === next.view &&
     prev.focusIntensity === next.focusIntensity &&
-    prev.flexBasis === next.flexBasis &&
+    isSameFocusInfo &&
+    prev.isFocusEngaged === next.isFocusEngaged &&
+    prev.widthPercent === next.widthPercent &&
     prev.heightPx === next.heightPx &&
+    prev.slotHeightPx === next.slotHeightPx &&
     prev.decayMode === next.decayMode &&
     prev.isSelected === next.isSelected &&
     prev.preview === next.preview &&

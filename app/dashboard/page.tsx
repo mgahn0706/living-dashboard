@@ -688,7 +688,8 @@ function AppContent() {
     "en-US"
   );
   const [isInitializing, setIsInitializing] = useState(false);
-  const [decayMode, setDecayMode] = useState<DecayMode>("shrink");
+  const [decayMode, setDecayMode] = useState<DecayMode>("vignette");
+  const [isFocusScoreVisible, setIsFocusScoreVisible] = useState(false);
   const [appliedRecColorByViewId, setAppliedRecColorByViewId] = useState<
     Record<string, string>
   >({});
@@ -1614,6 +1615,8 @@ function AppContent() {
           onResetAllFilters={handleResetAllFilters}
           decayMode={decayMode}
           onDecayModeChange={setDecayMode}
+          isFocusScoreVisible={isFocusScoreVisible}
+          onFocusScoreVisibilityChange={setIsFocusScoreVisible}
         />
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto p-6 md:p-8">
@@ -1622,6 +1625,7 @@ function AppContent() {
               previewMap={previewMap}
               addPreview={addPreview}
               decayMode={decayMode}
+              showFocusScore={isFocusScoreVisible}
               selectedViewId={selectedViewId}
               isAddMode={sidebarMode === "STRUCTURE"}
               setSidebarMode={setSidebarMode}

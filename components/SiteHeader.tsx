@@ -1,15 +1,12 @@
 "use client";
 
 import { useRef } from "react";
-import {
-  IconDownload,
-  IconUpload,
-  IconFilterOff,
-} from "@tabler/icons-react";
+import { IconDownload, IconUpload, IconFilterOff } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Switch } from "@/components/ui/switch";
 import { useDataset } from "@/context/DatasetContext";
 import type { DecayMode } from "@/types/dashboard";
 
@@ -18,19 +15,24 @@ interface SiteHeaderProps {
   onResetAllFilters?: () => void;
   decayMode?: DecayMode;
   onDecayModeChange?: (mode: DecayMode) => void;
+  isFocusScoreVisible?: boolean;
+  onFocusScoreVisibilityChange?: (enabled: boolean) => void;
 }
 
 const DECAY_OPTIONS: { value: DecayMode; label: string }[] = [
+  { value: "vignette", label: "Vignette" },
   { value: "shrink", label: "Shrink" },
   { value: "burn", label: "Burn" },
-  { value: "dissolve", label: "Dissolve" },
+  { value: "dissolve", label: "Dissolve" },  
 ];
 
 export function SiteHeader({
   onExportDashboardState,
   onResetAllFilters,
-  decayMode = "shrink",
+  decayMode = "vignette",
   onDecayModeChange,
+  isFocusScoreVisible = false,
+  onFocusScoreVisibilityChange,
 }: SiteHeaderProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { attributeKeys, uploadDataset } = useDataset();
@@ -120,6 +122,20 @@ export function SiteHeader({
                   </button>
                 ))}
               </div>
+            </>
+          )}
+
+          {hasDataset && onFocusScoreVisibilityChange && (
+            <>
+              <Separator orientation="vertical" className="mx-1 h-4" />
+              <label className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Explain the view change</span>
+                <Switch
+                  checked={isFocusScoreVisible}
+                  onCheckedChange={onFocusScoreVisibilityChange}
+                  aria-label="Toggle focus information display"
+                />
+              </label>
             </>
           )}
 
