@@ -100,9 +100,11 @@ function buildFilterFromDraft(draft: {
 
 function ViewCard({
   view,
+  columnSpan,
   focusIntensity,
-  flexBasis = "32%",
+  widthPercent = "100%",
   heightPx = 260,
+  slotHeightPx = 260,
   decayMode = "shrink",
   isSelected,
   preview = null,
@@ -118,9 +120,11 @@ function ViewCard({
   onDrillDown,
 }: {
   view: View;
+  columnSpan?: number;
   focusIntensity: number;
-  flexBasis?: string;
+  widthPercent?: string;
   heightPx?: number;
+  slotHeightPx?: number;
   decayMode?: DecayMode;
   isSelected: boolean;
   preview?: PreviewState;
@@ -150,6 +154,8 @@ function ViewCard({
       ? getRecColor(recommendationIndex - 1)
       : undefined;
   const contentOpacity = isEditing ? 1 : 0.6 + normalizedFocus * 0.4;
+  const cardChromeHeight = recommendation ? 140 : 104;
+  const reservedCardHeight = slotHeightPx + cardChromeHeight;
 
   // Shared: skip all decay effects on cards with pending recommendations
   const hasActiveRec = Boolean(recColor);
@@ -219,6 +225,31 @@ function ViewCard({
         ? 240
         : 180
       : undefined;
+  const clampedSpan = Math.max(1, Math.min(12, columnSpan ?? 4));
+  const gridSpanClass =
+    clampedSpan === 1
+      ? "col-span-12 sm:col-span-1"
+      : clampedSpan === 2
+        ? "col-span-12 sm:col-span-2"
+        : clampedSpan === 3
+          ? "col-span-12 md:col-span-3"
+          : clampedSpan === 4
+            ? "col-span-12 md:col-span-4"
+            : clampedSpan === 5
+              ? "col-span-12 md:col-span-5"
+              : clampedSpan === 6
+                ? "col-span-12 md:col-span-6"
+                : clampedSpan === 7
+                  ? "col-span-12 md:col-span-7"
+                  : clampedSpan === 8
+                    ? "col-span-12 md:col-span-8"
+                    : clampedSpan === 9
+                      ? "col-span-12 md:col-span-9"
+                      : clampedSpan === 10
+                        ? "col-span-12 md:col-span-10"
+                        : clampedSpan === 11
+                          ? "col-span-12 md:col-span-11"
+                          : "col-span-12";
   const handlePointerMove = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       onPointerInteraction?.(view.id, {
@@ -251,6 +282,10 @@ function ViewCard({
         }
       `}</style>
 
+      <div
+        className={cn("relative w-full min-w-0 self-start", gridSpanClass)}
+        style={{ minHeight: `${reservedCardHeight}px` }}
+      >
       <Card
         data-view-id={view.id}
         onPointerMove={handlePointerMove}
@@ -268,11 +303,13 @@ function ViewCard({
                 : baseShadow,
           backgroundColor: tintOpacity > 0 ? `rgba(180, 100, 20, ${tintOpacity.toFixed(4)})` : undefined,
           opacity: dissolveStrength > 0 ? dissolveOpacity : undefined,
-          flexBasis,
-          minWidth: minCardWidth,
+          width: widthPercent,
+          maxWidth: "100%",
+          minWidth: minCardWidth ? `min(100%, ${minCardWidth}px)` : 0,
         }}
         className={cn(
           "relative overflow-hidden transition-all duration-300 ease-out cursor-pointer",
+          "h-full",
           "hover:ring-1 hover:ring-ring",
           isEditing &&
             "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]"
@@ -580,6 +617,7 @@ function ViewCard({
           />
         )}
       </Card>
+      </div>
     </>
   );
 }
@@ -595,8 +633,9 @@ export default React.memo(ViewCard, (prev, next) => {
   return (
     prev.view === next.view &&
     prev.focusIntensity === next.focusIntensity &&
-    prev.flexBasis === next.flexBasis &&
+    prev.widthPercent === next.widthPercent &&
     prev.heightPx === next.heightPx &&
+    prev.slotHeightPx === next.slotHeightPx &&
     prev.decayMode === next.decayMode &&
     prev.isSelected === next.isSelected &&
     prev.preview === next.preview &&
