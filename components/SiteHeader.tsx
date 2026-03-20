@@ -23,6 +23,7 @@ const DECAY_OPTIONS: { value: DecayMode; label: string }[] = [
   { value: "shrink", label: "Shrink" },
   { value: "burn", label: "Burn" },
   { value: "dissolve", label: "Dissolve" },
+  { value: "vignette", label: "Vignette" },
 ];
 
 export function SiteHeader({

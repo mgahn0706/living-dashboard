@@ -14,7 +14,7 @@ export type ChartType =
   | "MAP"
   | "RANGE_BAR";
 
-export type DecayMode = "shrink" | "burn" | "dissolve";
+export type DecayMode = "shrink" | "burn" | "dissolve" | "vignette";
 
 export type View = ChartView | TableView;
 

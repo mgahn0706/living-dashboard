@@ -207,7 +207,7 @@ function ViewCard({
     ? estimateInactivityMinutes(focusScoreValue)
     : 0;
   const focusExplanation =
-    decayMode === "shrink"
+    decayMode === "shrink" || decayMode === "vignette"
       ? `Shrunk due to inactivity for ~${estimatedInactiveMinutes.toFixed(1)} min`
       : `Deemphasized due to inactivity for ~${estimatedInactiveMinutes.toFixed(1)} min`;
 
@@ -235,6 +235,33 @@ function ViewCard({
   const dissolveOpacity = 1 - dissolveStrength * 0.75; // 1.0 → 0.25
   const dissolveBorderOpacity = borderOpacity * (1 - dissolveStrength * 0.95); // fades to ~5%
   const dissolveBlur = dissolveStrength * 2; // 0 → 2px
+
+  // ---- Vignette mode: three-stage progressive decay ----
+  // Stage 1 (1000→700): shrink only (handled by widthScale/heightScale)
+  // Stage 2 (700→250):  mild dissolve — opacity fade, no blur
+  // Stage 3 (250→150):  burnt paper edges fade in at the card perimeter
+  // All readability effects use readabilityFocus so they clear on hover.
+  const isVignette = decayMode === "vignette" && !skipDecayEffects;
+
+  // Stage 2: mild opacity fade (onset at 0.7, full at 0.25)
+  const vignetteMildDissolve = isVignette
+    ? Math.max(0, Math.min(1, (0.7 - readabilityFocus) / (0.7 - 0.25)))
+    : 0;
+  const vignetteOpacity = 1 - vignetteMildDissolve * 0.45; // 1.0 → 0.55 (milder than dissolve)
+  const vignetteBorderOpacity = borderOpacity * (1 - vignetteMildDissolve * 0.7);
+
+  // Stage 3: burnt paper edges (onset at intensity 0.4 ≈ score 200, full at 0.25 ≈ score 0)
+  const burnEdgeStrength = isVignette
+    ? Math.max(0, Math.min(1, (0.4 - readabilityFocus) / (0.4 - 0.25)))
+    : 0;
+  // Scale the vignette inset to current card size so it stays proportional at thumbnail
+  const cardScale = Math.min(widthScale, heightScale);
+  const burnBlur = 16 * burnEdgeStrength * cardScale;
+  const burnSpread = 8 * burnEdgeStrength * cardScale;
+  const burnEdgeShadow = burnEdgeStrength > 0
+    ? `inset 0 0 ${burnBlur.toFixed(1)}px ${burnSpread.toFixed(1)}px rgba(30, 10, 0, ${(0.22 * burnEdgeStrength).toFixed(3)}), ` +
+      `inset 0 0 ${(burnBlur * 1.6).toFixed(1)}px ${(burnSpread * 0.5).toFixed(1)}px rgba(160, 80, 10, ${(0.12 * burnEdgeStrength).toFixed(3)})`
+    : "";
   const { attributeKeys, resolveAttribute } = useDataset();
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [draft, setDraft] = React.useState({
@@ -367,16 +394,24 @@ function ViewCard({
         style={{
           borderColor: dissolveStrength > 0
             ? `rgba(59, 130, 246, ${dissolveBorderOpacity.toFixed(3)})`
-            : borderColor,
+            : vignetteMildDissolve > 0
+              ? `rgba(59, 130, 246, ${vignetteBorderOpacity.toFixed(3)})`
+              : borderColor,
           borderStyle: dissolveStrength > 0.5 ? "dashed" : undefined,
           boxShadow:
             !isEditing && recColor
               ? `0 0 0 2px ${recColor}33, 0 4px 24px ${recColor}22`
-              : vignetteStrength > 0
-                ? `${baseShadow}, inset 0 0 ${(32 * vignetteStrength).toFixed(1)}px ${(16 * vignetteStrength).toFixed(1)}px rgba(120, 60, 0, ${(0.18 * vignetteStrength).toFixed(3)})`
-                : baseShadow,
+              : burnEdgeStrength > 0
+                ? `${baseShadow}, ${burnEdgeShadow}`
+                : vignetteStrength > 0
+                  ? `${baseShadow}, inset 0 0 ${(32 * vignetteStrength).toFixed(1)}px ${(16 * vignetteStrength).toFixed(1)}px rgba(120, 60, 0, ${(0.18 * vignetteStrength).toFixed(3)})`
+                  : baseShadow,
           backgroundColor: tintOpacity > 0 ? `rgba(180, 100, 20, ${tintOpacity.toFixed(4)})` : undefined,
-          opacity: dissolveStrength > 0 ? dissolveOpacity : undefined,
+          opacity: dissolveStrength > 0
+            ? dissolveOpacity
+            : vignetteMildDissolve > 0
+              ? vignetteOpacity
+              : undefined,
           width: "100%",
           minWidth: 0,
           transform: `scale(${widthScale}, ${heightScale})`,
