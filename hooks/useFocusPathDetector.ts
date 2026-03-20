@@ -172,8 +172,13 @@ export function useFocusPathDetector(
           ? focusEstimateRef.current[viewId]
           : initial;
 
+      // Score-aware recovery: scale positive deltas so low-score views
+      // recover faster, mirroring the exponential decay on the way down.
+      // At score 500 gain is 2×, at 200 gain is 5×, at 50 gain is 20×.
+      let cappedDelta =
+        delta > 0 ? delta * (initial / Math.max(1, current)) : delta;
+
       // Cap negative delta so (current + delta) never goes below min.
-      let cappedDelta = delta;
       if (cappedDelta < 0) {
         const maxNegative = min - current; // <= 0
         if (cappedDelta < maxNegative) cappedDelta = maxNegative;
