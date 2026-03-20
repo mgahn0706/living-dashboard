@@ -18,11 +18,15 @@ import * as Popover from "@radix-ui/react-popover";
 import {
   IconCheck,
   IconFilter,
+  IconInfoCircle,
   IconPencil,
   IconSparkles,
   IconX,
 } from "@tabler/icons-react";
 import { getRecColor, getActionLabel } from "@/components/recommendation/RecommendationSidebar";
+import { INITIAL_FOCUS_SCORE } from "@/context/FocusContext";
+
+const SIGNIFICANT_FOCUS_SCORE_THRESHOLD = 700;
 
 /* =======================================================
    Layout constants
@@ -94,6 +98,16 @@ function buildFilterFromDraft(draft: {
   return next;
 }
 
+function estimateInactivityMinutes(focusScore: number) {
+  const clampedScore = Math.max(1, Math.min(INITIAL_FOCUS_SCORE, focusScore));
+  const halfLifeSeconds = 90;
+  const idleGraceSeconds = 8;
+  const decaySeconds =
+    halfLifeSeconds * Math.log2(INITIAL_FOCUS_SCORE / clampedScore);
+
+  return Math.max(0, (decaySeconds + idleGraceSeconds) / 60);
+}
+
 /* =======================================================
    ViewCard
 ======================================================= */
@@ -160,6 +174,21 @@ function ViewCard({
   const contentOpacity = isEditing ? 1 : 0.6 + normalizedFocus * 0.4;
   const cardChromeHeight = recommendation ? 140 : 104;
   const reservedCardHeight = slotHeightPx + cardChromeHeight;
+  const hasLowFocusScore =
+    typeof focusScoreValue === "number" &&
+    focusScoreValue < INITIAL_FOCUS_SCORE - 5;
+  const shouldShowFocusAnnotation =
+    showFocusScore &&
+    hasLowFocusScore &&
+    typeof focusScoreValue === "number" &&
+    focusScoreValue <= SIGNIFICANT_FOCUS_SCORE_THRESHOLD;
+  const estimatedInactiveMinutes = shouldShowFocusAnnotation
+    ? estimateInactivityMinutes(focusScoreValue)
+    : 0;
+  const focusExplanation =
+    decayMode === "shrink"
+      ? `Shrunk due to inactivity for ~${estimatedInactiveMinutes.toFixed(1)} min`
+      : `Deemphasized due to inactivity for ~${estimatedInactiveMinutes.toFixed(1)} min`;
 
   // Shared: skip all decay effects on cards with pending recommendations
   const hasActiveRec = Boolean(recColor);
@@ -338,21 +367,32 @@ function ViewCard({
           {/* Header */}
           <CardHeader className="pb-2">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <CardTitle className="min-w-0 flex flex-1 flex-wrap items-center gap-1 text-sm">
-                {view.title || view.id}
+              <div className="min-w-0 flex flex-1 flex-col gap-1">
+                <CardTitle className="min-w-0 flex flex-wrap items-center gap-1 text-sm">
+                  {view.title || view.id}
 
-                {isEditing && (
-                  <span className="text-[10px] text-primary font-medium">
-                    (Editing)
-                  </span>
-                )}
+                  {isEditing && (
+                    <span className="text-[10px] text-primary font-medium">
+                      (Editing)
+                    </span>
+                  )}
 
-                {showFocusScore && typeof focusScoreValue === "number" && (
-                  <span className="rounded-full border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    Focus {Math.round(focusScoreValue)}
-                  </span>
+                  {showFocusScore && typeof focusScoreValue === "number" && (
+                    <span className="rounded-full border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      Focus {Math.round(focusScoreValue)}
+                    </span>
+                  )}
+                </CardTitle>
+
+                {shouldShowFocusAnnotation && (
+                  <div className="flex items-start gap-1.5 rounded-md border border-amber-300/60 bg-amber-50 px-2 py-1 text-[10px] leading-snug text-amber-900">
+                    <IconInfoCircle className="mt-0.5 size-3 shrink-0 text-amber-700" />
+                    <CardDescription className="text-[10px] leading-snug text-amber-900">
+                      {focusExplanation}
+                    </CardDescription>
+                  </div>
                 )}
-              </CardTitle>
+              </div>
 
               <div className="ml-auto flex shrink-0 items-center gap-1">
                 {appliedRecColor && !recommendation && (
