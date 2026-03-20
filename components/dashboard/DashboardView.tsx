@@ -23,9 +23,14 @@ const CHART_BASIS = { min: 16, max: 32 };
 const CHART_HEIGHT = { min: 100, max: 260 };
 const KPI_BASIS = { min: 8, max: 11.5 };
 const KPI_HEIGHT = { min: 56, max: 100 };
+const VISUAL_FOCUS_STEPS = 10;
 
 function lerp(min: number, max: number, t: number) {
   return min + t * (max - min);
+}
+
+function quantizeVisualFocus(t: number) {
+  return Math.round(t * VISUAL_FOCUS_STEPS) / VISUAL_FOCUS_STEPS;
 }
 
 export default function DashboardView({
@@ -149,7 +154,7 @@ export default function DashboardView({
       }
     > = {};
     views.forEach((view) => {
-      const t = focusIntensityByViewId[view.id] ?? 0.25;
+      const t = quantizeVisualFocus(focusIntensityByViewId[view.id] ?? 0.25);
       const isKpi = view.chartType === "KPI";
       const basis = isKpi ? KPI_BASIS : CHART_BASIS;
       const height = isKpi ? KPI_HEIGHT : CHART_HEIGHT;
@@ -238,8 +243,10 @@ export default function DashboardView({
           key={view.id}
           view={view}
           columnSpan={sizingByViewId[view.id]?.columnSpan}
-          focusIntensity={focusIntensityByViewId[view.id] ?? 0.2}
-          focusScoreValue={focusScore[view.id] ?? INITIAL_FOCUS_SCORE}
+          focusIntensity={quantizeVisualFocus(focusIntensityByViewId[view.id] ?? 0.2)}
+          focusScoreValue={
+            showFocusScore ? focusScore[view.id] ?? INITIAL_FOCUS_SCORE : undefined
+          }
           showFocusScore={showFocusScore}
           isFocusEngaged={selectedViewId === view.id}
           widthPercent={sizingByViewId[view.id]?.widthPercent ?? "100%"}

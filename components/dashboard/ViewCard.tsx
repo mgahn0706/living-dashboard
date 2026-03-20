@@ -714,11 +714,14 @@ function areViewFiltersEqual(
 }
 
 export default React.memo(ViewCard, (prev, next) => {
+  const isSameFocusInfo =
+    prev.showFocusScore === next.showFocusScore &&
+    (!next.showFocusScore || prev.focusScoreValue === next.focusScoreValue);
+
   return (
     prev.view === next.view &&
     prev.focusIntensity === next.focusIntensity &&
-    prev.focusScoreValue === next.focusScoreValue &&
-    prev.showFocusScore === next.showFocusScore &&
+    isSameFocusInfo &&
     prev.isFocusEngaged === next.isFocusEngaged &&
     prev.widthPercent === next.widthPercent &&
     prev.heightPx === next.heightPx &&
