@@ -118,6 +118,7 @@ function ViewCard({
   focusIntensity,
   focusScoreValue,
   showFocusScore = false,
+  isFocusEngaged = false,
   widthPercent = "100%",
   heightPx = 260,
   slotHeightPx = 260,
@@ -129,6 +130,9 @@ function ViewCard({
   recommendationIndex,
   onAcceptRecommendation,
   onDeclineRecommendation,
+  onPointerEnter,
+  onPointerLeave,
+  onFocusEngagementChange,
   onPointerInteraction,
   onCardClick,
   onEditClick,
@@ -140,6 +144,7 @@ function ViewCard({
   focusIntensity: number;
   focusScoreValue?: number;
   showFocusScore?: boolean;
+  isFocusEngaged?: boolean;
   widthPercent?: string;
   heightPx?: number;
   slotHeightPx?: number;
@@ -151,6 +156,9 @@ function ViewCard({
   recommendationIndex?: number;
   onAcceptRecommendation?: (rec: Recommendation) => void;
   onDeclineRecommendation?: (rec: Recommendation) => void;
+  onPointerEnter?: (viewId: string) => void;
+  onPointerLeave?: (viewId: string) => void;
+  onFocusEngagementChange?: (viewId: string, engaged: boolean) => void;
   onPointerInteraction?: (
     viewId: string,
     event: { clientX: number; clientY: number }
@@ -251,6 +259,14 @@ function ViewCard({
     });
   }, [view.id, view.filter]);
 
+  React.useEffect(() => {
+    onFocusEngagementChange?.(view.id, isFocusEngaged || isFilterOpen);
+
+    return () => {
+      onFocusEngagementChange?.(view.id, false);
+    };
+  }, [isFilterOpen, isFocusEngaged, onFocusEngagementChange, view.id]);
+
   const canManualFilter = Boolean(onApplyFilter) && preview == null;
   const minCardWidth =
     view.chartType === "KPI"
@@ -295,6 +311,12 @@ function ViewCard({
   const handleCardClick = React.useCallback(() => {
     onCardClick?.(view.id);
   }, [onCardClick, view.id]);
+  const handlePointerEnterCard = React.useCallback(() => {
+    onPointerEnter?.(view.id);
+  }, [onPointerEnter, view.id]);
+  const handlePointerLeaveCard = React.useCallback(() => {
+    onPointerLeave?.(view.id);
+  }, [onPointerLeave, view.id]);
   const handleEditClick = React.useCallback(() => {
     onEditClick?.(view.id);
   }, [onEditClick, view.id]);
@@ -321,6 +343,8 @@ function ViewCard({
       >
       <Card
         data-view-id={view.id}
+        onPointerEnter={handlePointerEnterCard}
+        onPointerLeave={handlePointerLeaveCard}
         onPointerMove={handlePointerMove}
         onClick={handleCardClick}
         style={{
@@ -642,6 +666,7 @@ function ViewCard({
                 filter={view.filter}
                 height="100%"
                 onDrillDown={onDrillDown}
+                onEngagementChange={onFocusEngagementChange}
               />
             </div>
           </CardContent>
@@ -683,6 +708,9 @@ export default React.memo(ViewCard, (prev, next) => {
   return (
     prev.view === next.view &&
     prev.focusIntensity === next.focusIntensity &&
+    prev.focusScoreValue === next.focusScoreValue &&
+    prev.showFocusScore === next.showFocusScore &&
+    prev.isFocusEngaged === next.isFocusEngaged &&
     prev.widthPercent === next.widthPercent &&
     prev.heightPx === next.heightPx &&
     prev.slotHeightPx === next.slotHeightPx &&

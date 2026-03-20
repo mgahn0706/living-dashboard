@@ -94,6 +94,9 @@ export default function DashboardView({
   const {
     focusScore,
     reportPointerInteraction,
+    reportPointerEnter,
+    reportPointerLeave,
+    reportViewEngagement,
     reportClickInteraction,
     registerViewIds,
   } = useFocus();
@@ -238,6 +241,7 @@ export default function DashboardView({
           focusIntensity={focusIntensityByViewId[view.id] ?? 0.2}
           focusScoreValue={focusScore[view.id] ?? INITIAL_FOCUS_SCORE}
           showFocusScore={showFocusScore}
+          isFocusEngaged={selectedViewId === view.id}
           widthPercent={sizingByViewId[view.id]?.widthPercent ?? "100%"}
           heightPx={sizingByViewId[view.id]?.heightPx ?? 260}
           slotHeightPx={sizingByViewId[view.id]?.slotHeightPx ?? 260}
@@ -253,6 +257,9 @@ export default function DashboardView({
           }
           onAcceptRecommendation={onAcceptRecommendation}
           onDeclineRecommendation={onDeclineRecommendation}
+          onPointerEnter={reportPointerEnter}
+          onPointerLeave={reportPointerLeave}
+          onFocusEngagementChange={reportViewEngagement}
           onPointerInteraction={reportPointerInteraction}
           onCardClick={reportClickInteraction}
           onEditClick={onSelect}
@@ -267,6 +274,7 @@ export default function DashboardView({
           columnSpan={4}
           focusIntensity={0.2}
           showFocusScore={showFocusScore}
+          isFocusEngaged={false}
           widthPercent="100%"
           heightPx={260}
           slotHeightPx={260}
@@ -278,6 +286,7 @@ export default function DashboardView({
               ? recommendationOrderMap[newContentRecommendation.id]
               : undefined
           }
+          onFocusEngagementChange={reportViewEngagement}
           onAcceptRecommendation={onAcceptRecommendation}
           onDeclineRecommendation={onDeclineRecommendation}
         />

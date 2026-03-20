@@ -37,6 +37,7 @@ type FocusDetectorConfig = {
   /* ===== click ===== */
   clickFocusGain: number;
   clickDwellBonus: number;
+  hoverFocusGainPerTick: number;
 
   emitIntervalMilliseconds: number;
 
@@ -108,12 +109,13 @@ export function useFocusPathDetector(
 
       baseFocusGain: 0.4,
       idleFocusGain: 1.0,
-      circlingFocusGain: 1.2,
+      circlingFocusGain: 3.2,
       passThroughPenalty: 0.6,
 
       /* ===== click defaults ===== */
       clickFocusGain: 2.4,
       clickDwellBonus: 0.8,
+      hoverFocusGainPerTick: 0.12,
 
       emitIntervalMilliseconds: 120,
 
@@ -151,6 +153,8 @@ export function useFocusPathDetector(
 
   const lastInteractionTimestampRef = useRef<Record<string, number>>({});
   const activeViewsRef = useRef<Set<string>>(new Set());
+  const hoveredViewsRef = useRef<Set<string>>(new Set());
+  const engagedViewsRef = useRef<Set<string>>(new Set());
 
   /**
    * We keep a local estimate of focus per view so we can cap negative deltas
@@ -312,6 +316,50 @@ export function useFocusPathDetector(
     [configuration, safeEmit]
   );
 
+  const handlePointerEnter = useCallback(
+    (viewId: string) => {
+      const now = performance.now();
+      hoveredViewsRef.current.add(viewId);
+      lastInteractionTimestampRef.current[viewId] = now;
+      activeViewsRef.current.add(viewId);
+
+      if (focusEstimateRef.current[viewId] == null) {
+        focusEstimateRef.current[viewId] = Math.max(
+          configuration.minimumFocusScore,
+          configuration.initialFocusScore
+        );
+      }
+    },
+    [configuration]
+  );
+
+  const handlePointerLeave = useCallback((viewId: string) => {
+    hoveredViewsRef.current.delete(viewId);
+    delete dwellTrackerRef.current[viewId];
+  }, []);
+
+  const setViewEngaged = useCallback(
+    (viewId: string, engaged: boolean) => {
+      const now = performance.now();
+
+      if (engaged) {
+        engagedViewsRef.current.add(viewId);
+        lastInteractionTimestampRef.current[viewId] = now;
+        activeViewsRef.current.add(viewId);
+
+        if (focusEstimateRef.current[viewId] == null) {
+          focusEstimateRef.current[viewId] = Math.max(
+            configuration.minimumFocusScore,
+            configuration.initialFocusScore
+          );
+        }
+      } else {
+        engagedViewsRef.current.delete(viewId);
+      }
+    },
+    [configuration]
+  );
+
   /* =======================================================
      Long-term decay loop (1-minute+ context memory)
   ======================================================= */
@@ -328,6 +376,14 @@ export function useFocusPathDetector(
       for (const viewId of activeViewsRef.current) {
         const lastTs = lastInteractionTimestampRef.current[viewId];
         if (lastTs == null) continue;
+
+        if (
+          hoveredViewsRef.current.has(viewId) ||
+          engagedViewsRef.current.has(viewId)
+        ) {
+          safeEmit(viewId, configuration.hoverFocusGainPerTick);
+          continue;
+        }
 
         const idleTimeMs = now - lastTs;
 
@@ -415,7 +471,14 @@ export function useFocusPathDetector(
     [configuration]
   );
 
-  return { handlePointerMove, handleClick, registerViewIds };
+  return {
+    handlePointerMove,
+    handlePointerEnter,
+    handlePointerLeave,
+    setViewEngaged,
+    handleClick,
+    registerViewIds,
+  };
 }
 
 /* =======================================================
