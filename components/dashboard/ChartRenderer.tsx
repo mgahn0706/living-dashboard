@@ -808,11 +808,13 @@ export default React.memo(function ChartRenderer({
   height = "100%",
   filter,
   onDrillDown,
+  onEngagementChange,
 }: {
   view: View;
   height?: number | "100%";
   filter?: ChartRendererFilter;
   onDrillDown?: (viewId: string, category: string | null) => void;
+  onEngagementChange?: (viewId: string, engaged: boolean) => void;
 }) {
   const { attributeTypes } = useDataset();
   const rawData = useTimeFilteredData();
@@ -977,6 +979,7 @@ export default React.memo(function ChartRenderer({
         height={height}
         filter={filter}
         onDrillDown={onDrillDown}
+        onEngagementChange={onEngagementChange}
       />
     );
   }
@@ -1816,16 +1819,25 @@ function HorizontalBarDrillDown({
   height,
   filter,
   onDrillDown,
+  onEngagementChange,
 }: {
   view: ChartView;
   height: number | "100%";
   filter?: ChartRendererFilter;
   onDrillDown?: (viewId: string, category: string | null) => void;
+  onEngagementChange?: (viewId: string, engaged: boolean) => void;
 }) {
   const rawData = useTimeFilteredData();
   const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
 
   const [drillCategory, setDrillCategory] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    onEngagementChange?.(view.id, drillCategory != null);
+    return () => {
+      onEngagementChange?.(view.id, false);
+    };
+  }, [drillCategory, onEngagementChange, view.id]);
 
   const categoryColumn = view.groupByColumn!;
   const itemColumn = view.xColumn;

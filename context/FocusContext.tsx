@@ -21,6 +21,9 @@ type FocusContextValue = {
     viewId: string,
     event: PointerEventPayload
   ) => void;
+  reportPointerEnter: (viewId: string) => void;
+  reportPointerLeave: (viewId: string) => void;
+  reportViewEngagement: (viewId: string, engaged: boolean) => void;
 
   reportClickInteraction: (viewId: string) => void;
   registerViewIds: (viewIds: string[]) => void;
@@ -58,7 +61,14 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
   const [focusScore, setFocusScore] = useState<Record<string, number>>({});
   const { isSystemA } = useSystemMode();
 
-  const { handlePointerMove, handleClick, registerViewIds: registerDetectorViewIds } = useFocusPathDetector(
+  const {
+    handlePointerMove,
+    handlePointerEnter,
+    handlePointerLeave,
+    setViewEngaged,
+    handleClick,
+    registerViewIds: registerDetectorViewIds,
+  } = useFocusPathDetector(
     (viewId, delta) => {
       if (!isSystemA) return;
       setFocusScore((previous) => ({
@@ -83,6 +93,21 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
   const reportClickInteraction = (viewId: string) => {
     if (!isSystemA) return;
     handleClick(viewId);
+  };
+
+  const reportPointerEnter = (viewId: string) => {
+    if (!isSystemA) return;
+    handlePointerEnter(viewId);
+  };
+
+  const reportPointerLeave = (viewId: string) => {
+    if (!isSystemA) return;
+    handlePointerLeave(viewId);
+  };
+
+  const reportViewEngagement = (viewId: string, engaged: boolean) => {
+    if (!isSystemA) return;
+    setViewEngaged(viewId, engaged);
   };
 
   const registerViewIds = (viewIds: string[]) => {
@@ -113,6 +138,9 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
       value={{
         focusScore,
         reportPointerInteraction,
+        reportPointerEnter,
+        reportPointerLeave,
+        reportViewEngagement,
         reportClickInteraction,
         registerViewIds,
         restoreFocusScore,
