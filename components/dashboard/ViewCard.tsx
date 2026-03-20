@@ -102,6 +102,8 @@ function ViewCard({
   view,
   columnSpan,
   focusIntensity,
+  focusScoreValue,
+  showFocusScore = false,
   widthPercent = "100%",
   heightPx = 260,
   slotHeightPx = 260,
@@ -122,6 +124,8 @@ function ViewCard({
   view: View;
   columnSpan?: number;
   focusIntensity: number;
+  focusScoreValue?: number;
+  showFocusScore?: boolean;
   widthPercent?: string;
   heightPx?: number;
   slotHeightPx?: number;
@@ -340,6 +344,12 @@ function ViewCard({
                 {isEditing && (
                   <span className="text-[10px] text-primary font-medium">
                     (Editing)
+                  </span>
+                )}
+
+                {showFocusScore && typeof focusScoreValue === "number" && (
+                  <span className="rounded-full border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    Focus {Math.round(focusScoreValue)}
                   </span>
                 )}
               </CardTitle>

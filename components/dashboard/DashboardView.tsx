@@ -33,6 +33,7 @@ export default function DashboardView({
   previewMap = {},
   addPreview = null,
   decayMode = "shrink",
+  showFocusScore = false,
   recommendationsByViewId = {},
   recommendationOrderMap = {},
   appliedRecColorByViewId = {},
@@ -63,6 +64,7 @@ export default function DashboardView({
   previewMap?: Record<string, PreviewState>;
   addPreview?: View | null;
   decayMode?: DecayMode;
+  showFocusScore?: boolean;
   recommendationsByViewId?: Record<string, Recommendation>;
   recommendationOrderMap?: Record<string, number>;
   appliedRecColorByViewId?: Record<string, string>;
@@ -234,6 +236,8 @@ export default function DashboardView({
           view={view}
           columnSpan={sizingByViewId[view.id]?.columnSpan}
           focusIntensity={focusIntensityByViewId[view.id] ?? 0.2}
+          focusScoreValue={focusScore[view.id] ?? INITIAL_FOCUS_SCORE}
+          showFocusScore={showFocusScore}
           widthPercent={sizingByViewId[view.id]?.widthPercent ?? "100%"}
           heightPx={sizingByViewId[view.id]?.heightPx ?? 260}
           slotHeightPx={sizingByViewId[view.id]?.slotHeightPx ?? 260}
@@ -262,6 +266,7 @@ export default function DashboardView({
           view={addPreview}
           columnSpan={4}
           focusIntensity={0.2}
+          showFocusScore={showFocusScore}
           widthPercent="100%"
           heightPx={260}
           slotHeightPx={260}
