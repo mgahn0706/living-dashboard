@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { useFocusPathDetector } from "@/hooks/useFocusPathDetector";
 import { useSystemMode } from "@/context/SystemModeContext";
 
@@ -59,7 +59,49 @@ function normalizeRestoredFocusScore(next: Record<string, number>) {
 
 export function FocusProvider({ children }: { children: React.ReactNode }) {
   const [focusScore, setFocusScore] = useState<Record<string, number>>({});
+  const focusScoreRef = useRef<Record<string, number>>({});
+  const pendingDeltaRef = useRef<Record<string, number>>({});
+  const flushHandleRef = useRef<number | null>(null);
   const { isSystemA } = useSystemMode();
+
+  const flushPendingFocusUpdates = useCallback(() => {
+    flushHandleRef.current = null;
+
+    const pending = pendingDeltaRef.current;
+    const viewIds = Object.keys(pending);
+    if (viewIds.length === 0) return;
+
+    pendingDeltaRef.current = {};
+
+    setFocusScore((previous) => {
+      let changed = false;
+      const next = { ...previous };
+
+      for (const viewId of viewIds) {
+        const delta = pending[viewId];
+        if (!delta) continue;
+
+        const current = next[viewId] ?? INITIAL_FOCUS_SCORE;
+        const updated = current + delta;
+
+        if (updated !== current) {
+          next[viewId] = updated;
+          changed = true;
+        }
+      }
+
+      if (!changed) return previous;
+      focusScoreRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const scheduleFocusFlush = useCallback(() => {
+    if (flushHandleRef.current != null) return;
+    flushHandleRef.current = window.requestAnimationFrame(
+      flushPendingFocusUpdates
+    );
+  }, [flushPendingFocusUpdates]);
 
   const {
     handlePointerMove,
@@ -71,10 +113,9 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
   } = useFocusPathDetector(
     (viewId, delta) => {
       if (!isSystemA) return;
-      setFocusScore((previous) => ({
-        ...previous,
-        [viewId]: (previous[viewId] ?? INITIAL_FOCUS_SCORE) + delta,
-      }));
+      pendingDeltaRef.current[viewId] =
+        (pendingDeltaRef.current[viewId] ?? 0) + delta;
+      scheduleFocusFlush();
     }
   );
 
@@ -82,35 +123,35 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
      Interaction reporting (Evidence layer)
   ------------------------------------------------------- */
 
-  const reportPointerInteraction = (
+  const reportPointerInteraction = useCallback((
     viewId: string,
     event: PointerEventPayload
   ) => {
     if (!isSystemA) return;
     handlePointerMove(viewId, event);
-  };
+  }, [handlePointerMove, isSystemA]);
 
-  const reportClickInteraction = (viewId: string) => {
+  const reportClickInteraction = useCallback((viewId: string) => {
     if (!isSystemA) return;
     handleClick(viewId);
-  };
+  }, [handleClick, isSystemA]);
 
-  const reportPointerEnter = (viewId: string) => {
+  const reportPointerEnter = useCallback((viewId: string) => {
     if (!isSystemA) return;
     handlePointerEnter(viewId);
-  };
+  }, [handlePointerEnter, isSystemA]);
 
-  const reportPointerLeave = (viewId: string) => {
+  const reportPointerLeave = useCallback((viewId: string) => {
     if (!isSystemA) return;
     handlePointerLeave(viewId);
-  };
+  }, [handlePointerLeave, isSystemA]);
 
-  const reportViewEngagement = (viewId: string, engaged: boolean) => {
+  const reportViewEngagement = useCallback((viewId: string, engaged: boolean) => {
     if (!isSystemA) return;
     setViewEngaged(viewId, engaged);
-  };
+  }, [isSystemA, setViewEngaged]);
 
-  const registerViewIds = (viewIds: string[]) => {
+  const registerViewIds = useCallback((viewIds: string[]) => {
     registerDetectorViewIds(viewIds);
     setFocusScore((prev) => {
       const next = { ...prev };
@@ -121,31 +162,53 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
           changed = true;
         }
       }
+      if (changed) {
+        focusScoreRef.current = next;
+      }
       return changed ? next : prev;
     });
-  };
+  }, [registerDetectorViewIds]);
 
-  const restoreFocusScore = (next: Record<string, number>) => {
-    setFocusScore(normalizeRestoredFocusScore(next));
-  };
+  const restoreFocusScore = useCallback((next: Record<string, number>) => {
+    const normalized = normalizeRestoredFocusScore(next);
+    pendingDeltaRef.current = {};
+    if (flushHandleRef.current != null) {
+      window.cancelAnimationFrame(flushHandleRef.current);
+      flushHandleRef.current = null;
+    }
+    focusScoreRef.current = normalized;
+    setFocusScore(normalized);
+  }, []);
 
   /* -------------------------------------------------------
      Context value
   ------------------------------------------------------- */
 
+  const contextValue = useMemo(
+    () => ({
+      focusScore,
+      reportPointerInteraction,
+      reportPointerEnter,
+      reportPointerLeave,
+      reportViewEngagement,
+      reportClickInteraction,
+      registerViewIds,
+      restoreFocusScore,
+    }),
+    [
+      focusScore,
+      reportPointerInteraction,
+      reportPointerEnter,
+      reportPointerLeave,
+      reportViewEngagement,
+      reportClickInteraction,
+      registerViewIds,
+      restoreFocusScore,
+    ]
+  );
+
   return (
-    <FocusContext.Provider
-      value={{
-        focusScore,
-        reportPointerInteraction,
-        reportPointerEnter,
-        reportPointerLeave,
-        reportViewEngagement,
-        reportClickInteraction,
-        registerViewIds,
-        restoreFocusScore,
-      }}
-    >
+    <FocusContext.Provider value={contextValue}>
       {children}
     </FocusContext.Provider>
   );
