@@ -169,7 +169,13 @@ export function makePrompt({
      Example: "Which campaign led to most wins for Manufacturing?" — the
      Industry view exists (HIGHLIGHT it, tell user to click "Manufacturing")
      and CampaignType is unmatched, so also create a NEW_CONTENT view
-     showing campaigns.
+     showing campaigns FILTERED TO Status=Won (or grouped by Status) so
+     the user sees wins specifically. The cross-filter from clicking
+     "Manufacturing" will further narrow the new view to Manufacturing only.
+     IMPORTANT: The NEW_CONTENT view must capture ALL constraints from the
+     question — not just the unmatched column. If the question mentions
+     "wins", "lost", a specific status, date range, or any qualifier,
+     apply it as a filter or groupByColumn on the new view.
   4. If relevantViews IS empty AND no existing view can answer the question
      BUT queryColumns map to real schema columns: recommend NEW_CONTENT to
      create a new view using those columns. Check UNMATCHED QUERY COLUMNS below.
@@ -416,6 +422,13 @@ ${unmatchedAnnotation}
     - For TABLE views: "columns" (non-empty array of schema column names)
     - Optional: "groupByColumn", "aggregation", "colorByColumn", "filter", "size"
   - "id" must be a unique string (e.g., "rec_new_territory_revenue")
+  - CRITICAL: The new view must capture the FULL question context, not just
+    the unmatched column. If the question mentions a qualifier like "wins",
+    "lost", a status, a date range, or any specific value, apply it as a
+    filter (includeByColumn) or groupByColumn on the new view. Example:
+    "most wins" → add filter { "includeByColumn": [{ "column": "Status", "includeValues": ["Won"] }] }
+    "revenue by campaign and status" → use groupByColumn: "Status"
+    The title should also reflect the constraint (e.g., "Won Revenue by Campaign").
 
   TYPE CONSTRAINT (CRITICAL - violating this causes render failure):
   - yColumn MUST be a "number" type column. NEVER use a "string" column as yColumn.
@@ -616,6 +629,8 @@ ${unmatchedAnnotation}
     to click the relevant data points. Do NOT use MODIFY_FILTER.
   - If candidate views partially cover it AND UNMATCHED QUERY COLUMNS exist:
     HIGHLIGHT on candidates + NEW_CONTENT for unmatched columns (HYBRID).
+    The NEW_CONTENT MUST include filters/groupBy for ALL question constraints
+    (e.g., "wins" → filter Status=Won). Do NOT create generic views.
   - If the user needs to interact with a view (click, hover, drill): use HIGHLIGHT
     with the appropriate highlightAction ("click", "hover", "drill-down", "view")
     and include instructions in "reply" about what to click or interact with.
