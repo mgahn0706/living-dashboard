@@ -1,10 +1,4 @@
-The following changes need to be implemented:
-1. Mingyu: Too distracting: constant moving (row change happens in between dashboard states) (for active exploration, the row is fixed (top left position of the visual should stay the same: when interacting with a visual, it should not change size for 30 seconds)
-2. Mingyu: A button that shows what has changed on the dashboard with a small annotation on changing views
-3. Vaishali: The AI recommendations are not correct sometimes
-4. Vaishali: AI always recommends a table
-5. Vaishali: The final effect needs to be decided (all the effects)
-
+Everything is implemented
 
 
 
