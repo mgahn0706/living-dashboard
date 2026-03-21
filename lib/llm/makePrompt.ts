@@ -150,11 +150,16 @@ export function makePrompt({
   DECISION TREE (follow strictly, in priority order):
   1. If relevantViews is NOT empty AND answerableViews is NOT empty AND the
      question can be answered by interacting with those answerable views
-     (see QUESTION-ANSWER COMPATIBILITY below): use HIGHLIGHT with
-     highlightAction "click" on the most relevant view(s) (up to 3).
-     In "reply", tell the user EXACTLY which data point(s) to click on
-     which chart and explain that clicking will cross-filter all other
-     charts. Do NOT use MODIFY_FILTER.
+     (see QUESTION-ANSWER COMPATIBILITY below):
+     - If the user wants to READ a value (e.g., "how much", "what is the
+       value", "list the values for each"): use HIGHLIGHT with
+       highlightAction "hover" and tell the user which element(s) to hover
+       over to see the tooltip value.
+     - If the user wants to CROSS-FILTER (e.g., "show me data for X",
+       "which Y have Z", comparing across charts): use HIGHLIGHT with
+       highlightAction "click" and tell the user which data point to click.
+       Explain that clicking will cross-filter all other charts.
+     See HOVER vs CLICK guide below. Do NOT use MODIFY_FILTER.
   2. If relevantViews is NOT empty BUT the answer requires the user to manually
      interact with a view (click a data point, hover, drill into a category) —
      something the system CANNOT do automatically: use HIGHLIGHT on the relevant
@@ -221,6 +226,10 @@ export function makePrompt({
     added at the bottom of the dashboard and the user should scroll down
     to see it. Example: "I've added a new chart at the bottom of your
     dashboard — scroll down to see it."
+  - For ANY question about dates, time periods, or "when" queries: "reply"
+    MUST mention the Time slider at the top of the dashboard that lets the
+    user filter by date range. Example: "Use the Time slider at the top of
+    the dashboard to narrow the date range to July 2025."
   - If there are multiple recommendations, mention the top 1-2 most important ones and the reason for each in concise language
   - If there are no recommendations, "reply" should explicitly say that no change is recommended and why
   - "recommendations" must be an array
@@ -308,10 +317,10 @@ export function makePrompt({
     chart shows ALL data across the full time range, which is NOT what the user
     asked for. Example: "campaigns in July 2025" → add filter:
     { "includeByColumn": [{ "column": "StartDate", "includeValues": ["2025-07"] }] }
-    Or better: mention in "reply" that the user can use the time slider to
-    narrow the date range to the period of interest.
-  - In "reply", tell the user they can use the time slider to further refine
-    the date range if the chart shows too broad a time period.
+  - MANDATORY: In "reply", ALWAYS tell the user about the Time slider at
+    the TOP of the dashboard. Say: "Use the Time slider at the top of the
+    dashboard to narrow the date range to [specific period]." This applies
+    to ALL temporal questions, not just RANGE_BAR charts. NEVER skip this.
 
   Column type constraints (MUST follow):
   - yColumn MUST be a "number" type column (except TABLE and RANGE_BAR).
@@ -516,20 +525,65 @@ ${unmatchedAnnotation}
   the appropriate highlightAction and include clear instructions in "reply"
   telling the user what to click or interact with.
 
-  Example: User asks "which regions have mature markets?" and a chart shows
-  "Market Maturity" with bars for Emerging/Growth/Mature:
+  Example 1 (CLICK — cross-filter needed):
+  User asks "which regions have mature markets?" and a chart shows bars for
+  Emerging/Growth/Mature:
   → HIGHLIGHT on Market Maturity chart: { "chartType": "BAR", "highlightAction": "click" }
+  → HIGHLIGHT on Revenue by Territory: { "chartType": "GROUPED_BAR", "highlightAction": "view" }
   → HIGHLIGHT on MAP: { "chartType": "MAP", "highlightAction": "view" }
   → "reply": "Click the 'Mature' bar on Revenue by Market Maturity — this
-    will cross-filter the map to show only regions with mature markets."
+    will cross-filter the territory chart and map to show only mature market regions."
+
+  Example 2 (HOVER — reading a value):
+  User asks "How much revenue is won by Devices?":
+  → HIGHLIGHT on Products by Revenue chart: { "chartType": "BAR", "highlightAction": "hover" }
+  → "reply": "Hover over the 'Devices' bar on the Products by Revenue chart
+    to see the exact revenue value in the tooltip."
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+  HOVER vs CLICK — CHOOSING THE RIGHT highlightAction
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  This is CRITICAL. Choosing the wrong action confuses the user.
+
+  Use highlightAction "hover" when:
+  - The user wants to READ or LOOK UP a specific value (e.g., "How much
+    revenue?", "What is the value of X?", "List the values for each category")
+  - The answer is visible in a TOOLTIP when the user hovers over a bar/slice/point
+  - The user does NOT need other charts to update — they just need to see
+    one number or a few numbers on ONE chart
+  - Examples:
+    "How much revenue is won by Devices?" → HOVER on the Devices bar
+    "List the revenue for each product category" → HOVER over bars
+    "How many units were lost?" → HOVER on the relevant bar/slice
+
+  Use highlightAction "click" when:
+  - The user wants to FILTER the entire dashboard to a specific value
+  - The answer requires CROSS-FILTERING — clicking a value on one chart
+    should update ALL other charts to show only matching data
+  - The user is asking about RELATIONSHIPS between dimensions shown in
+    DIFFERENT charts (e.g., "Which regions have mature markets?" requires
+    clicking Mature on one chart and seeing the MAP update)
+  - The question contains multi-step analysis: "filter to X, then look at Y"
+  - Examples:
+    "Which regions have mature markets?" → CLICK "Mature" bar (cross-filters MAP)
+    "Show me everything about Manufacturing" → CLICK "Manufacturing"
+    "Compare Germany and Denmark" → CLICK those countries on MAP
+
+  Rule of thumb: If the answer is a NUMBER visible in a tooltip → "hover".
+  If the answer requires seeing how OTHER charts change → "click".
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   CROSS-FILTERING GUIDANCE
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
-  CRITICAL: When the user's request mentions specific values (e.g., countries,
-  categories, statuses), identify the BEST candidate view where the user can
-  click that value and emit a HIGHLIGHT with highlightAction "click".
+  The guidance below applies ONLY when you use highlightAction "click".
+  If the user just wants to READ a value, use "hover" instead — cross-filtering
+  is not needed for value lookups.
+
+  When the user's request mentions specific values AND the answer requires
+  seeing how other charts change, identify the BEST candidate view where
+  the user can click that value and emit a HIGHLIGHT with highlightAction "click".
 
   When the user clicks a data point on one chart, ALL other charts on the
   dashboard automatically cross-filter to show only matching data. This means
@@ -638,8 +692,10 @@ ${unmatchedAnnotation}
   The "reasoning" block MUST be filled in BEFORE generating recommendations.
   The "reply" should sound like a concise assistant chat message, not a label or summary heading.
   Follow the DECISION TREE strictly:
-  - If candidate views fully cover the question: use HIGHLIGHT to guide the user
-    to click the relevant data points. Do NOT use MODIFY_FILTER.
+  - If candidate views fully cover the question: use HIGHLIGHT to guide the user.
+    Use "hover" when the user wants to READ a value (tooltip lookup).
+    Use "click" ONLY when cross-filtering across charts is needed.
+    Do NOT use MODIFY_FILTER.
   - If candidate views partially cover it AND UNMATCHED QUERY COLUMNS exist:
     HIGHLIGHT on candidates + NEW_CONTENT for unmatched columns (HYBRID).
     The NEW_CONTENT MUST include filters/groupBy for ALL question constraints
@@ -653,6 +709,8 @@ ${unmatchedAnnotation}
   Prefer HIGHLIGHT over NEW_CONTENT when existing views can answer.
   The system CANNOT click or drill down — always use HIGHLIGHT + instructions instead.
   NEVER emit MODIFY_FILTER — it is deprecated.
+  For ANY question involving dates, time periods, or temporal ranges:
+  ALWAYS mention the Time slider at the top of the dashboard in "reply".
 
   No explanation.
   No markdown.
