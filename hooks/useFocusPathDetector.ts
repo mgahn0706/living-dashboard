@@ -121,7 +121,7 @@ export function useFocusPathDetector(
 
       /* ===== decay defaults (longer context memory) ===== */
       decayIntervalMilliseconds: 200,
-      focusHalfLifeSeconds: 90, // keep attention stable long enough for normal dashboard scanning
+      focusHalfLifeSeconds: 45, // views decay to 50% in ~45s of inactivity
       idleDecayGracePeriodMilliseconds: 8_000, // give views time to sit before idle decay ramps up
 
       /* ===== dramatic decay ===== */
