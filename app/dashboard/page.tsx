@@ -1401,14 +1401,6 @@ function AppContent() {
     });
   };
 
-  const applyAll = () => {
-    const batchId = `apply_all_${Date.now()}`;
-    applyRecommendationSet(actionableRecommendations, {
-      historyBatchId: batchId,
-      logEventType: "recommendation_apply_all",
-    });
-  };
-
   const decline = (r: Recommendation) => {
     logUserEvent(
       "recommendation_declined",
@@ -1893,7 +1885,6 @@ function AppContent() {
             onUndoLatest={undoLatestRecommendation}
             onAcceptRecommendation={apply}
             onDeclineRecommendation={decline}
-            onAcceptAllRecommendations={applyAll}
             voice={voice}
             textChats={textChats}
             isGenerating={areRecommendationsEnabled ? isLoading : isChatLoading}

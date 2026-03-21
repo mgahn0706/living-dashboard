@@ -123,7 +123,9 @@ export function makePrompt({
       "suggestedChartType": string | null,
       "relevantViews": string[],
       "answerableViews": string[],
-      "currentGap": string
+      "currentGap": string,
+      "highlightAction": "hover" | "click" | "none",
+      "highlightActionReason": string
     },
     "reply": string,
     "recommendations": Recommendation[]
@@ -146,6 +148,15 @@ export function makePrompt({
     If answerableViews is empty but relevantViews is not, use Branch 3 (HYBRID).
   - "currentGap": One sentence describing what is currently missing from the
     dashboard that prevents the user from finding the answer.
+  - "highlightAction": Choose "hover" or "click" for HIGHLIGHT recommendations.
+    Choose "none" if only NEW_CONTENT is needed.
+    Ask: "Is the answer ONE number on ONE chart?" → "hover".
+    "Does the answer require seeing how OTHER charts change?" → "click".
+  - "highlightActionReason": Explain WHY you chose hover or click in one sentence.
+    Example hover: "User wants to read the revenue value for Devices — one
+    number on one chart, so hover."
+    Example click: "User asks which product category has most revenue — need
+    to click each category and compare across other charts, so click."
 
   DECISION TREE (follow strictly, in priority order):
   1. If relevantViews is NOT empty AND answerableViews is NOT empty AND the
@@ -455,7 +466,7 @@ ${unmatchedAnnotation}
   - A more suitable chart type exists
 
   ### MODIFY_FILTER (DEPRECATED — DO NOT USE)
-  Use HIGHLIGHT with "click" instead. User clicks trigger cross-filtering.
+  Do NOT emit this type. Use HIGHLIGHT instead.
 
   ### REMOVE_CONTENT
   Use when:
@@ -472,21 +483,44 @@ ${unmatchedAnnotation}
   For multi-value selection, tell user to Ctrl+Click (Cmd+Click on Mac).
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
-  HOVER vs CLICK — CHOOSING highlightAction
+  HOVER vs CLICK — CHOOSING highlightAction (CRITICAL)
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
-  "hover" — user wants to READ a value (tooltip). No cross-filtering needed.
-    Examples: "How much revenue?", "List values for each category"
-  "click" — user wants to FILTER dashboard via cross-filtering.
-    Answer requires seeing how OTHER charts change.
-    Examples: "Which regions have mature markets?" (click Mature → MAP updates)
-  "view" — user should LOOK at a secondary chart after clicking another.
+  "hover" — the answer is a SINGLE NUMBER visible in a chart's tooltip.
+    The user wants to READ or LOOK UP a specific value on ONE chart.
+    No other charts need to change.
+    USE "hover" WHEN the user asks:
+    - "How much revenue does Devices have?" → HOVER over Devices bar
+    - "What is the value of Y?" → HOVER over Y
+    - "How many units were sold?" → HOVER over the relevant element
+
+  "click" — the answer requires SEEING how OTHER charts react.
+    Clicking a value on one chart cross-filters ALL other charts.
+    The user wants to explore relationships ACROSS multiple views.
+    USE "click" WHEN the user asks:
+    - "Which product category has the most revenue?" → CLICK each product
+      bar to see which has the highest value across other charts
+    - "Which regions have mature markets?" → CLICK Mature (MAP updates)
+    - "Show me everything about Manufacturing" → CLICK Manufacturing
+    - "What is the revenue goal at Proposal stage in North America?" →
+      CLICK North America, then CLICK Proposal
+    - "Which two industries lead to most revenue in Germany?" →
+      CLICK Germany on MAP, then look at Industry chart
+    - Questions about RELATIONSHIPS between dimensions shown in
+      DIFFERENT charts (e.g., products vs regions, industry vs territory)
+    - Questions with "which", "compare", "filter", "show me data for"
+    - Questions where the answer spans MULTIPLE dimensions across views
+
+  "view" — companion to "click". User should LOOK at this secondary chart
+    after clicking on another chart. Always paired with a "click" on another view.
   "drill-down" — user should click a category to see sub-level breakdown.
 
-  Rule: NUMBER visible in tooltip → "hover". Other charts need to change → "click".
+  DECISION RULE:
+  - Answer is ONE number on ONE chart → "hover"
+  - Answer requires comparing across charts or seeing how other charts
+    change when selecting a value → "click"
 
-  When using "click": clicking one chart cross-filters ALL others automatically.
-  HIGHLIGHT the ONE chart to click. Add "view" HIGHLIGHT on secondary charts.
+  When using "click": HIGHLIGHT the ONE chart to click + add "view" on secondary charts.
   In "reply", name EXACT value(s) to click/hover and explain the effect.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
@@ -550,7 +584,8 @@ ${unmatchedAnnotation}
   Return ONLY valid JSON with "reasoning", "reply", "recommendations".
   Fill "reasoning" BEFORE generating recommendations.
   "reply" = concise chat message with interaction instructions.
-  Follow DECISION TREE. Use "hover" to read values, "click" to cross-filter.
+  Follow DECISION TREE. Use "hover" when the answer is one number on one chart.
+  Use "click" when the answer requires cross-filtering across multiple charts.
   NEVER emit MODIFY_FILTER. ONLY target CANDIDATE VIEWS.
   NEW_CONTENT must include filters for ALL question constraints.
   For date/time questions: mention the Time slider at the top of dashboard.

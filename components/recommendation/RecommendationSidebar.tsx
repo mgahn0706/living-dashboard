@@ -567,7 +567,6 @@ export default function RecommendationSidebar({
   onSendTextChat,
   onAcceptRecommendation,
   onDeclineRecommendation,
-  onAcceptAllRecommendations,
 }: {
   history?: Recommendation[];
   activeRecommendations?: Recommendation[];
@@ -584,7 +583,6 @@ export default function RecommendationSidebar({
   onSendTextChat?: (text: string) => void;
   onAcceptRecommendation?: (rec: Recommendation) => void;
   onDeclineRecommendation?: (rec: Recommendation) => void;
-  onAcceptAllRecommendations?: () => void;
   onChangeLanguage: (lang: "en-US" | "ko-KR" | "ja-JP") => void;
 }) {
   const { isListening, partial, conversation, start, stop } = voice;
@@ -643,15 +641,16 @@ export default function RecommendationSidebar({
   );
 
   const handleApplyAll = useCallback(() => {
-    activeRecommendations.forEach((rec) => {
+    const newContentRecs = activeRecommendations.filter((r) => r.type === "NEW_CONTENT");
+    newContentRecs.forEach((rec) => {
       setJustAppliedIds((prev) => new Set(prev).add(rec.id));
+      onAcceptRecommendation?.(rec);
     });
-    onAcceptAllRecommendations?.();
     // Auto-clear all success states
     setTimeout(() => {
       setJustAppliedIds(new Set());
     }, 2500);
-  }, [activeRecommendations, onAcceptAllRecommendations]);
+  }, [activeRecommendations, onAcceptRecommendation]);
 
   const appliedCount = history.length;
   const pendingCount = activeRecommendations.length;
@@ -839,21 +838,24 @@ export default function RecommendationSidebar({
                 if (entry.kind === "recommendations") {
                   return (
                     <div key="rec-group" className="flex flex-col gap-2">
-                      {/* Apply All banner */}
-                      {entry.recs.length > 1 && (
-                        <button
-                          onClick={handleApplyAll}
-                          className="w-full flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs transition hover:bg-primary/10"
-                        >
-                          <span className="flex items-center gap-1.5 font-semibold text-primary">
-                            <IconBolt className="size-3.5" />
-                            Apply all {entry.recs.length} recommendations
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            1-click
-                          </span>
-                        </button>
-                      )}
+                      {/* Apply All banner — only for NEW_CONTENT recs */}
+                      {(() => {
+                        const applyableCount = entry.recs.filter((r) => r.type === "NEW_CONTENT").length;
+                        return applyableCount > 1 ? (
+                          <button
+                            onClick={handleApplyAll}
+                            className="w-full flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs transition hover:bg-primary/10"
+                          >
+                            <span className="flex items-center gap-1.5 font-semibold text-primary">
+                              <IconBolt className="size-3.5" />
+                              Apply all {applyableCount} new views
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              1-click
+                            </span>
+                          </button>
+                        ) : null;
+                      })()}
 
                       {/* Just-Applied success cards */}
                       <AnimatePresence>
@@ -989,16 +991,18 @@ export default function RecommendationSidebar({
                                         />
                                       </div>
 
-                                      {/* Actions */}
+                                      {/* Actions — Apply only for NEW_CONTENT */}
                                       <div className="mt-2.5 flex items-center gap-1">
-                                        <button
-                                          className="inline-flex items-center gap-1 rounded-md h-6 px-2 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
-                                          style={{ backgroundColor: color }}
-                                          onClick={() => handleApply(r)}
-                                        >
-                                          <IconCheck className="size-3" />
-                                          Apply
-                                        </button>
+                                        {r.type === "NEW_CONTENT" && (
+                                          <button
+                                            className="inline-flex items-center gap-1 rounded-md h-6 px-2 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+                                            style={{ backgroundColor: color }}
+                                            onClick={() => handleApply(r)}
+                                          >
+                                            <IconCheck className="size-3" />
+                                            Apply
+                                          </button>
+                                        )}
                                         <Button
                                           size="icon"
                                           variant="ghost"

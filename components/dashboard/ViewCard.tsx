@@ -861,17 +861,19 @@ function RecommendationBanner({
       </span>
 
       <div className="ml-auto flex items-center gap-1">
-        <button
-          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold text-white transition-opacity hover:opacity-90"
-          style={{ backgroundColor: color }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onAccept?.(recommendation);
-          }}
-        >
-          <IconCheck className="size-3" />
-          Apply
-        </button>
+        {recommendation.type === "NEW_CONTENT" && (
+          <button
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ backgroundColor: color }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAccept?.(recommendation);
+            }}
+          >
+            <IconCheck className="size-3" />
+            Apply
+          </button>
+        )}
         <button
           className="rounded p-0.5 text-muted-foreground hover:text-destructive transition-colors"
           onClick={(e) => {
