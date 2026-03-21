@@ -737,7 +737,7 @@ function AppContent() {
   const isLivingFeaturesEnabled = systemMode !== "B";
   const areRecommendationsEnabled = systemMode !== "B";
 
-  const { clearSelection } = useSelection();
+  const { clearSelection, hasSelection } = useSelection();
   const { focusScore, restoreFocusScore } = useFocus();
   const {
     schema,
@@ -1081,19 +1081,38 @@ function AppContent() {
         [targetId]: `${color}__pulse__${action}`,
       }));
 
-      // Clear after 15 seconds
-      setTimeout(() => {
-        setAppliedRecColorByViewId((prev) => {
-          const next = { ...prev };
-          delete next[targetId];
-          return next;
-        });
-      }, 15_000);
+      // For "click" action, persist highlight until the user actually clicks
+      // (cleared by the hasSelection useEffect below). For other actions, auto-clear.
+      if (action !== "click") {
+        setTimeout(() => {
+          setAppliedRecColorByViewId((prev) => {
+            const next = { ...prev };
+            delete next[targetId];
+            return next;
+          });
+        }, 15_000);
+      }
 
       // Dismiss from active recommendations
       acceptRecommendation(r);
     }
   }, [activeRecommendations, acceptRecommendation]);
+
+  // Clear "click" pulse highlights when the user makes a selection (cross-filter)
+  useEffect(() => {
+    if (!hasSelection) return;
+    setAppliedRecColorByViewId((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const key of Object.keys(next)) {
+        if (next[key]?.includes("__pulse__click")) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [hasSelection]);
 
   const modifyRecommendationsByViewId = useMemo(() => {
     const map: Record<string, Recommendation> = {};
@@ -1178,8 +1197,19 @@ function AppContent() {
           });
 
           switch (r.type) {
+            case "MODIFY_FILTER": {
+              // DEPRECATED: Do not apply filter to the view. Just scroll + highlight.
+              // The user should interact with the chart directly to trigger cross-filtering.
+              const targetId = getRecommendationTargetViewId(r);
+              if (!targetId) return;
+              const el = document.querySelector(
+                `[data-view-id="${targetId}"]`
+              ) as HTMLElement | null;
+              if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+              return;
+            }
+
             case "MODIFY_CONTENT":
-            case "MODIFY_FILTER":
             case "RESIZE": {
               const targetId = getRecommendationTargetViewId(r);
               if (!targetId) return;
@@ -1311,13 +1341,18 @@ function AppContent() {
             ...prev,
             [targetId]: colorValue,
           }));
-          setTimeout(() => {
-            setAppliedRecColorByViewId((prev) => {
-              const next = { ...prev };
-              delete next[targetId];
-              return next;
-            });
-          }, 10_000);
+          // For "click" pulse highlights, persist until user makes a selection.
+          // For other highlights, auto-clear after 10 seconds.
+          const isClickPulse = r.type === "HIGHLIGHT" && action === "click";
+          if (!isClickPulse) {
+            setTimeout(() => {
+              setAppliedRecColorByViewId((prev) => {
+                const next = { ...prev };
+                delete next[targetId];
+                return next;
+              });
+            }, 10_000);
+          }
         }
 
         acceptRecommendation(r);

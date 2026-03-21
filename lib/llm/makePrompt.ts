@@ -149,22 +149,27 @@ export function makePrompt({
 
   DECISION TREE (follow strictly, in priority order):
   1. If relevantViews is NOT empty AND answerableViews is NOT empty AND the
-     question can be FULLY answered by filtering/highlighting those answerable
-     views (see QUESTION-ANSWER COMPATIBILITY below): use MODIFY_FILTER on
-     those views (up to 3). Add a HIGHLIGHT on the most relevant view.
+     question can be answered by interacting with those answerable views
+     (see QUESTION-ANSWER COMPATIBILITY below): use HIGHLIGHT with
+     highlightAction "click" on the most relevant view(s) (up to 3).
+     In "reply", tell the user EXACTLY which data point(s) to click on
+     which chart and explain that clicking will cross-filter all other
+     charts. Do NOT use MODIFY_FILTER.
   2. If relevantViews is NOT empty BUT the answer requires the user to manually
      interact with a view (click a data point, hover, drill into a category) —
      something the system CANNOT do automatically: use HIGHLIGHT on the relevant
      view(s). Include clear instructions in "reply" telling the user exactly what
      to click, hover, or interact with.
   3. HYBRID: If relevantViews is NOT empty BUT some queryColumns are listed in
-     UNMATCHED QUERY COLUMNS (meaning no existing view visualizes them): COMBINE
-     MODIFY_FILTER/HIGHLIGHT on the candidate views that are relevant AND
-     NEW_CONTENT for the unmatched columns. This is common when the question
-     spans dimensions that are partially covered by the dashboard.
+     UNMATCHED QUERY COLUMNS (meaning no existing view visualizes them): use
+     HIGHLIGHT on the candidate views to guide the user to click the relevant
+     data points AND NEW_CONTENT for the unmatched columns. Do NOT use
+     MODIFY_FILTER. This is common when the question spans dimensions that
+     are partially covered by the dashboard.
      Example: "Which campaign led to most wins for Manufacturing?" — the
-     Industry view exists (filter to Manufacturing) but CampaignType is
-     unmatched, so also create a NEW_CONTENT view showing campaigns.
+     Industry view exists (HIGHLIGHT it, tell user to click "Manufacturing")
+     and CampaignType is unmatched, so also create a NEW_CONTENT view
+     showing campaigns.
   4. If relevantViews IS empty AND no existing view can answer the question
      BUT queryColumns map to real schema columns: recommend NEW_CONTENT to
      create a new view using those columns. Check UNMATCHED QUERY COLUMNS below.
@@ -174,8 +179,8 @@ export function makePrompt({
 
   CRITICAL: Do NOT skip to branch 4 when branch 1, 2, or 3 applies. If ANY
   candidate view exists that shows data relevant to the question, use
-  MODIFY_FILTER and/or HIGHLIGHT first. Only create NEW_CONTENT for columns
-  that are NOT already covered by candidate views.
+  HIGHLIGHT first. Only create NEW_CONTENT for columns that are NOT already
+  covered by candidate views.
 
   HIGHLIGHT is a first-class response — the pulsating glow + action badge + your
   reply instructions guide the user to discover the answer through the dashboard.
@@ -212,18 +217,18 @@ export function makePrompt({
   - "payload" must contain only valid View fields
   - If payload.chartType is "TABLE", payload.columns MUST be a non-empty array of valid schema columns.
   - Never output TABLE payload with empty or missing columns.
-  - For "MODIFY_FILTER", put filter instructions in "payload.filter" only.
-  - Valid filter shape:
+  - MODIFY_FILTER is DEPRECATED — do NOT emit it. Use HIGHLIGHT instead to
+    guide the user to click the relevant data points. The user's click will
+    trigger cross-filtering across all dashboard visuals.
+  - Filter shapes (top, includeXValues, includeColumns, includeByColumn) are
+    still valid ONLY inside NEW_CONTENT payloads (to set an initial filter on
+    a newly created view). Do NOT use them on existing views.
+  - Valid filter shape (for NEW_CONTENT only):
     - { "top": number }
     - { "includeXValues": [string | number, ...] }
     - { "includeColumns": [string, ...] } // TABLE views only
     - { "includeByColumn": [ { "column": string, "includeValues": [string | number | boolean, ...] } ] }
-    - To remove filter: { "filter": null }
   - NEVER output empty arrays for filter lists (includeXValues, includeColumns, includeByColumn, includeValues).
-  - If you cannot provide at least one concrete filter value, do NOT emit MODIFY_FILTER.
-  - "includeByColumn[].column" MUST exactly match an existing column name from DATA SCHEMA.
-  - Use a filter value only when it appears in the schema's sampleValues or is supported by conversation context.
-  - Filter values MUST match existing values in the dataset for the target column. Use sampleValues from DATA SCHEMA as reference. If uncertain, do NOT emit MODIFY_FILTER.
   - Column names in payload (xColumn, yColumn, x2Column, groupByColumn, columns[],
     filter column names, filter values) MUST EXACTLY match names from DATA SCHEMA.
     Do NOT paraphrase or rename columns. Column names MUST be copied exactly from DATA SCHEMA.
@@ -252,7 +257,7 @@ export function makePrompt({
   - KPI: Single metric card. yColumn = measure, aggregation = sum/avg/count. Often has filter (e.g., Status=Won).
   - RANGE_BAR: Gantt/timeline. xColumn and x2Column MUST be date columns from DATA SCHEMA (available: ${dateColumnsStr}). yColumn = category label (string).
 
-  When modifying an existing view, you do NOT need to change its chartType. You can apply MODIFY_FILTER to ANY existing view regardless of its chartType.
+  When modifying an existing view, you do NOT need to change its chartType.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   CHART TYPE SELECTION GUIDE (for NEW_CONTENT)
@@ -318,8 +323,8 @@ export function makePrompt({
   - Do NOT emit HIGHLIGHT telling the user to "look at" or "hover over" it
   - Instead, treat this as a HYBRID case (Branch 3): create NEW_CONTENT with
     the appropriate chart type that CAN answer the question
-  - You MAY still MODIFY_FILTER the existing candidate view to narrow its
-    data (e.g., filter to relevant time period), but the primary answer
+  - You MAY still HIGHLIGHT the existing candidate view to guide the user to
+    click a relevant data point for cross-filtering, but the primary answer
     must come from the NEW_CONTENT view
 
   Example: User asks "Which campaign was first to start in July 2025?"
@@ -358,24 +363,25 @@ ${candidateAnnotations || "  (no candidate views match the current query)"}
 ${unmatchedAnnotation}
 
   If there are unmatched columns, you SHOULD create NEW_CONTENT for those
-  columns, even if other candidate views are being filtered. This is the
-  HYBRID case (Decision Tree branch 3): filter existing views for the
-  columns they cover, AND create a new view for the unmatched columns.
-  Only skip NEW_CONTENT if MODIFY_FILTER alone fully answers the question.
+  columns, even if other candidate views are being highlighted. This is the
+  HYBRID case (Decision Tree branch 3): HIGHLIGHT existing views to guide
+  the user to click relevant data points, AND create a new view for the
+  unmatched columns. Only skip NEW_CONTENT if HIGHLIGHT alone fully answers
+  the question.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
-  MODIFY_FILTER ELIGIBILITY
+  INTERACTION ELIGIBILITY
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
-  CRITICAL: Only emit MODIFY_FILTER for a view if the filter column you want to use
-  appears in that view's filterEligible list (shown in VIEW RELEVANCE ANNOTATIONS above).
+  These are the columns each candidate view can respond to when the user
+  clicks or selects data points. Cross-filtering propagates through the
+  Selection Context, so clicking a value in one chart filters all charts
+  that share related data.
 
-  If the column is NOT listed as filterEligible for a view, do NOT emit MODIFY_FILTER for it.
-
-  Before emitting any MODIFY_FILTER, verify:
+  Before emitting a HIGHLIGHT with highlightAction "click", verify:
   1. The target view is a CANDIDATE view (not context-only)
-  2. The filter column exists in the view's filterEligible list
-  3. You have concrete filter values from the conversation or schema sampleValues
+  2. The value the user should click actually appears in the view's data
+  3. You can name the EXACT value(s) the user should click in the "reply"
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   ADAPTATION POLICY
@@ -394,11 +400,10 @@ ${unmatchedAnnotation}
 
   ### NEW_CONTENT
   Use ONLY when:
-  - No existing CANDIDATE VIEW can answer the question via filter or HIGHLIGHT
+  - No existing CANDIDATE VIEW can answer the question via HIGHLIGHT
   - The user's question references columns not shown in any existing view
   - UNMATCHED QUERY COLUMNS lists columns that are relevant but not visualized
   Do NOT use when:
-  - A MODIFY_FILTER on an existing view can answer the question
   - A HIGHLIGHT on an existing view can guide the user to the answer
 
   For NEW_CONTENT recommendations:
@@ -437,41 +442,34 @@ ${unmatchedAnnotation}
   - Axis or grouping should better match discussion intent
   - A more suitable chart type exists
 
-  ### MODIFY_FILTER
-  Use when:
-  - Filters should reflect conversation context
-  - Need view-only subset (e.g., top N or specific attributes/values)
-  - You want to apply/remove filter without changing chart structure
-  - For "Top 5", prefer: payload.filter = { "top": 5 }
-  - For specific values on x-axis, prefer: payload.filter = { "includeXValues": [...] }
-  - For TABLE column-focused filtering, prefer: payload.filter = { "includeColumns": [...] }
-  - For non-x-axis attributes (e.g., Status = LOST while x-axis is Country), use:
-    payload.filter = { "includeByColumn": [ { "column": "Status", "includeValues": ["LOST"] } ] }
-
-  Filter strategy per chart type:
-  - MAP: xColumn is country. To show only specific countries, use includeXValues with country names. To filter by a non-country attribute (e.g., Status=Won), use includeByColumn.
-  - STACKED_BAR / GROUPED_BAR: xColumn is category, groupByColumn is series. To filter by a non-axis attribute, use includeByColumn. To show specific x-axis values, use includeXValues.
-  - RANGE_BAR: Filter by stage or other attributes using includeByColumn.
-  - KPI: Already may have a filter. Use includeByColumn to narrow the metric (e.g., add Country filter).
-  - FUNNEL: Use includeByColumn for attribute filtering.
-  - All chart types support includeByColumn for filtering on ANY column in the dataset.
+  ### MODIFY_FILTER (DEPRECATED — DO NOT USE)
+  Do NOT emit MODIFY_FILTER recommendations. Instead, use HIGHLIGHT with
+  highlightAction "click" and include clear instructions in "reply" telling
+  the user what to click. The user's click triggers cross-filtering across
+  all dashboard visuals, which is the correct interaction pattern.
+  Cross-filtering ensures ALL charts update together, not just one view.
 
   ### REMOVE_CONTENT
   Use when:
   - View has persistently low focus
   - View is redundant with another view
 
-  ### HIGHLIGHT (attention guidance)
+  ### HIGHLIGHT (attention guidance — PRIMARY recommendation type)
   Use when:
   - You want to draw the user's attention to a specific view that already
-    shows relevant data or will show it after a MODIFY_FILTER is applied
+    shows relevant data
   - The user needs to perform a manual interaction (click a data point,
     hover over a region, drill into a category) that the system CANNOT do
     automatically — use HIGHLIGHT to point them to the right view
-  - Combined with MODIFY_FILTER: filter a view AND draw attention to it
-    so the user knows where to look for the answer
+  - The user's question can be answered by clicking specific data points:
+    use HIGHLIGHT with highlightAction "click" and tell the user EXACTLY
+    which bar/point/slice to click. The click triggers cross-filtering
+    across ALL dashboard visuals, so all charts update together.
   - You want to guide the user to look at a secondary view (e.g., after
-    filtering one chart, HIGHLIGHT the MAP to show geographic distribution)
+    clicking on one chart, HIGHLIGHT the MAP to show geographic distribution)
+  - For multi-value selection, tell the user to Ctrl+Click (or Cmd+Click
+    on Mac) to select multiple values. Example: "Ctrl+Click 'Manufacturing'
+    and 'Technology' on the Industry chart to compare them."
 
   For HIGHLIGHT recommendations:
   - "targetViewId" MUST be the view to highlight
@@ -500,20 +498,28 @@ ${unmatchedAnnotation}
     will cross-filter the map to show only regions with mature markets."
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
-  MULTI-VIEW FILTERING
+  CROSS-FILTERING GUIDANCE
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
-  CRITICAL: When the user's request mentions specific values (e.g., countries, categories, statuses),
-  identify CANDIDATE views where those values are relevant and recommend filtering EACH of them.
-  You MUST emit multiple MODIFY_FILTER recommendations (up to 3) to cover the most relevant views.
+  CRITICAL: When the user's request mentions specific values (e.g., countries,
+  categories, statuses), identify the BEST candidate view where the user can
+  click that value and emit a HIGHLIGHT with highlightAction "click".
 
-  How to pick which views to filter:
+  When the user clicks a data point on one chart, ALL other charts on the
+  dashboard automatically cross-filter to show only matching data. This means
+  you only need to HIGHLIGHT the ONE chart where the user should click —
+  all other charts will update automatically.
+
+  If the answer also involves looking at a secondary chart (e.g., click
+  "Manufacturing" on Industry chart, then look at MAP for geographic breakdown),
+  add a second HIGHLIGHT with highlightAction "view" on that chart.
+
+  How to pick which view to highlight:
   1. Look at CANDIDATE VIEWS only (not context views).
-  2. For each candidate view, check: does this view's filterEligible columns include the dimension the user mentioned?
-  3. If yes, emit a MODIFY_FILTER for that view. Combine all relevant filters in one includeByColumn array.
-  4. Prioritize the views that are MOST directly relevant to the user's question.
-
-  Do not stop at filtering just one view when the question spans multiple dimensions.
+  2. Find the view where the value the user mentioned appears as a clickable
+     data point (e.g., a bar, pie slice, scatter point, table row).
+  3. Emit HIGHLIGHT with highlightAction "click" on that view.
+  4. In "reply", name the EXACT value(s) to click and explain the cross-filter effect.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   INTERPRETING FOCUS SCORE
@@ -606,17 +612,19 @@ ${unmatchedAnnotation}
   The "reasoning" block MUST be filled in BEFORE generating recommendations.
   The "reply" should sound like a concise assistant chat message, not a label or summary heading.
   Follow the DECISION TREE strictly:
-  - If candidate views fully cover the question: MODIFY_FILTER and/or HIGHLIGHT.
+  - If candidate views fully cover the question: use HIGHLIGHT to guide the user
+    to click the relevant data points. Do NOT use MODIFY_FILTER.
   - If candidate views partially cover it AND UNMATCHED QUERY COLUMNS exist:
-    MODIFY_FILTER on candidates + NEW_CONTENT for unmatched columns (HYBRID).
+    HIGHLIGHT on candidates + NEW_CONTENT for unmatched columns (HYBRID).
   - If the user needs to interact with a view (click, hover, drill): use HIGHLIGHT
     with the appropriate highlightAction ("click", "hover", "drill-down", "view")
     and include instructions in "reply" about what to click or interact with.
   - If NO candidate views but schema columns match: MUST create NEW_CONTENT.
   - If nothing matches: explain in reply, no recommendations.
   ONLY target CANDIDATE VIEWS for recommendations. NEVER target CONTEXT VIEWS.
-  Prefer MODIFY_FILTER + HIGHLIGHT over NEW_CONTENT when existing views can answer.
+  Prefer HIGHLIGHT over NEW_CONTENT when existing views can answer.
   The system CANNOT click or drill down — always use HIGHLIGHT + instructions instead.
+  NEVER emit MODIFY_FILTER — it is deprecated.
 
   No explanation.
   No markdown.
