@@ -111,16 +111,25 @@ export function useRecommendation() {
       setStreamingText("");
 
       try {
+        const t0 = performance.now();
+
         // Pre-LLM step: compute view relevance scores and filter eligibility
         const userQuery = summarizeRecentRequest(
           buildRecentRequestMessages({ conversation, textChats })
         );
 
+        const t1 = performance.now();
+
         // Build enriched schema FIRST so scoreViewRelevance can use
         // actual column names and sampleValues (base SchemaNode has
         // { type, children } keys which break column extraction).
         const enrichedSchema = buildEnrichedSchema(dataSchema, attributeTypes, resolveAttribute);
+
+        const t2 = performance.now();
+
         const relevanceResult = scoreViewRelevance(views, userQuery, enrichedSchema);
+
+        const t3 = performance.now();
 
         console.log("View Relevance:", relevanceResult.entries);
         console.log("Unmatched columns:", relevanceResult.unmatchedQueryColumns);
@@ -137,6 +146,10 @@ export function useRecommendation() {
           queryMatchedColumns: relevanceResult.queryMatchedColumns,
         });
 
+        const t4 = performance.now();
+        console.log(
+          `[Perf] query: ${(t1 - t0).toFixed(0)}ms | schema: ${(t2 - t1).toFixed(0)}ms | relevance: ${(t3 - t2).toFixed(0)}ms | prompt: ${(t4 - t3).toFixed(0)}ms | total pre-LLM: ${(t4 - t0).toFixed(0)}ms`
+        );
         console.log("LLM Prompt:", prompt.content);
 
         const res = await fetch("/api/recommend", {
@@ -188,6 +201,10 @@ export function useRecommendation() {
           }
         }
 
+        const t5 = performance.now();
+        console.log(
+          `[Perf] LLM streaming: ${(t5 - t4).toFixed(0)}ms | TOTAL: ${(t5 - t0).toFixed(0)}ms`
+        );
         console.log("LLM Response:", fullText);
 
         // Parse the completed JSON

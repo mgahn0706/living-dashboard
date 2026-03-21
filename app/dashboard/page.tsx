@@ -842,6 +842,18 @@ function AppContent() {
       );
 
       if (areRecommendationsEnabled) {
+        // Clear previous pulse highlights before new question
+        setAppliedRecColorByViewId((prev) => {
+          const next = { ...prev };
+          let changed = false;
+          for (const key of Object.keys(next)) {
+            if (next[key]?.includes("__pulse__")) {
+              delete next[key];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
         triggerRecommendation({
           views,
           textChats: [...textChats, text],
@@ -1901,6 +1913,18 @@ function AppContent() {
               );
 
               if (areRecommendationsEnabled) {
+                // Clear previous pulse highlights before new question
+                setAppliedRecColorByViewId((prev) => {
+                  const next = { ...prev };
+                  let changed = false;
+                  for (const key of Object.keys(next)) {
+                    if (next[key]?.includes("__pulse__")) {
+                      delete next[key];
+                      changed = true;
+                    }
+                  }
+                  return changed ? next : prev;
+                });
                 setTextChats((prev) => [...prev, msg]);
                 triggerRecommendation({
                   views,
