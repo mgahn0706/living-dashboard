@@ -339,6 +339,7 @@ function normalizeViewUpdate(
         yColumn: payload?.yColumn ?? base.yColumn,
         xLabel: payload?.xLabel ?? base.xLabel,
         yLabel: payload?.yLabel ?? base.yLabel,
+        x2Column: payload?.x2Column ?? base.x2Column,
       },
       base.priority
     );
@@ -399,6 +400,7 @@ function buildNewViewFromPayload(payload: AnyPayload, priority: number): View {
       aggregation: payload?.aggregation,
       colorByColumn: payload?.colorByColumn,
       sortDescending: payload?.sortDescending,
+      x2Column: payload?.x2Column,
     },
     priority
   );
@@ -427,11 +429,48 @@ function sanitizeInitialGeneratedView(
 
   if (view.chartType === "SCATTER") {
     if (xType !== "number" || yType !== "number") return null;
+  } else if (view.chartType === "RANGE_BAR") {
+    // RANGE_BAR: yColumn is a category label (string), not a number
+    return sanitizeX2Column(view as ChartView, attributeKeys, attributeTypes);
   } else {
     if (yType !== "number") return null;
   }
 
   return view;
+}
+
+/**
+ * For RANGE_BAR views, validate that x2Column points to an actual
+ * date column. If not, attempt to find the best fallback date column.
+ */
+function sanitizeX2Column(
+  view: ChartView,
+  attributeKeys: string[],
+  attributeTypes: Record<string, string>
+): ChartView {
+  if (view.chartType !== "RANGE_BAR" || !view.x2Column) return view;
+
+  // Exact match — valid
+  if (attributeKeys.includes(view.x2Column)) return view;
+
+  // Fuzzy match (case/whitespace insensitive)
+  const normalized = view.x2Column.replace(/\s+/g, "").toLowerCase();
+  const fuzzy = attributeKeys.find(
+    (k) => k.replace(/\s+/g, "").toLowerCase() === normalized
+  );
+  if (fuzzy) return { ...view, x2Column: fuzzy };
+
+  // Hallucinated name — pick the first date column that isn't xColumn
+  const dateColumns = attributeKeys.filter((k) => attributeTypes[k] === "date");
+  const fallback = dateColumns.find((c) => c !== view.xColumn) ?? dateColumns[0];
+  if (fallback) {
+    console.warn(
+      `[sanitizeX2Column] Corrected "${view.x2Column}" → "${fallback}"`
+    );
+    return { ...view, x2Column: fallback };
+  }
+
+  return { ...view, x2Column: undefined };
 }
 
 function buildFallbackTableView(
@@ -1002,6 +1041,60 @@ function AppContent() {
     return recommendations.filter((r) => !acceptedRecommendationIds.includes(r.id));
   }, [areRecommendationsEnabled, recommendations, acceptedRecommendationIds]);
 
+  // Separate HIGHLIGHT recs (auto-applied) from actionable recs (shown in sidebar)
+  const actionableRecommendations = useMemo(
+    () => activeRecommendations.filter((r) => r.type !== "HIGHLIGHT"),
+    [activeRecommendations]
+  );
+
+  // Auto-apply HIGHLIGHT recommendations immediately (pulsate + scroll)
+  const appliedHighlightIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const highlights = activeRecommendations.filter(
+      (r) =>
+        r.type === "HIGHLIGHT" &&
+        !appliedHighlightIdsRef.current.has(r.id)
+    );
+    if (highlights.length === 0) return;
+
+    let firstScrollDone = false;
+    for (const r of highlights) {
+      appliedHighlightIdsRef.current.add(r.id);
+      const targetId = getRecommendationTargetViewId(r);
+      if (!targetId) continue;
+
+      // Scroll to the first highlighted view only
+      if (!firstScrollDone) {
+        const el = document.querySelector(
+          `[data-view-id="${targetId}"]`
+        ) as HTMLElement | null;
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        firstScrollDone = true;
+      }
+
+      // Set pulsating color with action verb encoded
+      const action =
+        (r.payload as any)?.highlightAction || "view";
+      const color = "#3b82f6";
+      setAppliedRecColorByViewId((prev) => ({
+        ...prev,
+        [targetId]: `${color}__pulse__${action}`,
+      }));
+
+      // Clear after 15 seconds
+      setTimeout(() => {
+        setAppliedRecColorByViewId((prev) => {
+          const next = { ...prev };
+          delete next[targetId];
+          return next;
+        });
+      }, 15_000);
+
+      // Dismiss from active recommendations
+      acceptRecommendation(r);
+    }
+  }, [activeRecommendations, acceptRecommendation]);
+
   const modifyRecommendationsByViewId = useMemo(() => {
     const map: Record<string, Recommendation> = {};
     activeRecommendations.forEach((r) => {
@@ -1043,8 +1136,12 @@ function AppContent() {
     const payload = newContentRecommendation.payload as AnyPayload;
     const minPriority =
       views.length > 0 ? Math.min(...views.map((v) => v.priority ?? 0)) : 0;
-    return buildNewViewFromPayload(payload, minPriority - 1);
-  }, [newContentRecommendation, views]);
+    let built = buildNewViewFromPayload(payload, minPriority - 1);
+    if (built.chartType === "RANGE_BAR" && "x2Column" in built) {
+      built = sanitizeX2Column(built as ChartView, attributeKeys, attributeTypes);
+    }
+    return built;
+  }, [newContentRecommendation, views, attributeKeys, attributeTypes]);
 
   /* ================= APPLY ================= */
 
@@ -1123,7 +1220,14 @@ function AppContent() {
                 nextViews.length > 0
                   ? Math.min(...nextViews.map((v) => v.priority ?? 0))
                   : 0;
-              const built = buildNewViewFromPayload(payload, minPriority - 1);
+              let built = buildNewViewFromPayload(payload, minPriority - 1);
+              if (built.chartType === "RANGE_BAR" && "x2Column" in built) {
+                built = sanitizeX2Column(
+                  built as ChartView,
+                  attributeKeys,
+                  attributeTypes
+                );
+              }
               const next = {
                 ...built,
                 filter: sanitizeFilterForView(
@@ -1140,6 +1244,19 @@ function AppContent() {
               const id: string | undefined = getRecommendationTargetViewId(r);
               if (!id) return;
               nextViews = nextViews.filter((v) => v.id !== id);
+              return;
+            }
+
+            case "HIGHLIGHT": {
+              // HIGHLIGHT does NOT modify views — it only triggers visual attention
+              const targetId = getRecommendationTargetViewId(r);
+              if (!targetId) return;
+              const el = document.querySelector(
+                `[data-view-id="${targetId}"]`
+              ) as HTMLElement | null;
+              if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "center" });
+              }
               return;
             }
 
@@ -1188,9 +1305,11 @@ function AppContent() {
         if (targetId) {
           const orderIdx = recommendationOrderMap[r.id];
           const color = orderIdx != null ? getRecColor(orderIdx - 1) : "#3b82f6";
+          const action = (r.payload as any)?.highlightAction || "view";
+          const colorValue = r.type === "HIGHLIGHT" ? `${color}__pulse__${action}` : color;
           setAppliedRecColorByViewId((prev) => ({
             ...prev,
-            [targetId]: color,
+            [targetId]: colorValue,
           }));
           setTimeout(() => {
             setAppliedRecColorByViewId((prev) => {
@@ -1237,7 +1356,7 @@ function AppContent() {
 
   const applyAll = () => {
     const batchId = `apply_all_${Date.now()}`;
-    applyRecommendationSet(activeRecommendations, {
+    applyRecommendationSet(actionableRecommendations, {
       historyBatchId: batchId,
       logEventType: "recommendation_apply_all",
     });
@@ -1342,14 +1461,14 @@ function AppContent() {
 
   /* Auto-scroll to first recommendation target when new recommendations arrive */
   useEffect(() => {
-    if (!areRecommendationsEnabled || activeRecommendations.length === 0) return;
-    const first = activeRecommendations.find((r) => r.targetViewId);
+    if (!areRecommendationsEnabled || actionableRecommendations.length === 0) return;
+    const first = actionableRecommendations.find((r) => r.targetViewId);
     if (!first?.targetViewId) return;
     const el = document.querySelector(`[data-view-id="${first.targetViewId}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [activeRecommendations, areRecommendationsEnabled]);
+  }, [actionableRecommendations, areRecommendationsEnabled]);
   const exportDashboardState = useCallback(() => {
     const exportedAt = new Date().toISOString();
     const payload: DashboardStateFile = {
@@ -1719,8 +1838,8 @@ function AppContent() {
         {sidebarMode === "FORMAT" && (
           <RecommendationSidebar
             language={language}
-            history={appliedRecommendations}
-            activeRecommendations={activeRecommendations}
+            history={appliedRecommendations.filter((r) => r.type !== "HIGHLIGHT")}
+            activeRecommendations={actionableRecommendations}
             llmReplies={llmReplies}
             recommendationsEnabled={areRecommendationsEnabled}
             viewTitles={viewTitlesMap}

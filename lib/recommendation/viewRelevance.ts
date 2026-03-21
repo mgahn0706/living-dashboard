@@ -19,7 +19,6 @@ export type ViewRelevanceEntry = {
 
 export type ViewRelevanceResult = {
   entries: ViewRelevanceEntry[];
-  drillDownViewId: string | null;
   /** Schema columns that matched the user query but are NOT bound to any candidate view */
   unmatchedQueryColumns: string[];
   /** All schema columns that matched the user query tokens */
@@ -216,18 +215,6 @@ export function scoreViewRelevance(
     }
   }
 
-  // Find the drill-down-capable view (HORIZONTAL_BAR with groupByColumn)
-  let drillDownViewId: string | null = null;
-  for (const view of views) {
-    if (
-      view.chartType === "HORIZONTAL_BAR" &&
-      (view as ChartView).groupByColumn
-    ) {
-      drillDownViewId = view.id;
-      break;
-    }
-  }
-
   const entries: ViewRelevanceEntry[] = views.map((view) => {
     const relevanceScore = scoreView(view, queryTokens, schemaColumns);
     return {
@@ -258,5 +245,5 @@ export function scoreViewRelevance(
     (col) => !candidateBoundColumns.has(col)
   );
 
-  return { entries, drillDownViewId, unmatchedQueryColumns, queryMatchedColumns };
+  return { entries, unmatchedQueryColumns, queryMatchedColumns };
 }

@@ -27,8 +27,6 @@ import {
   IconArrowUpRight,
   IconSend,
   IconChevronDown,
-  IconArrowMergeRight,
-  IconHandClick,
 } from "@tabler/icons-react";
 
 import { UseVoiceInputReturn } from "@/hooks/useVoiceInput";
@@ -128,8 +126,7 @@ export function getActionLabel(r: Recommendation): string {
     REMOVE_CONTENT: "REMOVE",
     REORDER: "REORDER",
     RESIZE: "RESIZE",
-    DRILL_DOWN: "DRILL INTO",
-    CLICK: "CLICK",
+    HIGHLIGHT: "HIGHLIGHT",
   };
   const prefix = verbMap[r.type] || "UPDATE";
   const nouns = words
@@ -153,10 +150,8 @@ function recIcon(type: Recommendation["type"]) {
       return <IconFilter className="size-4" />;
     case "MODIFY_CONTENT":
       return <IconPencil className="size-4" />;
-    case "DRILL_DOWN":
-      return <IconArrowMergeRight className="size-4" />;
-    case "CLICK":
-      return <IconHandClick className="size-4" />;
+    case "HIGHLIGHT":
+      return <IconBolt className="size-4" />;
     default:
       return <IconTrash className="size-4" />;
   }

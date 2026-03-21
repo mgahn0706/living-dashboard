@@ -118,7 +118,6 @@ export function useRecommendation() {
         const relevanceResult = scoreViewRelevance(views, userQuery, dataSchema);
 
         console.log("View Relevance:", relevanceResult.entries);
-        console.log("Drill-down view:", relevanceResult.drillDownViewId);
         console.log("Unmatched columns:", relevanceResult.unmatchedQueryColumns);
 
         const enrichedSchema = buildEnrichedSchema(dataSchema, attributeTypes, resolveAttribute);
@@ -131,7 +130,6 @@ export function useRecommendation() {
           dataSchema: enrichedSchema,
           attributeTypes,
           viewRelevance: relevanceResult.entries,
-          drillDownViewId: relevanceResult.drillDownViewId,
           unmatchedQueryColumns: relevanceResult.unmatchedQueryColumns,
           queryMatchedColumns: relevanceResult.queryMatchedColumns,
         });

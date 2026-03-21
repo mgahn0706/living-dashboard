@@ -7,6 +7,12 @@ export function makeInitialBuildPrompt({
   attributeTypes: Record<string, string>;
   dataSchema?: any;
 }) {
+  const dateColumns = Object.entries(attributeTypes)
+    .filter(([, type]) => type === "date")
+    .map(([col]) => col);
+  const dateColumnsStr =
+    dateColumns.map((c) => `"${c}"`).join(", ") || "(none)";
+
   return {
     role: "system",
     content: `
@@ -54,7 +60,7 @@ Chart type guidance:
 - HORIZONTAL_BAR: Horizontal bars, good for many categories. Use groupByColumn for drill-down.
 - FUNNEL: Stage-based funnel (xColumn=stage, yColumn=measure).
 - KPI: Single metric card (yColumn=measure, aggregation=sum/avg/count). Use filter to scope it (e.g., Status=Won).
-- RANGE_BAR: Gantt/timeline (xColumn=start date, x2Column=end date, yColumn=category label).
+- RANGE_BAR: Gantt/timeline. xColumn and x2Column MUST be date columns from ATTRIBUTE KEYS. Available date columns: ${dateColumnsStr}. yColumn=category label (string).
 
 Rules:
 - Output 3 to 5 views.

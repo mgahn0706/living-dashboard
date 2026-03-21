@@ -13,7 +13,6 @@ export function makePrompt({
   dataSchema,
   attributeTypes,
   viewRelevance,
-  drillDownViewId,
   unmatchedQueryColumns,
   queryMatchedColumns,
 }: {
@@ -24,13 +23,21 @@ export function makePrompt({
   dataSchema?: any;
   attributeTypes?: Record<string, string>;
   viewRelevance?: ViewRelevanceEntry[];
-  drillDownViewId?: string | null;
   unmatchedQueryColumns?: string[];
   queryMatchedColumns?: string[];
 }) {
   const recentRequestSummary = summarizeRecentRequest(
     buildRecentRequestMessages({ conversation, textChats })
   );
+
+  // Extract date columns for data-driven RANGE_BAR instructions
+  const dateColumns = attributeTypes
+    ? Object.entries(attributeTypes)
+        .filter(([, type]) => type === "date")
+        .map(([col]) => col)
+    : [];
+  const dateColumnsStr =
+    dateColumns.map((c) => `"${c}"`).join(", ") || "(none)";
 
   // Partition views into candidates and context-only based on relevance
   const candidateViews: any[] = [];
@@ -72,14 +79,6 @@ export function makePrompt({
           .join("\n")
       : "  (none - all relevant columns are covered by existing views)";
 
-  // Identify drill-down view details
-  const drillDownView = drillDownViewId
-    ? views.find((v: any) => v.id === drillDownViewId)
-    : null;
-  const drillDownInfo = drillDownView
-    ? `View "${drillDownView.id}" (title: "${drillDownView.title}") is a HORIZONTAL_BAR with groupByColumn="${drillDownView.groupByColumn}". Users can click a category bar to drill into sub-items grouped by "${drillDownView.groupByColumn}".`
-    : "No drill-down-capable view exists.";
-
   return {
     role: "system",
     content: `
@@ -106,7 +105,7 @@ export function makePrompt({
 
   IMPORTANT: You guide the user to find answers through dashboard interactions.
   You do NOT answer analytical questions directly. Instead, recommend actions
-  (filter, drill-down, click, new view, resize, reorder, etc.) that help the user
+  (filter, highlight, new view, resize, reorder, etc.) that help the user
   discover the answer themselves.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
@@ -143,28 +142,37 @@ export function makePrompt({
     dashboard that prevents the user from finding the answer.
 
   DECISION TREE (follow strictly, in priority order):
-  1. If relevantViews is NOT empty: ALWAYS prefer CLICK, DRILL_DOWN, or
-     MODIFY_FILTER on those existing views. These are the most direct actions.
-     Do NOT create NEW_CONTENT if a CLICK or filter on an existing view can
-     answer the question. A single CLICK that cross-filters the dashboard is
-     better than creating a new chart.
-  2. If relevantViews IS empty AND no existing view can answer the question
+  1. If relevantViews is NOT empty AND the question can be answered by filtering
+     existing views: use MODIFY_FILTER on those views (up to 3). Add a HIGHLIGHT
+     on the most relevant view to draw the user's attention to where the answer
+     will appear.
+  2. If relevantViews is NOT empty BUT the answer requires the user to manually
+     interact with a view (click a data point, hover, drill into a category) —
+     something the system CANNOT do automatically: use HIGHLIGHT on the relevant
+     view(s). Include clear instructions in "reply" telling the user exactly what
+     to click, hover, or interact with.
+  3. If relevantViews IS empty AND no existing view can answer the question
      BUT queryColumns map to real schema columns: recommend NEW_CONTENT to
      create a new view using those columns. Check UNMATCHED QUERY COLUMNS below.
-  3. If relevantViews IS empty AND queryColumns is empty (the user's question
+  4. If relevantViews IS empty AND queryColumns is empty (the user's question
      does not relate to any schema column): return empty recommendations and
      explain in "reply" that the data does not cover this question.
 
-  CRITICAL: Do NOT skip to branch 2 when branch 1 applies. If ANY candidate
-  view exists that shows data relevant to the question, use it via CLICK,
-  MODIFY_FILTER, or DRILL_DOWN first.
+  CRITICAL: Do NOT skip to branch 3 when branch 1 or 2 applies. If ANY candidate
+  view exists that shows data relevant to the question, use MODIFY_FILTER and/or
+  HIGHLIGHT first. Only create NEW_CONTENT when no existing view can answer.
+
+  HIGHLIGHT is a first-class response — the pulsating glow + action badge + your
+  reply instructions guide the user to discover the answer through the dashboard.
+  This is PREFERRED over creating a new view when existing views already contain
+  the relevant data. The user's dashboard already shows valuable context — use it.
 
   Each recommendation object MUST follow:
 
   {
     "id": string,
     "title": string,
-    "type": "REORDER" | "RESIZE" | "NEW_CONTENT" | "MODIFY_CONTENT" | "MODIFY_FILTER" | "REMOVE_CONTENT" | "DRILL_DOWN" | "CLICK",
+    "type": "REORDER" | "RESIZE" | "NEW_CONTENT" | "MODIFY_CONTENT" | "MODIFY_FILTER" | "REMOVE_CONTENT" | "HIGHLIGHT",
     "targetViewId"?: string,
     "payload": Partial<View>,
     "reason": string
@@ -180,6 +188,9 @@ export function makePrompt({
   - "reply" should mention the main analytic intent from the latest user request
   - "reply" must explicitly say what you recommend
   - "reply" must explicitly say why you recommend it
+  - When using HIGHLIGHT, "reply" MUST include instructions for any manual
+    interaction the user needs to perform (e.g., "click the 'Mature' bar",
+    "hover over the map to see country details")
   - If there are multiple recommendations, mention the top 1-2 most important ones and the reason for each in concise language
   - If there are no recommendations, "reply" should explicitly say that no change is recommended and why
   - "recommendations" must be an array
@@ -198,6 +209,9 @@ export function makePrompt({
   - "includeByColumn[].column" MUST exactly match an existing column name from DATA SCHEMA.
   - Use a filter value only when it appears in the schema's sampleValues or is supported by conversation context.
   - Filter values MUST match existing values in the dataset for the target column. Use sampleValues from DATA SCHEMA as reference. If uncertain, do NOT emit MODIFY_FILTER.
+  - Column names in payload (xColumn, yColumn, x2Column, groupByColumn, columns[],
+    filter column names, filter values) MUST EXACTLY match names from DATA SCHEMA.
+    Do NOT paraphrase or rename columns. Column names MUST be copied exactly from DATA SCHEMA.
   - "id" is the recommendation identifier. It MUST be unique and MUST NOT equal any existing view id.
   - If the recommendation applies to an existing view, you MUST include "targetViewId" to specify which view is affected.
   - Never use recommendation "id" as a view id.
@@ -218,10 +232,10 @@ export function makePrompt({
   - TABLE: Tabular rows. Has "columns" array instead of xColumn/yColumn.
   - MAP: Geographic bubble map. xColumn = country name, yColumn = measure. Bubbles sized by aggregated yColumn per country.
   - STACKED_BAR / GROUPED_BAR: Multi-series bars. xColumn = categories, yColumn = measure, groupByColumn = series splitter (e.g., Status).
-  - HORIZONTAL_BAR: Horizontal bars, may have groupByColumn for drill-down.
+  - HORIZONTAL_BAR: Horizontal bars, may have groupByColumn for sub-categories.
   - FUNNEL: Stages funnel. xColumn = stage names, yColumn = measure.
   - KPI: Single metric card. yColumn = measure, aggregation = sum/avg/count. Often has filter (e.g., Status=Won).
-  - RANGE_BAR: Gantt/timeline. xColumn = start date, x2Column = end date, yColumn = category label.
+  - RANGE_BAR: Gantt/timeline. xColumn and x2Column MUST be date columns from DATA SCHEMA (available: ${dateColumnsStr}). yColumn = category label (string).
 
   When modifying an existing view, you do NOT need to change its chartType. You can apply MODIFY_FILTER to ANY existing view regardless of its chartType.
 
@@ -238,10 +252,27 @@ export function makePrompt({
   - MAP: One country/geography column (x) + one number column (y). Use when query involves countries or territories.
   - STACKED_BAR: String (x) + number (y) + string (groupByColumn). For split comparisons across a category.
   - GROUPED_BAR: Same as STACKED_BAR but side-by-side bars.
-  - HORIZONTAL_BAR: Like BAR but horizontal. Good for many categories. Add groupByColumn for drill-down.
+  - HORIZONTAL_BAR: Like BAR but horizontal. Good for many categories. Add groupByColumn for sub-categories.
   - FUNNEL: Stage column (x) + number (y). For pipeline stages.
   - KPI: Number column (y) only. Shows a single aggregated metric. Use aggregation (sum/avg/count) and optional filter.
   - TABLE: Use columns[] array. For detailed multi-column inspection.
+  - RANGE_BAR: Two date columns from DATA SCHEMA (available: ${dateColumnsStr}) for xColumn and x2Column, + one string column (y=category). For timelines and Gantt charts.
+
+  PROPORTIONAL QUESTIONS:
+  When the user asks about "breakdown", "distribution", "proportion", "share",
+  "composition", or "list the [measure] for each [category]":
+  - Prefer PIE (few categories, <=7) or DONUT (moderate categories, <=12)
+  - These chart types emphasize part-to-whole relationships
+  - Use BAR only when comparison (not proportion) is the primary intent
+  - Example: "List the revenue for each product category" -> PIE with
+    xColumn="Product Category", yColumn="Revenue"
+
+  TIMELINE / GANTT QUESTIONS:
+  When the user asks about "when", "timeline", "duration", "schedule", or "Gantt":
+  - Use RANGE_BAR. Pick xColumn and x2Column from the date columns in DATA SCHEMA.
+  - The available date columns are: ${dateColumnsStr}
+  - xColumn and x2Column MUST exactly match column names from DATA SCHEMA.
+  - Apply filters to narrow the time range if the user mentions specific dates.
 
   Column type constraints (MUST follow):
   - yColumn MUST be a "number" type column (except TABLE and RANGE_BAR).
@@ -249,6 +280,7 @@ export function makePrompt({
   - For LINE, xColumn SHOULD be "date" type.
   - For MAP, xColumn MUST be a country/geography column (type "string").
   - For STACKED_BAR / GROUPED_BAR, groupByColumn MUST be "string" type.
+  - For RANGE_BAR, xColumn and x2Column MUST be "date" type columns listed in DATA SCHEMA. yColumn is "string".
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   CANDIDATE VS CONTEXT VIEWS
@@ -260,8 +292,9 @@ export function makePrompt({
   You SHOULD target recommendations at these views.
 
   CONTEXT VIEWS are views with low or no relevance to the current query.
-  Do NOT target CONTEXT VIEWS for MODIFY_FILTER or MODIFY_CONTENT unless
-  you have a strong, explicit reason documented in your reasoning block.
+  You MUST NOT target CONTEXT VIEWS for MODIFY_FILTER, MODIFY_CONTENT,
+  or HIGHLIGHT. Context views are listed only for your awareness of the
+  dashboard layout — they are NOT valid targets for any recommendation.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   VIEW RELEVANCE ANNOTATIONS
@@ -279,9 +312,9 @@ ${candidateAnnotations || "  (no candidate views match the current query)"}
 ${unmatchedAnnotation}
 
   If there are unmatched columns AND no existing candidate view can answer
-  the question through CLICK or filtering, consider NEW_CONTENT.
-  But if an existing view already shows the relevant data and a CLICK or
-  MODIFY_FILTER can answer the question, prefer that over creating a new view.
+  the question through filtering, consider NEW_CONTENT.
+  But if an existing view already shows the relevant data and a
+  MODIFY_FILTER or HIGHLIGHT can answer the question, prefer that.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   MODIFY_FILTER ELIGIBILITY
@@ -314,12 +347,12 @@ ${unmatchedAnnotation}
 
   ### NEW_CONTENT
   Use ONLY when:
-  - No existing CANDIDATE VIEW can answer the question via CLICK or filter
+  - No existing CANDIDATE VIEW can answer the question via filter or HIGHLIGHT
   - The user's question references columns not shown in any existing view
   - UNMATCHED QUERY COLUMNS lists columns that are relevant but not visualized
   Do NOT use when:
-  - A CLICK on an existing chart data point can answer the question
   - A MODIFY_FILTER on an existing view can answer the question
+  - A HIGHLIGHT on an existing view can guide the user to the answer
 
   For NEW_CONTENT recommendations:
   - "targetViewId" should NOT be set (it is a new view, not a modification)
@@ -327,13 +360,16 @@ ${unmatchedAnnotation}
     - "chartType": use the CHART TYPE SELECTION GUIDE to pick the right type
     - "title": a short descriptive title for the new view
     - For chart views: "xColumn" and "yColumn" (MUST be real schema column names)
+    - For RANGE_BAR: "xColumn", "x2Column", and "yColumn" (all required)
     - For TABLE views: "columns" (non-empty array of schema column names)
     - Optional: "groupByColumn", "aggregation", "colorByColumn", "filter", "size"
   - "id" must be a unique string (e.g., "rec_new_territory_revenue")
 
   TYPE CONSTRAINT (CRITICAL - violating this causes render failure):
   - yColumn MUST be a "number" type column. NEVER use a "string" column as yColumn.
-  - Check the DATA SCHEMA: if a column has "type": "string", it CANNOT be yColumn.
+  - Exception: TABLE (no yColumn) and RANGE_BAR (yColumn is category label, string).
+  - Check the DATA SCHEMA: if a column has "type": "string", it CANNOT be yColumn
+    (unless chartType is RANGE_BAR).
   - If you need two string columns (e.g., Territory and Market Maturity), use a
     STACKED_BAR or GROUPED_BAR with one as xColumn, a numeric column (like Revenue)
     as yColumn, and the other string column as groupByColumn.
@@ -341,11 +377,13 @@ ${unmatchedAnnotation}
   Example NEW_CONTENT payloads:
 
   BAR: { "chartType": "BAR", "xColumn": "Segment", "yColumn": "Revenue", "title": "Revenue by Segment", "size": "md" }
+  PIE: { "chartType": "PIE", "xColumn": "Product Category", "yColumn": "Revenue", "title": "Revenue by Product Category", "size": "md" }
   KPI: { "chartType": "KPI", "yColumn": "Revenue", "aggregation": "avg", "title": "Average Deal Revenue", "size": "sm", "filter": { "includeByColumn": [{ "column": "Status", "includeValues": ["Won"] }] } }
   LINE: { "chartType": "LINE", "xColumn": "CloseDate", "yColumn": "Units", "title": "Units Trend Over Time", "size": "md" }
   STACKED_BAR: { "chartType": "STACKED_BAR", "xColumn": "Territory", "yColumn": "Revenue", "groupByColumn": "Product Tier", "title": "Revenue by Territory & Tier", "size": "md" }
   MAP: { "chartType": "MAP", "xColumn": "Country", "yColumn": "Revenue", "aggregation": "sum", "title": "Revenue by Country", "size": "lg" }
   TABLE: { "chartType": "TABLE", "columns": ["Product Name", "Revenue", "Units", "Status"], "title": "Product Details", "size": "md" }
+  RANGE_BAR: { "chartType": "RANGE_BAR", "xColumn": ${dateColumns[0] ? `"${dateColumns[0]}"` : '"<date column>"'}, "x2Column": ${dateColumns[1] ? `"${dateColumns[1]}"` : dateColumns[0] ? `"${dateColumns[0]}"` : '"<date column>"'}, "yColumn": "CampaignType", "title": "Campaign Timeline", "size": "md" }
 
   ### MODIFY_CONTENT
   Use when:
@@ -376,43 +414,43 @@ ${unmatchedAnnotation}
   - View has persistently low focus
   - View is redundant with another view
 
-  ### DRILL_DOWN
+  ### HIGHLIGHT (attention guidance)
   Use when:
-  - The user's question can be answered by drilling into a specific category
-    on the drill-down-capable chart
-  - The question mentions a dimension that maps to a category on that chart
-  - Drill-down is MORE direct than applying a filter
+  - You want to draw the user's attention to a specific view that already
+    shows relevant data or will show it after a MODIFY_FILTER is applied
+  - The user needs to perform a manual interaction (click a data point,
+    hover over a region, drill into a category) that the system CANNOT do
+    automatically — use HIGHLIGHT to point them to the right view
+  - Combined with MODIFY_FILTER: filter a view AND draw attention to it
+    so the user knows where to look for the answer
+  - You want to guide the user to look at a secondary view (e.g., after
+    filtering one chart, HIGHLIGHT the MAP to show geographic distribution)
 
-  For DRILL_DOWN recommendations:
-  - "targetViewId" MUST be the drill-down-capable view ID
-  - "payload" should include a "drillTarget" field with the category name to click
-  - "reason" should explain what drilling into that category will reveal
-  - "title" should say something like "Drill into [Category] on [Chart Title]"
+  For HIGHLIGHT recommendations:
+  - "targetViewId" MUST be the view to highlight
+  - "payload" MUST include:
+    - "chartType": the view's current chart type
+    - "highlightAction": one of "view" | "click" | "hover" | "drill-down"
+      - "view": user should look at this chart to find the answer
+      - "click": user should click a specific data point (specify which in "reply")
+      - "hover": user should hover over elements to see details
+      - "drill-down": user should click a category to see its sub-level breakdown
+  - "reason" should explain what the user should look at or interact with
+  - "title" should be the chart's existing title (e.g., "Revenue by Market Maturity"),
+    NOT "Look at [title]". The action verb is delivered via highlightAction, not the title.
 
-  ### CLICK (HIGHEST PRIORITY action when applicable)
-  Use when:
-  - The user's question mentions a specific value (e.g., "mature", "Germany", "Won")
-    AND an existing chart shows that value as a data point (bar, slice, dot, row)
-  - Clicking that data point will cross-filter ALL other dashboard views, instantly
-    showing only related data — this is the most powerful exploration action
-  - It is simpler and more direct than creating a new view or applying filters
+  IMPORTANT: The system CANNOT click data points, drill down, or interact
+  with charts on behalf of the user. If the answer requires clicking a bar,
+  hovering over a bubble, or drilling into a category, use HIGHLIGHT with
+  the appropriate highlightAction and include clear instructions in "reply"
+  telling the user what to click or interact with.
 
-  CLICK is ALWAYS preferred over NEW_CONTENT when the value exists on an existing chart.
   Example: User asks "which regions have mature markets?" and a chart shows
-  "Market Maturity" with a "Mature" bar → recommend CLICK on the "Mature" bar.
-  This cross-filters the MAP and other views to show only mature market data.
-
-  For CLICK recommendations:
-  - "targetViewId" MUST be the view to click on
-  - "payload" should include a "clickTarget" field describing what to click
-    (e.g., "the Mature bar", "the Germany bar", "the Won slice")
-  - "reason" should explain the cross-filtering effect on other views
-  - "title" should say something like "Click [element] on [Chart Title]"
-
-  IMPORTANT: Prefer CLICK and DRILL_DOWN over both MODIFY_FILTER and NEW_CONTENT
-  when the user's question can be answered through interaction with existing views.
-  These are user actions, not dashboard modifications — they help the user explore
-  data interactively without adding visual clutter.
+  "Market Maturity" with bars for Emerging/Growth/Mature:
+  → HIGHLIGHT on Market Maturity chart: { "chartType": "BAR", "highlightAction": "click" }
+  → HIGHLIGHT on MAP: { "chartType": "MAP", "highlightAction": "view" }
+  → "reply": "Click the 'Mature' bar on Revenue by Market Maturity — this
+    will cross-filter the map to show only regions with mature markets."
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   MULTI-VIEW FILTERING
@@ -469,30 +507,6 @@ ${unmatchedAnnotation}
   - When the user makes an explicit request: prioritize FULLY answering the question. If the request spans multiple dimensions (e.g., country + industry + status), emit up to 3 recommendations to cover all relevant views. Do NOT stop at 1 recommendation when the question clearly needs changes across multiple views.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
-  DRILL-DOWN CAPABILITY
-  ━━━━━━━━━━━━━━━━━━━━━━━━
-
-  ${drillDownInfo}
-
-  If the user's question relates to the categories or sub-items of this drill-down chart,
-  prefer a DRILL_DOWN recommendation over MODIFY_FILTER. Drill-down is an interactive
-  exploration action that reveals sub-category breakdowns.
-
-  ━━━━━━━━━━━━━━━━━━━━━━━━
-  CLICK INTERACTIONS
-  ━━━━━━━━━━━━━━━━━━━━━━━━
-
-  All chart types support click interactions. When a user clicks a data point
-  (bar, slice, dot, row), it cross-filters other dashboard views to show only
-  related data. This is a powerful exploration tool.
-
-  Recommend CLICK when:
-  - The user asks about a specific entity (e.g., "What about Germany?")
-    and there is a chart showing Germany as a data point
-  - Clicking would instantly filter all other views, answering the question
-  - It is simpler than applying multiple MODIFY_FILTER recommendations
-
-  ━━━━━━━━━━━━━━━━━━━━━━━━
   DATA SCHEMA
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -545,11 +559,15 @@ ${unmatchedAnnotation}
   The "reasoning" block MUST be filled in BEFORE generating recommendations.
   The "reply" should sound like a concise assistant chat message, not a label or summary heading.
   Follow the DECISION TREE strictly:
-  - If candidate views exist: target them.
+  - If candidate views exist: target them with MODIFY_FILTER and/or HIGHLIGHT.
+  - If the user needs to interact with a view (click, hover, drill): use HIGHLIGHT
+    with the appropriate highlightAction ("click", "hover", "drill-down", "view")
+    and include instructions in "reply" about what to click or interact with.
   - If NO candidate views but schema columns match: MUST create NEW_CONTENT.
   - If nothing matches: explain in reply, no recommendations.
-  Only target CANDIDATE VIEWS for recommendations unless you have explicit justification.
-  Prefer DRILL_DOWN and CLICK when they are more direct than MODIFY_FILTER.
+  ONLY target CANDIDATE VIEWS for recommendations. NEVER target CONTEXT VIEWS.
+  Prefer MODIFY_FILTER + HIGHLIGHT over NEW_CONTENT when existing views can answer.
+  The system CANNOT click or drill down — always use HIGHLIGHT + instructions instead.
 
   No explanation.
   No markdown.

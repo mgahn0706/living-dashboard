@@ -79,8 +79,7 @@ export type Recommendation = {
     | "MODIFY_CONTENT"
     | "MODIFY_FILTER"
     | "REMOVE_CONTENT"
-    | "DRILL_DOWN"
-    | "CLICK";
+    | "HIGHLIGHT";
   payload: ChartPayload | TablePayload;
   reason: string;
 };

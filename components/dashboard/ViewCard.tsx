@@ -17,7 +17,11 @@ import { useDataset } from "@/context/DatasetContext";
 import * as Popover from "@radix-ui/react-popover";
 import {
   IconCheck,
+  IconChevronDown,
+  IconEye,
   IconFilter,
+  IconHandClick,
+  IconHandMove,
   IconInfoCircle,
   IconPencil,
   IconSparkles,
@@ -185,6 +189,14 @@ function ViewCard({
     recommendation && recommendationIndex != null
       ? getRecColor(recommendationIndex - 1)
       : undefined;
+
+  // Detect pulsating highlight mode and action verb from appliedRecColor
+  // Format: "#3b82f6__pulse__click" → color="#3b82f6", pulse=true, action="click"
+  const pulseMatch = appliedRecColor?.match(/^(.+?)__pulse(?:__(.+))?$/);
+  const isPulseHighlight = !!pulseMatch;
+  const effectiveAppliedRecColor = pulseMatch ? pulseMatch[1] : appliedRecColor;
+  const highlightAction = pulseMatch?.[2] || null;
+
   const contentOpacity = isEditing ? 1 : 0.6 + readabilityFocus * 0.4;
   const cardChromeHeight = recommendation ? 140 : 104;
   const reservedCardHeight = slotHeightPx + cardChromeHeight;
@@ -399,13 +411,15 @@ function ViewCard({
               : borderColor,
           borderStyle: dissolveStrength > 0.5 ? "dashed" : undefined,
           boxShadow:
-            !isEditing && recColor
-              ? `0 0 0 2px ${recColor}33, 0 4px 24px ${recColor}22`
-              : burnEdgeStrength > 0
-                ? `${baseShadow}, ${burnEdgeShadow}`
-                : vignetteStrength > 0
-                  ? `${baseShadow}, inset 0 0 ${(32 * vignetteStrength).toFixed(1)}px ${(16 * vignetteStrength).toFixed(1)}px rgba(120, 60, 0, ${(0.18 * vignetteStrength).toFixed(3)})`
-                  : baseShadow,
+            isPulseHighlight
+              ? undefined // Let CSS animation control box-shadow
+              : !isEditing && recColor
+                ? `0 0 0 2px ${recColor}33, 0 4px 24px ${recColor}22`
+                : burnEdgeStrength > 0
+                  ? `${baseShadow}, ${burnEdgeShadow}`
+                  : vignetteStrength > 0
+                    ? `${baseShadow}, inset 0 0 ${(32 * vignetteStrength).toFixed(1)}px ${(16 * vignetteStrength).toFixed(1)}px rgba(120, 60, 0, ${(0.18 * vignetteStrength).toFixed(3)})`
+                    : baseShadow,
           backgroundColor: tintOpacity > 0 ? `rgba(180, 100, 20, ${tintOpacity.toFixed(4)})` : undefined,
           opacity: dissolveStrength > 0
             ? dissolveOpacity
@@ -417,13 +431,19 @@ function ViewCard({
           transform: `scale(${widthScale}, ${heightScale})`,
           transformOrigin: "top left",
           willChange: "transform, opacity",
+          ...(isPulseHighlight && effectiveAppliedRecColor ? {
+            "--hl-color-22": `${effectiveAppliedRecColor}22`,
+            "--hl-color-33": `${effectiveAppliedRecColor}33`,
+            "--hl-color-55": `${effectiveAppliedRecColor}55`,
+          } as React.CSSProperties : {}),
         }}
         className={cn(
           "relative overflow-hidden transition-[transform,opacity,box-shadow,background-color,border-color] duration-300 ease-out cursor-pointer",
           "h-full",
           "hover:ring-1 hover:ring-ring",
           isEditing &&
-            "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]"
+            "ring-2 ring-primary shadow-lg animate-[editingBreath_2.4s_ease-in-out_infinite]",
+          isPulseHighlight && !isEditing && "animate-highlight-pulse"
         )}
       >
         {recommendation && (
@@ -473,12 +493,31 @@ function ViewCard({
               </div>
 
               <div className="ml-auto flex shrink-0 items-center gap-1">
-                {appliedRecColor && !recommendation && (
+                {/* Action verb badge for HIGHLIGHT (pulsating mode) */}
+                {isPulseHighlight && highlightAction && effectiveAppliedRecColor && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide animate-pulse"
+                    style={{
+                      backgroundColor: `${effectiveAppliedRecColor}20`,
+                      color: effectiveAppliedRecColor,
+                    }}
+                  >
+                    {highlightAction === "drill-down" && <IconChevronDown className="size-3" />}
+                    {highlightAction === "click" && <IconHandClick className="size-3" />}
+                    {highlightAction === "hover" && <IconHandMove className="size-3" />}
+                    {highlightAction === "view" && <IconEye className="size-3" />}
+                    {highlightAction === "drill-down" ? "Drill down" :
+                     highlightAction === "click" ? "Click" :
+                     highlightAction === "hover" ? "Hover" : "View"}
+                  </span>
+                )}
+                {/* "Applied" badge for non-pulse recommendation completions */}
+                {effectiveAppliedRecColor && !recommendation && !isPulseHighlight && (
                   <span
                     className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
                     style={{
-                      backgroundColor: `${appliedRecColor}15`,
-                      color: appliedRecColor,
+                      backgroundColor: `${effectiveAppliedRecColor}15`,
+                      color: effectiveAppliedRecColor,
                     }}
                   >
                     <IconCheck className="size-3" />
