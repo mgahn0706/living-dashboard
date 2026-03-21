@@ -193,11 +193,6 @@ export function makePrompt({
   HIGHLIGHT first. Only create NEW_CONTENT for columns that are NOT already
   covered by candidate views.
 
-  HIGHLIGHT is a first-class response — the pulsating glow + action badge + your
-  reply instructions guide the user to discover the answer through the dashboard.
-  This is PREFERRED over creating a new view when existing views already contain
-  the relevant data. The user's dashboard already shows valuable context — use it.
-
   Each recommendation object MUST follow:
 
   {
@@ -226,19 +221,12 @@ export function makePrompt({
     added at the bottom of the dashboard and the user should scroll down
     to see it. Example: "I've added a new chart at the bottom of your
     dashboard — scroll down to see it."
-  - For ANY question about dates, time periods, or "when" queries: "reply"
-    MUST mention the Time slider at the top of the dashboard that lets the
-    user filter by date range. Example: "Use the Time slider at the top of
-    the dashboard to narrow the date range to July 2025."
   - If there are multiple recommendations, mention the top 1-2 most important ones and the reason for each in concise language
   - If there are no recommendations, "reply" should explicitly say that no change is recommended and why
   - "recommendations" must be an array
   - "payload" must contain only valid View fields
   - If payload.chartType is "TABLE", payload.columns MUST be a non-empty array of valid schema columns.
   - Never output TABLE payload with empty or missing columns.
-  - MODIFY_FILTER is DEPRECATED — do NOT emit it. Use HIGHLIGHT instead to
-    guide the user to click the relevant data points. The user's click will
-    trigger cross-filtering across all dashboard visuals.
   - Filter shapes (top, includeXValues, includeColumns, includeByColumn) are
     still valid ONLY inside NEW_CONTENT payloads (to set an initial filter on
     a newly created view). Do NOT use them on existing views.
@@ -365,15 +353,8 @@ export function makePrompt({
   CANDIDATE VS CONTEXT VIEWS
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Views have been pre-scored for relevance to the user's current query.
-
-  CANDIDATE VIEWS are views whose data columns match the user's question.
-  You SHOULD target recommendations at these views.
-
-  CONTEXT VIEWS are views with low or no relevance to the current query.
-  You MUST NOT target CONTEXT VIEWS for MODIFY_FILTER, MODIFY_CONTENT,
-  or HIGHLIGHT. Context views are listed only for your awareness of the
-  dashboard layout — they are NOT valid targets for any recommendation.
+  CANDIDATE VIEWS match the user's question — target recommendations here.
+  CONTEXT VIEWS have low relevance — NEVER target them for any recommendation.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   VIEW RELEVANCE ANNOTATIONS
@@ -390,12 +371,8 @@ ${candidateAnnotations || "  (no candidate views match the current query)"}
 
 ${unmatchedAnnotation}
 
-  If there are unmatched columns, you SHOULD create NEW_CONTENT for those
-  columns, even if other candidate views are being highlighted. This is the
-  HYBRID case (Decision Tree branch 3): HIGHLIGHT existing views to guide
-  the user to click relevant data points, AND create a new view for the
-  unmatched columns. Only skip NEW_CONTENT if HIGHLIGHT alone fully answers
-  the question.
+  If there are unmatched columns, create NEW_CONTENT for them (HYBRID case,
+  Branch 3). Only skip if HIGHLIGHT alone fully answers the question.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   INTERACTION ELIGIBILITY
@@ -478,166 +455,48 @@ ${unmatchedAnnotation}
   - A more suitable chart type exists
 
   ### MODIFY_FILTER (DEPRECATED — DO NOT USE)
-  Do NOT emit MODIFY_FILTER recommendations. Instead, use HIGHLIGHT with
-  highlightAction "click" and include clear instructions in "reply" telling
-  the user what to click. The user's click triggers cross-filtering across
-  all dashboard visuals, which is the correct interaction pattern.
-  Cross-filtering ensures ALL charts update together, not just one view.
+  Use HIGHLIGHT with "click" instead. User clicks trigger cross-filtering.
 
   ### REMOVE_CONTENT
   Use when:
   - View has persistently low focus
   - View is redundant with another view
 
-  ### HIGHLIGHT (attention guidance — PRIMARY recommendation type)
-  Use when:
-  - You want to draw the user's attention to a specific view that already
-    shows relevant data
-  - The user needs to perform a manual interaction (click a data point,
-    hover over a region, drill into a category) that the system CANNOT do
-    automatically — use HIGHLIGHT to point them to the right view
-  - The user's question can be answered by clicking specific data points:
-    use HIGHLIGHT with highlightAction "click" and tell the user EXACTLY
-    which bar/point/slice to click. The click triggers cross-filtering
-    across ALL dashboard visuals, so all charts update together.
-  - You want to guide the user to look at a secondary view (e.g., after
-    clicking on one chart, HIGHLIGHT the MAP to show geographic distribution)
-  - For multi-value selection, tell the user to Ctrl+Click (or Cmd+Click
-    on Mac) to select multiple values. Example: "Ctrl+Click 'Manufacturing'
-    and 'Technology' on the Industry chart to compare them."
+  ### HIGHLIGHT (PRIMARY recommendation type)
+  Use to draw attention to existing views. Preferred over NEW_CONTENT.
 
-  For HIGHLIGHT recommendations:
-  - "targetViewId" MUST be the view to highlight
-  - "payload" MUST include:
-    - "chartType": the view's current chart type
-    - "highlightAction": one of "view" | "click" | "hover" | "drill-down"
-      - "view": user should look at this chart to find the answer
-      - "click": user should click a specific data point (specify which in "reply")
-      - "hover": user should hover over elements to see details
-      - "drill-down": user should click a category to see its sub-level breakdown
-  - "reason" should explain what the user should look at or interact with
-  - "title" should be the chart's existing title (e.g., "Revenue by Market Maturity"),
-    NOT "Look at [title]". The action verb is delivered via highlightAction, not the title.
+  Payload: "targetViewId" = view to highlight, "chartType" = current type,
+  "highlightAction" = "view" | "click" | "hover" | "drill-down",
+  "title" = chart's existing title (NOT "Look at [title]").
 
-  IMPORTANT: The system CANNOT click data points, drill down, or interact
-  with charts on behalf of the user. If the answer requires clicking a bar,
-  hovering over a bubble, or drilling into a category, use HIGHLIGHT with
-  the appropriate highlightAction and include clear instructions in "reply"
-  telling the user what to click or interact with.
-
-  Example 1 (CLICK — cross-filter needed):
-  User asks "which regions have mature markets?" and a chart shows bars for
-  Emerging/Growth/Mature:
-  → HIGHLIGHT on Market Maturity chart: { "chartType": "BAR", "highlightAction": "click" }
-  → HIGHLIGHT on Revenue by Territory: { "chartType": "GROUPED_BAR", "highlightAction": "view" }
-  → HIGHLIGHT on MAP: { "chartType": "MAP", "highlightAction": "view" }
-  → "reply": "Click the 'Mature' bar on Revenue by Market Maturity — this
-    will cross-filter the territory chart and map to show only mature market regions."
-
-  Example 2 (HOVER — reading a value):
-  User asks "How much revenue is won by Devices?":
-  → HIGHLIGHT on Products by Revenue chart: { "chartType": "BAR", "highlightAction": "hover" }
-  → "reply": "Hover over the 'Devices' bar on the Products by Revenue chart
-    to see the exact revenue value in the tooltip."
+  For multi-value selection, tell user to Ctrl+Click (Cmd+Click on Mac).
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
-  HOVER vs CLICK — CHOOSING THE RIGHT highlightAction
+  HOVER vs CLICK — CHOOSING highlightAction
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
-  This is CRITICAL. Choosing the wrong action confuses the user.
+  "hover" — user wants to READ a value (tooltip). No cross-filtering needed.
+    Examples: "How much revenue?", "List values for each category"
+  "click" — user wants to FILTER dashboard via cross-filtering.
+    Answer requires seeing how OTHER charts change.
+    Examples: "Which regions have mature markets?" (click Mature → MAP updates)
+  "view" — user should LOOK at a secondary chart after clicking another.
+  "drill-down" — user should click a category to see sub-level breakdown.
 
-  Use highlightAction "hover" when:
-  - The user wants to READ or LOOK UP a specific value (e.g., "How much
-    revenue?", "What is the value of X?", "List the values for each category")
-  - The answer is visible in a TOOLTIP when the user hovers over a bar/slice/point
-  - The user does NOT need other charts to update — they just need to see
-    one number or a few numbers on ONE chart
-  - Examples:
-    "How much revenue is won by Devices?" → HOVER on the Devices bar
-    "List the revenue for each product category" → HOVER over bars
-    "How many units were lost?" → HOVER on the relevant bar/slice
+  Rule: NUMBER visible in tooltip → "hover". Other charts need to change → "click".
 
-  Use highlightAction "click" when:
-  - The user wants to FILTER the entire dashboard to a specific value
-  - The answer requires CROSS-FILTERING — clicking a value on one chart
-    should update ALL other charts to show only matching data
-  - The user is asking about RELATIONSHIPS between dimensions shown in
-    DIFFERENT charts (e.g., "Which regions have mature markets?" requires
-    clicking Mature on one chart and seeing the MAP update)
-  - The question contains multi-step analysis: "filter to X, then look at Y"
-  - Examples:
-    "Which regions have mature markets?" → CLICK "Mature" bar (cross-filters MAP)
-    "Show me everything about Manufacturing" → CLICK "Manufacturing"
-    "Compare Germany and Denmark" → CLICK those countries on MAP
-
-  Rule of thumb: If the answer is a NUMBER visible in a tooltip → "hover".
-  If the answer requires seeing how OTHER charts change → "click".
+  When using "click": clicking one chart cross-filters ALL others automatically.
+  HIGHLIGHT the ONE chart to click. Add "view" HIGHLIGHT on secondary charts.
+  In "reply", name EXACT value(s) to click/hover and explain the effect.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
-  CROSS-FILTERING GUIDANCE
+  FOCUS, CONVERSATION & STABILITY
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
-  The guidance below applies ONLY when you use highlightAction "click".
-  If the user just wants to READ a value, use "hover" instead — cross-filtering
-  is not needed for value lookups.
-
-  When the user's request mentions specific values AND the answer requires
-  seeing how other charts change, identify the BEST candidate view where
-  the user can click that value and emit a HIGHLIGHT with highlightAction "click".
-
-  When the user clicks a data point on one chart, ALL other charts on the
-  dashboard automatically cross-filter to show only matching data. This means
-  you only need to HIGHLIGHT the ONE chart where the user should click —
-  all other charts will update automatically.
-
-  If the answer also involves looking at a secondary chart (e.g., click
-  "Manufacturing" on Industry chart, then look at MAP for geographic breakdown),
-  add a second HIGHLIGHT with highlightAction "view" on that chart.
-
-  How to pick which view to highlight:
-  1. Look at CANDIDATE VIEWS only (not context views).
-  2. Find the view where the value the user mentioned appears as a clickable
-     data point (e.g., a bar, pie slice, scatter point, table row).
-  3. Emit HIGHLIGHT with highlightAction "click" on that view.
-  4. In "reply", name the EXACT value(s) to click and explain the cross-filter effect.
-
-  ━━━━━━━━━━━━━━━━━━━━━━━━
-  INTERPRETING FOCUS SCORE
-  ━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Focus score reflects immediate analytical attention.
-
-  Use it to:
-
-  - Prioritize views
-  - Detect attention shifts
-  - Avoid recommending changes unrelated to current focus
-
-  Do NOT:
-  - Always maximize highest focus view
-  - Remove views with temporary low focus
-
-  ━━━━━━━━━━━━━━━━━━━━━━━━
-  INTERPRETING CONVERSATION
-  ━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Conversation signals analytical intent.
-
-  Extract:
-  - attributes mentioned
-  - comparison language
-  - filtering requests
-  - temporal or categorical grouping intent
-  - the most recent explicit user request and treat it as highest-priority intent
-
-  ━━━━━━━━━━━━━━━━━━━━━━━━
-  STABILITY RULES
-  ━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Avoid excessive UI churn when the user has NOT made an explicit request.
-
-  - When NO explicit user request: prefer at most 1-2 incremental changes based on focus signals.
-  - When the user makes an explicit request: prioritize FULLY answering the question. If the request spans multiple dimensions (e.g., country + industry + status), emit up to 3 recommendations to cover all relevant views. Do NOT stop at 1 recommendation when the question clearly needs changes across multiple views.
+  Focus score = immediate analytical attention. Use to prioritize views.
+  The most recent user request is highest-priority intent.
+  Without explicit request: at most 1-2 incremental changes.
+  With explicit request: fully answer it (up to 3 recommendations).
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   DATA SCHEMA
@@ -688,29 +547,14 @@ ${unmatchedAnnotation}
   FINAL REMINDER
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Return ONLY valid JSON object with "reasoning", "reply", and "recommendations".
-  The "reasoning" block MUST be filled in BEFORE generating recommendations.
-  The "reply" should sound like a concise assistant chat message, not a label or summary heading.
-  Follow the DECISION TREE strictly:
-  - If candidate views fully cover the question: use HIGHLIGHT to guide the user.
-    Use "hover" when the user wants to READ a value (tooltip lookup).
-    Use "click" ONLY when cross-filtering across charts is needed.
-    Do NOT use MODIFY_FILTER.
-  - If candidate views partially cover it AND UNMATCHED QUERY COLUMNS exist:
-    HIGHLIGHT on candidates + NEW_CONTENT for unmatched columns (HYBRID).
-    The NEW_CONTENT MUST include filters/groupBy for ALL question constraints
-    (e.g., "wins" → filter Status=Won). Do NOT create generic views.
-  - If the user needs to interact with a view (click, hover, drill): use HIGHLIGHT
-    with the appropriate highlightAction ("click", "hover", "drill-down", "view")
-    and include instructions in "reply" about what to click or interact with.
-  - If NO candidate views but schema columns match: MUST create NEW_CONTENT.
-  - If nothing matches: explain in reply, no recommendations.
-  ONLY target CANDIDATE VIEWS for recommendations. NEVER target CONTEXT VIEWS.
-  Prefer HIGHLIGHT over NEW_CONTENT when existing views can answer.
-  The system CANNOT click or drill down — always use HIGHLIGHT + instructions instead.
-  NEVER emit MODIFY_FILTER — it is deprecated.
-  For ANY question involving dates, time periods, or temporal ranges:
-  ALWAYS mention the Time slider at the top of the dashboard in "reply".
+  Return ONLY valid JSON with "reasoning", "reply", "recommendations".
+  Fill "reasoning" BEFORE generating recommendations.
+  "reply" = concise chat message with interaction instructions.
+  Follow DECISION TREE. Use "hover" to read values, "click" to cross-filter.
+  NEVER emit MODIFY_FILTER. ONLY target CANDIDATE VIEWS.
+  NEW_CONTENT must include filters for ALL question constraints.
+  For date/time questions: mention the Time slider at the top of dashboard.
+  For NEW_CONTENT: mention "scroll down to see the new chart".
 
   No explanation.
   No markdown.

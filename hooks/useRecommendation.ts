@@ -167,6 +167,7 @@ export function useRecommendation() {
         const decoder = new TextDecoder();
         let fullText = "";
         let earlyReplyEmitted = false;
+        let emittedRecCount = 0;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -195,6 +196,52 @@ export function useRecommendation() {
             }
           }
 
+          // Incrementally parse recommendations as they complete in the stream.
+          // Each recommendation is a JSON object inside the "recommendations" array.
+          if (!suppressRecommendations) {
+            const recsStart = fullText.indexOf('"recommendations"');
+            if (recsStart !== -1) {
+              const arrStart = fullText.indexOf("[", recsStart);
+              if (arrStart !== -1) {
+                const recsStr = fullText.slice(arrStart);
+                // Count complete recommendation objects by finding balanced braces
+                let depth = 0;
+                let inString = false;
+                let escaped = false;
+                let objStart = -1;
+                const partialRecs: Recommendation[] = [];
+                for (let i = 0; i < recsStr.length; i++) {
+                  const ch = recsStr[i];
+                  if (escaped) { escaped = false; continue; }
+                  if (ch === "\\") { escaped = true; continue; }
+                  if (ch === '"') { inString = !inString; continue; }
+                  if (inString) continue;
+                  if (ch === "{") {
+                    if (depth === 0) objStart = i;
+                    depth++;
+                  } else if (ch === "}") {
+                    depth--;
+                    if (depth === 0 && objStart !== -1) {
+                      try {
+                        const obj = JSON.parse(recsStr.slice(objStart, i + 1));
+                        partialRecs.push(obj as Recommendation);
+                      } catch { /* incomplete or malformed, skip */ }
+                      objStart = -1;
+                    }
+                  }
+                }
+                if (partialRecs.length > emittedRecCount) {
+                  emittedRecCount = partialRecs.length;
+                  setRecs(
+                    partialRecs.filter(
+                      (r) => !dismissedKeys.has(getRecommendationKey(r))
+                    )
+                  );
+                }
+              }
+            }
+          }
+
           // Before reply is extracted, show nothing (avoid raw JSON)
           if (!earlyReplyEmitted) {
             setStreamingText("");
@@ -207,7 +254,7 @@ export function useRecommendation() {
         );
         console.log("LLM Response:", fullText);
 
-        // Parse the completed JSON
+        // Final parse for any remaining recommendations and reply
         const text = fullText.trim();
         let parsed;
         try {
@@ -236,6 +283,7 @@ export function useRecommendation() {
           console.log("LLM Reasoning:", parsed.reasoning);
         }
 
+        // Final setRecs ensures all recommendations are captured
         setRecs(
           suppressRecommendations
             ? []
