@@ -108,10 +108,11 @@ export function getActionLabel(r: Recommendation): string {
     "split",
   ]);
 
-  const words = r.title
+  const title = r.title || "";
+  const words = title
     .split(/\s+/)
     .filter((w) => !filler.has(w.toLowerCase()) && w.length > 1);
-  const firstWord = r.title.split(/\s+/)[0]?.toLowerCase() || "";
+  const firstWord = title.split(/\s+/)[0]?.toLowerCase() || "";
 
   // If the title already starts with an action verb, use its first words
   if (actionVerbs.has(firstWord)) {

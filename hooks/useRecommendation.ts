@@ -115,12 +115,15 @@ export function useRecommendation() {
         const userQuery = summarizeRecentRequest(
           buildRecentRequestMessages({ conversation, textChats })
         );
-        const relevanceResult = scoreViewRelevance(views, userQuery, dataSchema);
+
+        // Build enriched schema FIRST so scoreViewRelevance can use
+        // actual column names and sampleValues (base SchemaNode has
+        // { type, children } keys which break column extraction).
+        const enrichedSchema = buildEnrichedSchema(dataSchema, attributeTypes, resolveAttribute);
+        const relevanceResult = scoreViewRelevance(views, userQuery, enrichedSchema);
 
         console.log("View Relevance:", relevanceResult.entries);
         console.log("Unmatched columns:", relevanceResult.unmatchedQueryColumns);
-
-        const enrichedSchema = buildEnrichedSchema(dataSchema, attributeTypes, resolveAttribute);
 
         const prompt = makePrompt({
           views,
@@ -150,13 +153,39 @@ export function useRecommendation() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let fullText = "";
+        let earlyReplyEmitted = false;
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
           fullText += chunk;
-          setStreamingText(fullText);
+
+          // Try to extract the "reply" field early from partial JSON
+          // so users see the assistant's response while recommendations stream.
+          if (!earlyReplyEmitted) {
+            const replyMatch = fullText.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+            if (replyMatch) {
+              const earlyReply = replyMatch[1]
+                .replace(/\\n/g, "\n")
+                .replace(/\\"/g, '"')
+                .replace(/\\\\/g, "\\")
+                .trim();
+              if (earlyReply) {
+                setStreamingText(earlyReply);
+                setLlmReplies((prev) => [
+                  ...prev,
+                  { text: earlyReply, timestamp: Date.now() },
+                ]);
+                earlyReplyEmitted = true;
+              }
+            }
+          }
+
+          // Before reply is extracted, show nothing (avoid raw JSON)
+          if (!earlyReplyEmitted) {
+            setStreamingText("");
+          }
         }
 
         console.log("LLM Response:", fullText);
@@ -197,7 +226,8 @@ export function useRecommendation() {
                 (r: Recommendation) => !dismissedKeys.has(getRecommendationKey(r))
               )
         );
-        if (reply) {
+        // Only add reply if it wasn't already emitted during streaming
+        if (reply && !earlyReplyEmitted) {
           setLlmReplies((prev) => [
             ...prev,
             { text: reply, timestamp: Date.now() },

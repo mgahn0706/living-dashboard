@@ -103,17 +103,26 @@ function tokenMatchScore(token: string, target: string): number {
 
 /**
  * Score each schema column's relevance to the user query.
+ * Matches against both column names and their sampleValues.
  * Returns only columns with a strong match (>= 0.5).
  */
 function scoreColumnRelevance(
   queryTokens: string[],
-  schemaColumns: string[]
+  schemaColumns: string[],
+  sampleValuesByColumn: Record<string, string[]>
 ): string[] {
   const matched: string[] = [];
   for (const col of schemaColumns) {
     let bestScore = 0;
     for (const token of queryTokens) {
       bestScore = Math.max(bestScore, tokenMatchScore(token, col));
+      // Also check sampleValues — a token matching a value identifies the column
+      const samples = sampleValuesByColumn[col];
+      if (samples) {
+        for (const sv of samples) {
+          bestScore = Math.max(bestScore, tokenMatchScore(token, sv) * 0.7);
+        }
+      }
     }
     if (bestScore >= 0.5) matched.push(col);
   }
@@ -122,11 +131,13 @@ function scoreColumnRelevance(
 
 /**
  * Score a single view's relevance to the user query.
+ * Matches query tokens against bound columns, their sampleValues, title, and chart type.
  */
 function scoreView(
   view: View,
   queryTokens: string[],
-  schemaColumns: string[]
+  schemaColumns: string[],
+  sampleValuesByColumn: Record<string, string[]>
 ): number {
   if (queryTokens.length === 0) return 0;
 
@@ -142,6 +153,20 @@ function scoreView(
     // Match against bound columns
     for (const col of boundCols) {
       bestMatch = Math.max(bestMatch, tokenMatchScore(token, col));
+    }
+
+    // Match against sampleValues of bound columns
+    // ("Germany" matching Country's values boosts a view that binds Country)
+    for (const col of boundCols) {
+      const samples = sampleValuesByColumn[col];
+      if (!samples) continue;
+      for (const sample of samples) {
+        const svScore = tokenMatchScore(token, sample);
+        if (svScore >= 0.6) {
+          bestMatch = Math.max(bestMatch, svScore * 0.7);
+          break;
+        }
+      }
     }
 
     // Match against view title
@@ -161,10 +186,13 @@ function scoreView(
     }
   }
 
-  // Normalize: proportion of query tokens that matched, weighted by match quality
-  return queryTokens.length > 0
-    ? (totalScore / queryTokens.length) * (matchedTokens / queryTokens.length)
-    : 0;
+  // Scoring: average match quality × coverage (capped at 3 matches for full credit).
+  // This avoids the 1/n² penalty that made long queries unable to reach the threshold.
+  if (matchedTokens === 0) return 0;
+  const avgQuality = totalScore / matchedTokens;
+  const minRequired = Math.min(queryTokens.length, 3);
+  const coverage = Math.min(matchedTokens / minRequired, 1);
+  return avgQuality * coverage;
 }
 
 /**
@@ -201,22 +229,27 @@ export function scoreViewRelevance(
 ): ViewRelevanceResult {
   const queryTokens = extractQueryTokens(userQuery);
 
-  // Extract column names from schema
+  // Extract column names and sampleValues from schema.
+  // Supports enriched schema format: { "Revenue": { type: "number" }, "Status": { type: "string", sampleValues: [...] } }
   const schemaColumns: string[] = [];
-  if (dataSchema) {
-    if (Array.isArray(dataSchema)) {
-      for (const entry of dataSchema) {
-        if (entry?.name) schemaColumns.push(entry.name);
-      }
-    } else if (typeof dataSchema === "object") {
-      for (const key of Object.keys(dataSchema)) {
-        schemaColumns.push(key);
+  const sampleValuesByColumn: Record<string, string[]> = {};
+
+  if (dataSchema && typeof dataSchema === "object" && !Array.isArray(dataSchema)) {
+    for (const [key, value] of Object.entries(dataSchema)) {
+      // Skip SchemaNode internal fields (in case base schema is passed)
+      if (key === "type" || key === "children") continue;
+      schemaColumns.push(key);
+      const entry = value as any;
+      if (Array.isArray(entry?.sampleValues)) {
+        sampleValuesByColumn[key] = entry.sampleValues.map((v: any) =>
+          String(v).toLowerCase()
+        );
       }
     }
   }
 
   const entries: ViewRelevanceEntry[] = views.map((view) => {
-    const relevanceScore = scoreView(view, queryTokens, schemaColumns);
+    const relevanceScore = scoreView(view, queryTokens, schemaColumns, sampleValuesByColumn);
     return {
       viewId: view.id,
       relevanceScore: Math.round(relevanceScore * 100) / 100,
@@ -226,7 +259,7 @@ export function scoreViewRelevance(
   });
 
   // Match query tokens against schema columns (independent of views)
-  const queryMatchedColumns = scoreColumnRelevance(queryTokens, schemaColumns);
+  const queryMatchedColumns = scoreColumnRelevance(queryTokens, schemaColumns, sampleValuesByColumn);
 
   // Determine which matched columns are NOT covered by any candidate view
   const candidateBoundColumns = new Set<string>();

@@ -122,6 +122,7 @@ export function makePrompt({
       "queryColumns": string[],
       "suggestedChartType": string | null,
       "relevantViews": string[],
+      "answerableViews": string[],
       "currentGap": string
     },
     "reply": string,
@@ -138,29 +139,43 @@ export function makePrompt({
     if modifying existing views is sufficient.
   - "relevantViews": Array of view IDs from CANDIDATE VIEWS that can help answer
     the question. Can be empty if no existing view covers the needed columns.
+  - "answerableViews": Subset of relevantViews whose chart type and axis columns
+    can actually answer this specific question type (see QUESTION-ANSWER
+    COMPATIBILITY). A view with a matching column but wrong chart type (e.g.,
+    BAR for a temporal "when did it start" question) should NOT be listed here.
+    If answerableViews is empty but relevantViews is not, use Branch 3 (HYBRID).
   - "currentGap": One sentence describing what is currently missing from the
     dashboard that prevents the user from finding the answer.
 
   DECISION TREE (follow strictly, in priority order):
-  1. If relevantViews is NOT empty AND the question can be answered by filtering
-     existing views: use MODIFY_FILTER on those views (up to 3). Add a HIGHLIGHT
-     on the most relevant view to draw the user's attention to where the answer
-     will appear.
+  1. If relevantViews is NOT empty AND answerableViews is NOT empty AND the
+     question can be FULLY answered by filtering/highlighting those answerable
+     views (see QUESTION-ANSWER COMPATIBILITY below): use MODIFY_FILTER on
+     those views (up to 3). Add a HIGHLIGHT on the most relevant view.
   2. If relevantViews is NOT empty BUT the answer requires the user to manually
      interact with a view (click a data point, hover, drill into a category) —
      something the system CANNOT do automatically: use HIGHLIGHT on the relevant
      view(s). Include clear instructions in "reply" telling the user exactly what
      to click, hover, or interact with.
-  3. If relevantViews IS empty AND no existing view can answer the question
+  3. HYBRID: If relevantViews is NOT empty BUT some queryColumns are listed in
+     UNMATCHED QUERY COLUMNS (meaning no existing view visualizes them): COMBINE
+     MODIFY_FILTER/HIGHLIGHT on the candidate views that are relevant AND
+     NEW_CONTENT for the unmatched columns. This is common when the question
+     spans dimensions that are partially covered by the dashboard.
+     Example: "Which campaign led to most wins for Manufacturing?" — the
+     Industry view exists (filter to Manufacturing) but CampaignType is
+     unmatched, so also create a NEW_CONTENT view showing campaigns.
+  4. If relevantViews IS empty AND no existing view can answer the question
      BUT queryColumns map to real schema columns: recommend NEW_CONTENT to
      create a new view using those columns. Check UNMATCHED QUERY COLUMNS below.
-  4. If relevantViews IS empty AND queryColumns is empty (the user's question
+  5. If relevantViews IS empty AND queryColumns is empty (the user's question
      does not relate to any schema column): return empty recommendations and
      explain in "reply" that the data does not cover this question.
 
-  CRITICAL: Do NOT skip to branch 3 when branch 1 or 2 applies. If ANY candidate
-  view exists that shows data relevant to the question, use MODIFY_FILTER and/or
-  HIGHLIGHT first. Only create NEW_CONTENT when no existing view can answer.
+  CRITICAL: Do NOT skip to branch 4 when branch 1, 2, or 3 applies. If ANY
+  candidate view exists that shows data relevant to the question, use
+  MODIFY_FILTER and/or HIGHLIGHT first. Only create NEW_CONTENT for columns
+  that are NOT already covered by candidate views.
 
   HIGHLIGHT is a first-class response — the pulsating glow + action badge + your
   reply instructions guide the user to discover the answer through the dashboard.
@@ -283,6 +298,37 @@ export function makePrompt({
   - For RANGE_BAR, xColumn and x2Column MUST be "date" type columns listed in DATA SCHEMA. yColumn is "string".
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
+  QUESTION-ANSWER COMPATIBILITY
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Before targeting a candidate view, check whether its chart type and axis
+  columns can actually answer the user's question TYPE — not just whether
+  it has a matching column name.
+
+  A candidate view is NOT answerable if:
+  - The question asks about TIME (when, first, earliest, latest, timeline,
+    start, duration) but the view has no date column on its axes
+    → Need LINE or RANGE_BAR with date xColumn/x2Column
+  - The question asks about RANKING or ORDERING but the view doesn't show
+    the measure needed for comparison
+  - The question asks for a BREAKDOWN by a dimension the view doesn't have
+    as xColumn or groupByColumn
+
+  When a candidate view has a matching column but CANNOT answer the question:
+  - Do NOT emit HIGHLIGHT telling the user to "look at" or "hover over" it
+  - Instead, treat this as a HYBRID case (Branch 3): create NEW_CONTENT with
+    the appropriate chart type that CAN answer the question
+  - You MAY still MODIFY_FILTER the existing candidate view to narrow its
+    data (e.g., filter to relevant time period), but the primary answer
+    must come from the NEW_CONTENT view
+
+  Example: User asks "Which campaign was first to start in July 2025?"
+  - BAR chart with xColumn=CampaignType, yColumn=Revenue is a candidate
+    (has CampaignType) but CANNOT answer "first to start" (no date axis)
+  - Correct: Create NEW_CONTENT RANGE_BAR with date columns + filter to July 2025
+  - Wrong: HIGHLIGHT the bar chart and tell user to "hover over it"
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━
   CANDIDATE VS CONTEXT VIEWS
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -311,10 +357,11 @@ ${candidateAnnotations || "  (no candidate views match the current query)"}
 
 ${unmatchedAnnotation}
 
-  If there are unmatched columns AND no existing candidate view can answer
-  the question through filtering, consider NEW_CONTENT.
-  But if an existing view already shows the relevant data and a
-  MODIFY_FILTER or HIGHLIGHT can answer the question, prefer that.
+  If there are unmatched columns, you SHOULD create NEW_CONTENT for those
+  columns, even if other candidate views are being filtered. This is the
+  HYBRID case (Decision Tree branch 3): filter existing views for the
+  columns they cover, AND create a new view for the unmatched columns.
+  Only skip NEW_CONTENT if MODIFY_FILTER alone fully answers the question.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   MODIFY_FILTER ELIGIBILITY
@@ -559,7 +606,9 @@ ${unmatchedAnnotation}
   The "reasoning" block MUST be filled in BEFORE generating recommendations.
   The "reply" should sound like a concise assistant chat message, not a label or summary heading.
   Follow the DECISION TREE strictly:
-  - If candidate views exist: target them with MODIFY_FILTER and/or HIGHLIGHT.
+  - If candidate views fully cover the question: MODIFY_FILTER and/or HIGHLIGHT.
+  - If candidate views partially cover it AND UNMATCHED QUERY COLUMNS exist:
+    MODIFY_FILTER on candidates + NEW_CONTENT for unmatched columns (HYBRID).
   - If the user needs to interact with a view (click, hover, drill): use HIGHLIGHT
     with the appropriate highlightAction ("click", "hover", "drill-down", "view")
     and include instructions in "reply" about what to click or interact with.
