@@ -15,6 +15,20 @@
   animation: wiggle-x 0.9s ease-in-out infinite;
 }
 
+@keyframes highlightPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px var(--hl-color-33), 0 0 8px var(--hl-color-22);
+  }
+  50% {
+    box-shadow: 0 0 0 5px var(--hl-color-55), 0 0 24px var(--hl-color-33);
+  }
+}
+
+.animate-highlight-pulse {
+  animation: highlightPulse 2s ease-in-out infinite;
+}
+
 @keyframes wave {
   0%,
   100% {

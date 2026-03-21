@@ -4,10 +4,57 @@ import { useCallback, useRef, useState } from "react";
 import { Recommendation } from "@/types/dashboard";
 import { VoiceUtterance } from "./useVoiceInput";
 import { makePrompt } from "@/lib/llm/makePrompt";
+import { scoreViewRelevance } from "@/lib/recommendation/viewRelevance";
+import { summarizeRecentRequest, buildRecentRequestMessages } from "@/lib/recommendation/requestSummary";
 
 /* ===================== Types ===================== */
 
 export type LlmReply = { text: string; timestamp: number };
+
+/* ===================== Enriched Schema ===================== */
+
+/**
+ * Transform the opaque { type: "primitive" } schema into a rich structure
+ * with column types and sample values for categorical columns.
+ */
+function buildEnrichedSchema(
+  dataSchema: any,
+  attributeTypes?: Record<string, string>,
+  resolveAttribute?: (attr: string) => any[]
+): Record<string, { type: string; sampleValues?: (string | number)[] }> | any {
+  if (!dataSchema || !attributeTypes) return dataSchema;
+
+  const columns: string[] = [];
+  if (dataSchema?.children && typeof dataSchema.children === "object") {
+    for (const key of Object.keys(dataSchema.children)) {
+      columns.push(key);
+    }
+  } else if (typeof dataSchema === "object" && !Array.isArray(dataSchema)) {
+    for (const key of Object.keys(dataSchema)) {
+      columns.push(key);
+    }
+  }
+
+  if (columns.length === 0) return dataSchema;
+
+  const enriched: Record<string, { type: string; sampleValues?: (string | number)[] }> = {};
+
+  for (const col of columns) {
+    const colType = attributeTypes[col] || "unknown";
+    const entry: { type: string; sampleValues?: (string | number)[] } = { type: colType };
+
+    // For categorical columns, add sample values (unique, capped at 10)
+    if (colType === "string" && resolveAttribute) {
+      const allValues = resolveAttribute(col);
+      const unique = [...new Set(allValues.filter((v) => v != null && v !== ""))];
+      entry.sampleValues = unique.slice(0, 10) as (string | number)[];
+    }
+
+    enriched[col] = entry;
+  }
+
+  return enriched;
+}
 
 /* ===================== Semantic Key ===================== */
 
@@ -41,6 +88,8 @@ export function useRecommendation() {
       conversation,
       textChats,
       dataSchema,
+      attributeTypes,
+      resolveAttribute,
       suppressRecommendations = false,
     }: {
       views: any[];
@@ -48,6 +97,8 @@ export function useRecommendation() {
       conversation: VoiceUtterance[];
       textChats: string[];
       dataSchema?: any;
+      attributeTypes?: Record<string, string>;
+      resolveAttribute?: (attr: string) => any[];
       suppressRecommendations?: boolean;
     }) => {
       const now = Date.now();
@@ -60,14 +111,45 @@ export function useRecommendation() {
       setStreamingText("");
 
       try {
+        const t0 = performance.now();
+
+        // Pre-LLM step: compute view relevance scores and filter eligibility
+        const userQuery = summarizeRecentRequest(
+          buildRecentRequestMessages({ conversation, textChats })
+        );
+
+        const t1 = performance.now();
+
+        // Build enriched schema FIRST so scoreViewRelevance can use
+        // actual column names and sampleValues (base SchemaNode has
+        // { type, children } keys which break column extraction).
+        const enrichedSchema = buildEnrichedSchema(dataSchema, attributeTypes, resolveAttribute);
+
+        const t2 = performance.now();
+
+        const relevanceResult = scoreViewRelevance(views, userQuery, enrichedSchema);
+
+        const t3 = performance.now();
+
+        console.log("View Relevance:", relevanceResult.entries);
+        console.log("Unmatched columns:", relevanceResult.unmatchedQueryColumns);
+
         const prompt = makePrompt({
           views,
           focusScore,
           conversation,
           textChats,
-          dataSchema,
+          dataSchema: enrichedSchema,
+          attributeTypes,
+          viewRelevance: relevanceResult.entries,
+          unmatchedQueryColumns: relevanceResult.unmatchedQueryColumns,
+          queryMatchedColumns: relevanceResult.queryMatchedColumns,
         });
 
+        const t4 = performance.now();
+        console.log(
+          `[Perf] query: ${(t1 - t0).toFixed(0)}ms | schema: ${(t2 - t1).toFixed(0)}ms | relevance: ${(t3 - t2).toFixed(0)}ms | prompt: ${(t4 - t3).toFixed(0)}ms | total pre-LLM: ${(t4 - t0).toFixed(0)}ms`
+        );
         console.log("LLM Prompt:", prompt.content);
 
         const res = await fetch("/api/recommend", {
@@ -84,18 +166,95 @@ export function useRecommendation() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let fullText = "";
+        let earlyReplyEmitted = false;
+        let emittedRecCount = 0;
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
           fullText += chunk;
-          setStreamingText(fullText);
+
+          // Try to extract the "reply" field early from partial JSON
+          // so users see the assistant's response while recommendations stream.
+          if (!earlyReplyEmitted) {
+            const replyMatch = fullText.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+            if (replyMatch) {
+              const earlyReply = replyMatch[1]
+                .replace(/\\n/g, "\n")
+                .replace(/\\"/g, '"')
+                .replace(/\\\\/g, "\\")
+                .trim();
+              if (earlyReply) {
+                setStreamingText(earlyReply);
+                setLlmReplies((prev) => [
+                  ...prev,
+                  { text: earlyReply, timestamp: Date.now() },
+                ]);
+                earlyReplyEmitted = true;
+              }
+            }
+          }
+
+          // Incrementally parse recommendations as they complete in the stream.
+          // Each recommendation is a JSON object inside the "recommendations" array.
+          if (!suppressRecommendations) {
+            const recsStart = fullText.indexOf('"recommendations"');
+            if (recsStart !== -1) {
+              const arrStart = fullText.indexOf("[", recsStart);
+              if (arrStart !== -1) {
+                const recsStr = fullText.slice(arrStart);
+                // Count complete recommendation objects by finding balanced braces
+                let depth = 0;
+                let inString = false;
+                let escaped = false;
+                let objStart = -1;
+                const partialRecs: Recommendation[] = [];
+                for (let i = 0; i < recsStr.length; i++) {
+                  const ch = recsStr[i];
+                  if (escaped) { escaped = false; continue; }
+                  if (ch === "\\") { escaped = true; continue; }
+                  if (ch === '"') { inString = !inString; continue; }
+                  if (inString) continue;
+                  if (ch === "{") {
+                    if (depth === 0) objStart = i;
+                    depth++;
+                  } else if (ch === "}") {
+                    depth--;
+                    if (depth === 0 && objStart !== -1) {
+                      try {
+                        const obj = JSON.parse(recsStr.slice(objStart, i + 1));
+                        partialRecs.push(obj as Recommendation);
+                      } catch { /* incomplete or malformed, skip */ }
+                      objStart = -1;
+                    }
+                  }
+                }
+                if (partialRecs.length > emittedRecCount) {
+                  emittedRecCount = partialRecs.length;
+                  setRecs(
+                    partialRecs.filter(
+                      (r) => !dismissedKeys.has(getRecommendationKey(r))
+                    )
+                  );
+                }
+              }
+            }
+          }
+
+          // Before reply is extracted, show nothing (avoid raw JSON)
+          if (!earlyReplyEmitted) {
+            setStreamingText("");
+          }
         }
 
+        const t5 = performance.now();
+        console.log(
+          `[Perf] LLM streaming: ${(t5 - t4).toFixed(0)}ms | TOTAL: ${(t5 - t0).toFixed(0)}ms`
+        );
         console.log("LLM Response:", fullText);
 
-        // Parse the completed JSON
+        // Final parse for any remaining recommendations and reply
         const text = fullText.trim();
         let parsed;
         try {
@@ -119,6 +278,12 @@ export function useRecommendation() {
             ? parsed.reply.trim()
             : "";
 
+        // Log reasoning block for debugging (not shown in UI)
+        if (parsed?.reasoning) {
+          console.log("LLM Reasoning:", parsed.reasoning);
+        }
+
+        // Final setRecs ensures all recommendations are captured
         setRecs(
           suppressRecommendations
             ? []
@@ -126,7 +291,8 @@ export function useRecommendation() {
                 (r: Recommendation) => !dismissedKeys.has(getRecommendationKey(r))
               )
         );
-        if (reply) {
+        // Only add reply if it wasn't already emitted during streaming
+        if (reply && !earlyReplyEmitted) {
           setLlmReplies((prev) => [
             ...prev,
             { text: reply, timestamp: Date.now() },

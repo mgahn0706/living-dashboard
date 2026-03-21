@@ -103,7 +103,7 @@ function chartHint(chartType: ChartType) {
     case "TABLE":
       return "Select multiple attributes to inspect raw values.";
     case "RANGE_BAR":
-      return "Timeline chart: pick start date (X), end date (X2), and a category (Y).";
+      return "Timeline chart: pick two date columns (X, X2) and a category (Y).";
     default:
       return null;
   }
@@ -433,7 +433,7 @@ function ChartConfigPanel({
               value={x2Attr ?? ""}
               onChange={(e) => setX2Attr(e.target.value || null)}
             >
-              <option value="">End Date (X2)</option>
+              <option value="">Select X2 Column</option>
               {attributeKeys.map((k) => (
                 <option key={k} value={k}>
                   {k} ({attributeTypes[k]})
