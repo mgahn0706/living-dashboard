@@ -705,6 +705,7 @@ function AppContent() {
     attributeKeys,
     attributeTypes,
     rawData,
+    resolveAttribute,
     loadDemoDataset,
     restoreDataset,
   } = useDataset();
@@ -807,6 +808,8 @@ function AppContent() {
           textChats: [...textChats, text],
           focusScore,
           dataSchema: schema,
+          attributeTypes,
+          resolveAttribute,
           conversation: voice.conversation,
           suppressRecommendations: false,
         });
@@ -1750,6 +1753,8 @@ function AppContent() {
                   textChats: [...textChats, msg],
                   focusScore,
                   dataSchema: schema,
+                  attributeTypes,
+                  resolveAttribute,
                   conversation: voice.conversation,
                   suppressRecommendations: false,
                 });

@@ -20,6 +20,10 @@ export type ViewRelevanceEntry = {
 export type ViewRelevanceResult = {
   entries: ViewRelevanceEntry[];
   drillDownViewId: string | null;
+  /** Schema columns that matched the user query but are NOT bound to any candidate view */
+  unmatchedQueryColumns: string[];
+  /** All schema columns that matched the user query tokens */
+  queryMatchedColumns: string[];
 };
 
 /** Minimum relevance score for a view to be considered a candidate. */
@@ -96,6 +100,25 @@ function tokenMatchScore(token: string, target: string): number {
   }
 
   return 0;
+}
+
+/**
+ * Score each schema column's relevance to the user query.
+ * Returns only columns with a strong match (>= 0.5).
+ */
+function scoreColumnRelevance(
+  queryTokens: string[],
+  schemaColumns: string[]
+): string[] {
+  const matched: string[] = [];
+  for (const col of schemaColumns) {
+    let bestScore = 0;
+    for (const token of queryTokens) {
+      bestScore = Math.max(bestScore, tokenMatchScore(token, col));
+    }
+    if (bestScore >= 0.5) matched.push(col);
+  }
+  return matched;
 }
 
 /**
@@ -215,18 +238,25 @@ export function scoreViewRelevance(
     };
   });
 
-  // If no views pass the threshold but there's a query, promote the top-scoring views
-  const hasCandidates = entries.some((e) => e.isCandidate);
-  if (!hasCandidates && queryTokens.length > 0) {
-    const sorted = [...entries].sort(
-      (a, b) => b.relevanceScore - a.relevanceScore
-    );
-    // Promote top 2 as candidates even if below threshold
-    for (let i = 0; i < Math.min(2, sorted.length); i++) {
-      const entry = entries.find((e) => e.viewId === sorted[i].viewId);
-      if (entry) entry.isCandidate = true;
+  // Match query tokens against schema columns (independent of views)
+  const queryMatchedColumns = scoreColumnRelevance(queryTokens, schemaColumns);
+
+  // Determine which matched columns are NOT covered by any candidate view
+  const candidateBoundColumns = new Set<string>();
+  for (const entry of entries) {
+    if (entry.isCandidate) {
+      const view = views.find((v) => v.id === entry.viewId);
+      if (view) {
+        for (const col of getBoundColumns(view)) {
+          candidateBoundColumns.add(col);
+        }
+      }
     }
   }
 
-  return { entries, drillDownViewId };
+  const unmatchedQueryColumns = queryMatchedColumns.filter(
+    (col) => !candidateBoundColumns.has(col)
+  );
+
+  return { entries, drillDownViewId, unmatchedQueryColumns, queryMatchedColumns };
 }

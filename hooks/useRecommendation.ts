@@ -11,6 +11,51 @@ import { summarizeRecentRequest, buildRecentRequestMessages } from "@/lib/recomm
 
 export type LlmReply = { text: string; timestamp: number };
 
+/* ===================== Enriched Schema ===================== */
+
+/**
+ * Transform the opaque { type: "primitive" } schema into a rich structure
+ * with column types and sample values for categorical columns.
+ */
+function buildEnrichedSchema(
+  dataSchema: any,
+  attributeTypes?: Record<string, string>,
+  resolveAttribute?: (attr: string) => any[]
+): Record<string, { type: string; sampleValues?: (string | number)[] }> | any {
+  if (!dataSchema || !attributeTypes) return dataSchema;
+
+  const columns: string[] = [];
+  if (dataSchema?.children && typeof dataSchema.children === "object") {
+    for (const key of Object.keys(dataSchema.children)) {
+      columns.push(key);
+    }
+  } else if (typeof dataSchema === "object" && !Array.isArray(dataSchema)) {
+    for (const key of Object.keys(dataSchema)) {
+      columns.push(key);
+    }
+  }
+
+  if (columns.length === 0) return dataSchema;
+
+  const enriched: Record<string, { type: string; sampleValues?: (string | number)[] }> = {};
+
+  for (const col of columns) {
+    const colType = attributeTypes[col] || "unknown";
+    const entry: { type: string; sampleValues?: (string | number)[] } = { type: colType };
+
+    // For categorical columns, add sample values (unique, capped at 10)
+    if (colType === "string" && resolveAttribute) {
+      const allValues = resolveAttribute(col);
+      const unique = [...new Set(allValues.filter((v) => v != null && v !== ""))];
+      entry.sampleValues = unique.slice(0, 10) as (string | number)[];
+    }
+
+    enriched[col] = entry;
+  }
+
+  return enriched;
+}
+
 /* ===================== Semantic Key ===================== */
 
 function getRecommendationKey(r: Recommendation) {
@@ -43,6 +88,8 @@ export function useRecommendation() {
       conversation,
       textChats,
       dataSchema,
+      attributeTypes,
+      resolveAttribute,
       suppressRecommendations = false,
     }: {
       views: any[];
@@ -50,6 +97,8 @@ export function useRecommendation() {
       conversation: VoiceUtterance[];
       textChats: string[];
       dataSchema?: any;
+      attributeTypes?: Record<string, string>;
+      resolveAttribute?: (attr: string) => any[];
       suppressRecommendations?: boolean;
     }) => {
       const now = Date.now();
@@ -70,15 +119,21 @@ export function useRecommendation() {
 
         console.log("View Relevance:", relevanceResult.entries);
         console.log("Drill-down view:", relevanceResult.drillDownViewId);
+        console.log("Unmatched columns:", relevanceResult.unmatchedQueryColumns);
+
+        const enrichedSchema = buildEnrichedSchema(dataSchema, attributeTypes, resolveAttribute);
 
         const prompt = makePrompt({
           views,
           focusScore,
           conversation,
           textChats,
-          dataSchema,
+          dataSchema: enrichedSchema,
+          attributeTypes,
           viewRelevance: relevanceResult.entries,
           drillDownViewId: relevanceResult.drillDownViewId,
+          unmatchedQueryColumns: relevanceResult.unmatchedQueryColumns,
+          queryMatchedColumns: relevanceResult.queryMatchedColumns,
         });
 
         console.log("LLM Prompt:", prompt.content);
