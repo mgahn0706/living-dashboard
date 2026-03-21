@@ -1523,7 +1523,7 @@ function RangeBarRenderer({
   }
 
   // Layout
-  const margin = { top: 10, right: 20, bottom: 28, left: 90 };
+  const margin = { top: 10, right: 20, bottom: 50, left: 90 };
   const plotW = Math.max(100, dims.w - margin.left - margin.right);
   const plotH = Math.max(50, dims.h - margin.top - margin.bottom);
 
@@ -1568,18 +1568,23 @@ function RangeBarRenderer({
         ))}
 
         {/* X axis tick labels */}
-        {xTicks.map((tick) => (
-          <text
-            key={`lbl-${tick}`}
-            x={margin.left + xScale(tick)}
-            y={margin.top + plotH + 16}
-            textAnchor="middle"
-            fontSize={10}
-            fill="#6b7280"
-          >
-            {new Date(tick).toLocaleDateString(undefined, { month: "short", year: "2-digit" })}
-          </text>
-        ))}
+        {xTicks.map((tick) => {
+          const tx = margin.left + xScale(tick);
+          const ty = margin.top + plotH + 14;
+          return (
+            <text
+              key={`lbl-${tick}`}
+              x={tx}
+              y={ty}
+              textAnchor="end"
+              fontSize={10}
+              fill="#6b7280"
+              transform={`rotate(-45, ${tx}, ${ty})`}
+            >
+              {new Date(tick).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+            </text>
+          );
+        })}
 
         {/* Stage swim lanes */}
         {groups.map((group, gi) => {

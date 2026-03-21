@@ -217,6 +217,10 @@ export function makePrompt({
   - When using HIGHLIGHT, "reply" MUST include instructions for any manual
     interaction the user needs to perform (e.g., "click the 'Mature' bar",
     "hover over the map to see country details")
+  - When using NEW_CONTENT, "reply" MUST mention that a new view has been
+    added at the bottom of the dashboard and the user should scroll down
+    to see it. Example: "I've added a new chart at the bottom of your
+    dashboard — scroll down to see it."
   - If there are multiple recommendations, mention the top 1-2 most important ones and the reason for each in concise language
   - If there are no recommendations, "reply" should explicitly say that no change is recommended and why
   - "recommendations" must be an array
@@ -298,7 +302,16 @@ export function makePrompt({
   - Use RANGE_BAR. Pick xColumn and x2Column from the date columns in DATA SCHEMA.
   - The available date columns are: ${dateColumnsStr}
   - xColumn and x2Column MUST exactly match column names from DATA SCHEMA.
-  - Apply filters to narrow the time range if the user mentions specific dates.
+  - CRITICAL: If the user mentions a specific time period (e.g., "in July 2025",
+    "Q3 2024", "last month"), you MUST apply an includeByColumn filter on the
+    date column to restrict the data to that period. Without this filter, the
+    chart shows ALL data across the full time range, which is NOT what the user
+    asked for. Example: "campaigns in July 2025" → add filter:
+    { "includeByColumn": [{ "column": "StartDate", "includeValues": ["2025-07"] }] }
+    Or better: mention in "reply" that the user can use the time slider to
+    narrow the date range to the period of interest.
+  - In "reply", tell the user they can use the time slider to further refine
+    the date range if the chart shows too broad a time period.
 
   Column type constraints (MUST follow):
   - yColumn MUST be a "number" type column (except TABLE and RANGE_BAR).
