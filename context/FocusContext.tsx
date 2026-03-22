@@ -28,6 +28,10 @@ type FocusContextValue = {
   reportClickInteraction: (viewId: string) => void;
   registerViewIds: (viewIds: string[]) => void;
   restoreFocusScore: (next: Record<string, number>) => void;
+
+  /* ----- AI-driven focus boost ----- */
+  boostFocusForViews: (viewIds: string[]) => void;
+  disengageViews: (viewIds: string[]) => void;
 };
 
 const FocusContext = createContext<FocusContextValue | null>(null);
@@ -110,6 +114,7 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     setViewEngaged,
     handleClick,
     registerViewIds: registerDetectorViewIds,
+    boostViewEstimates,
   } = useFocusPathDetector(
     (viewId, delta) => {
       if (!isSystemA) return;
@@ -181,6 +186,51 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /* -------------------------------------------------------
+     AI-driven focus boost / disengage
+  ------------------------------------------------------- */
+
+  const boostFocusForViews = useCallback((viewIds: string[]) => {
+    if (!isSystemA || viewIds.length === 0) return;
+
+    // 1. Boost scores to INITIAL_FOCUS_SCORE
+    setFocusScore((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const id of viewIds) {
+        const current = next[id] ?? INITIAL_FOCUS_SCORE;
+        if (current < INITIAL_FOCUS_SCORE) {
+          next[id] = Math.round(current + (INITIAL_FOCUS_SCORE - current) / 3);
+          changed = true;
+        }
+      }
+      if (changed) {
+        focusScoreRef.current = next;
+      }
+      return changed ? next : prev;
+    });
+
+    // 2. Clear any pending negative deltas for these views
+    for (const id of viewIds) {
+      delete pendingDeltaRef.current[id];
+    }
+
+    // 3. Sync detector's internal estimate
+    boostViewEstimates(viewIds);
+
+    // 4. Engage each view (stops decay)
+    for (const id of viewIds) {
+      setViewEngaged(id, true);
+    }
+  }, [isSystemA, boostViewEstimates, setViewEngaged]);
+
+  const disengageViews = useCallback((viewIds: string[]) => {
+    if (!isSystemA || viewIds.length === 0) return;
+    for (const id of viewIds) {
+      setViewEngaged(id, false);
+    }
+  }, [isSystemA, setViewEngaged]);
+
+  /* -------------------------------------------------------
      Context value
   ------------------------------------------------------- */
 
@@ -194,6 +244,8 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
       reportClickInteraction,
       registerViewIds,
       restoreFocusScore,
+      boostFocusForViews,
+      disengageViews,
     }),
     [
       focusScore,
@@ -204,6 +256,8 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
       reportClickInteraction,
       registerViewIds,
       restoreFocusScore,
+      boostFocusForViews,
+      disengageViews,
     ]
   );
 

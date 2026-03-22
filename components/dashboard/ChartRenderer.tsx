@@ -1427,6 +1427,23 @@ function KPIRenderer({
    Range Bar Renderer (Gantt / timeline)
 ======================================================= */
 
+function formatTickLabel(ts: number, msPerPx: number): string {
+  const d = new Date(ts);
+  const ONE_DAY = 86_400_000;
+  const ONE_HOUR = 3_600_000;
+
+  if (msPerPx > ONE_DAY * 2) {
+    // Low zoom — show month + year
+    return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  } else if (msPerPx > ONE_HOUR * 4) {
+    // Medium zoom — show month + day
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } else {
+    // High zoom — show date + time
+    return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+  }
+}
+
 function RangeBarRenderer({
   view,
   height,
@@ -1440,6 +1457,14 @@ function RangeBarRenderer({
   const { selection, rangeFilter, lassoFilter, replaceSelection, addToSelection, clearSelection, hasSelection } = useSelection();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [dims, setDims] = React.useState({ w: 400, h: 300 });
+
+  // Zoom state: null = full domain
+  const [xDomain, setXDomain] = React.useState<[number, number] | null>(null);
+
+  // Pan refs
+  const isPanningRef = React.useRef(false);
+  const panStartXRef = React.useRef(0);
+  const panStartDomainRef = React.useRef<[number, number]>([0, 0]);
 
   React.useEffect(() => {
     const el = containerRef.current;
@@ -1523,54 +1548,214 @@ function RangeBarRenderer({
   }
 
   // Layout
-  const margin = { top: 10, right: 20, bottom: 50, left: 90 };
+  const margin = { top: 10, right: 20, bottom: 80, left: 110 };
   const plotW = Math.max(100, dims.w - margin.left - margin.right);
   const plotH = Math.max(50, dims.h - margin.top - margin.bottom);
 
-  // Time domain
+  // Full time domain
   const allTimes = deals.flatMap((d) => [d.start, d.end]);
   const tMin = Math.min(...allTimes);
   const tMax = Math.max(...allTimes);
-  const tRange = tMax - tMin || 1;
-  const xScale = (ts: number) => ((ts - tMin) / tRange) * plotW;
+  const fullRange = tMax - tMin || 1;
+
+  // Visible time domain (respects zoom)
+  const [visMin, visMax] = xDomain ?? [tMin, tMax];
+  const visRange = visMax - visMin || 1;
+  const isZoomed = xDomain !== null;
+
+  const xScale = (ts: number) => ((ts - visMin) / visRange) * plotW;
 
   // Y layout — each stage gets a swim lane
   const rowH = plotH / groups.length;
   const maxBarsPerRow = 25;
 
-  // X axis ticks
-  const numTicks = Math.max(2, Math.min(8, Math.floor(plotW / 80)));
+  // Semantic X axis ticks
+  const msPerPx = visRange / plotW;
+  const numTicks = Math.max(2, Math.min(10, Math.floor(plotW / 90)));
   const xTicks: number[] = [];
   for (let i = 0; i <= numTicks; i++) {
-    xTicks.push(tMin + (tRange * i) / numTicks);
+    xTicks.push(visMin + (visRange * i) / numTicks);
   }
+
+  // Zoom handler
+  const handleWheel = React.useCallback(
+    (e: React.WheelEvent<SVGSVGElement>) => {
+      e.preventDefault();
+      const svgRect = e.currentTarget.getBoundingClientRect();
+      const mouseX = e.clientX - svgRect.left - margin.left;
+      const fraction = Math.max(0, Math.min(1, mouseX / plotW));
+
+      const [curMin, curMax] = xDomain ?? [tMin, tMax];
+      const curRange = curMax - curMin;
+
+      // Zoom in (scroll up) or out (scroll down)
+      const zoomFactor = e.deltaY > 0 ? 1.25 : 0.8;
+      const newRange = Math.max(
+        fullRange * 0.001, // Don't zoom in beyond 0.1% of full range
+        Math.min(fullRange, curRange * zoomFactor)
+      );
+
+      // Center zoom on cursor position
+      const pivot = curMin + fraction * curRange;
+      let newMin = pivot - fraction * newRange;
+      let newMax = pivot + (1 - fraction) * newRange;
+
+      // Clamp to full domain
+      if (newMin < tMin) {
+        newMin = tMin;
+        newMax = tMin + newRange;
+      }
+      if (newMax > tMax) {
+        newMax = tMax;
+        newMin = tMax - newRange;
+      }
+      newMin = Math.max(tMin, newMin);
+      newMax = Math.min(tMax, newMax);
+
+      // If effectively full range, reset to null
+      if (newMax - newMin >= fullRange * 0.99) {
+        setXDomain(null);
+      } else {
+        setXDomain([newMin, newMax]);
+      }
+    },
+    [xDomain, tMin, tMax, fullRange, plotW, margin.left]
+  );
+
+  // Pan handlers
+  const handleMouseDown = React.useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (e.button !== 0) return;
+      const svgRect = e.currentTarget.getBoundingClientRect();
+      const mouseX = e.clientX - svgRect.left;
+      // Only start pan in the plot area
+      if (mouseX < margin.left || mouseX > margin.left + plotW) return;
+
+      isPanningRef.current = true;
+      panStartXRef.current = e.clientX;
+      panStartDomainRef.current = xDomain ?? [tMin, tMax];
+      e.currentTarget.style.cursor = "grabbing";
+    },
+    [xDomain, tMin, tMax, margin.left, plotW]
+  );
+
+  const handleMouseMove = React.useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!isPanningRef.current) return;
+      const dx = e.clientX - panStartXRef.current;
+      const [startMin, startMax] = panStartDomainRef.current;
+      const startRange = startMax - startMin;
+      const shift = -(dx / plotW) * startRange;
+
+      let newMin = startMin + shift;
+      let newMax = startMax + shift;
+
+      // Clamp
+      if (newMin < tMin) {
+        newMin = tMin;
+        newMax = tMin + startRange;
+      }
+      if (newMax > tMax) {
+        newMax = tMax;
+        newMin = tMax - startRange;
+      }
+
+      setXDomain([newMin, newMax]);
+    },
+    [tMin, tMax, plotW]
+  );
+
+  const handleMouseUp = React.useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (isPanningRef.current) {
+        isPanningRef.current = false;
+        e.currentTarget.style.cursor = "";
+      }
+    },
+    []
+  );
+
+  const handleMouseLeave = React.useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (isPanningRef.current) {
+        isPanningRef.current = false;
+        e.currentTarget.style.cursor = "";
+      }
+    },
+    []
+  );
 
   return (
     <div
       ref={containerRef}
-      className="h-full w-full outline-none"
+      className="h-full w-full outline-none relative"
       style={{ height }}
       onDoubleClick={() => clearSelection()}
       onClick={(e) => e.stopPropagation()}
     >
-      <svg width={dims.w} height={dims.h}>
+      {/* Reset zoom button */}
+      {isZoomed && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setXDomain(null);
+          }}
+          style={{
+            position: "absolute",
+            top: 4,
+            right: 8,
+            zIndex: 10,
+            padding: "2px 8px",
+            fontSize: 10,
+            borderRadius: 4,
+            border: "1px solid #d1d5db",
+            background: "#f9fafb",
+            color: "#374151",
+            cursor: "pointer",
+            lineHeight: "16px",
+          }}
+        >
+          Reset zoom
+        </button>
+      )}
+
+      <svg
+        width={dims.w}
+        height={dims.h}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        style={{ cursor: isZoomed ? "grab" : undefined }}
+      >
+        {/* Clip path for plot area */}
+        <defs>
+          <clipPath id={`rangebar-clip-${view.id}`}>
+            <rect x={margin.left} y={margin.top} width={plotW} height={plotH} />
+          </clipPath>
+        </defs>
+
         {/* Grid lines */}
-        {xTicks.map((tick) => (
-          <line
-            key={tick}
-            x1={margin.left + xScale(tick)}
-            y1={margin.top}
-            x2={margin.left + xScale(tick)}
-            y2={margin.top + plotH}
-            stroke="#e5e7eb"
-            strokeOpacity={0.4}
-          />
-        ))}
+        {xTicks.map((tick) => {
+          const tx = margin.left + xScale(tick);
+          return (
+            <line
+              key={tick}
+              x1={tx}
+              y1={margin.top}
+              x2={tx}
+              y2={margin.top + plotH}
+              stroke="#e5e7eb"
+              strokeOpacity={0.4}
+            />
+          );
+        })}
 
         {/* X axis tick labels */}
         {xTicks.map((tick) => {
           const tx = margin.left + xScale(tick);
-          const ty = margin.top + plotH + 14;
+          const ty = margin.top + plotH + 16;
           return (
             <text
               key={`lbl-${tick}`}
@@ -1579,102 +1764,114 @@ function RangeBarRenderer({
               textAnchor="end"
               fontSize={10}
               fill="#6b7280"
-              transform={`rotate(-45, ${tx}, ${ty})`}
+              transform={`rotate(-35, ${tx}, ${ty})`}
             >
-              {new Date(tick).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+              {formatTickLabel(tick, msPerPx)}
             </text>
           );
         })}
 
-        {/* Stage swim lanes */}
+        {/* Stage swim lanes — clipped to plot area */}
+        <g clipPath={`url(#rangebar-clip-${view.id})`}>
+          {groups.map((group, gi) => {
+            const laneY = margin.top + gi * rowH;
+
+            // Sample deals if there are too many
+            const sample =
+              group.deals.length > maxBarsPerRow
+                ? group.deals.filter(
+                    (_, i) =>
+                      i %
+                        Math.ceil(group.deals.length / maxBarsPerRow) ===
+                      0
+                  ).slice(0, maxBarsPerRow)
+                : group.deals;
+
+            const barH = Math.max(
+              5,
+              Math.min(18, (rowH - 6) / Math.max(1, sample.length))
+            );
+            const gap = Math.max(
+              1,
+              Math.min(2, (rowH - 6 - sample.length * barH) / Math.max(1, sample.length))
+            );
+
+            return (
+              <g key={group.name}>
+                {/* Row separator */}
+                {gi > 0 && (
+                  <line
+                    x1={margin.left}
+                    y1={laneY}
+                    x2={margin.left + plotW}
+                    y2={laneY}
+                    stroke="#e5e7eb"
+                    strokeOpacity={0.3}
+                  />
+                )}
+
+                {/* Individual deal bars */}
+                {sample.map((deal, di) => {
+                  // Skip bars entirely outside visible domain
+                  if (deal.end < visMin || deal.start > visMax) return null;
+
+                  const x = margin.left + xScale(deal.start);
+                  const w = Math.max(2, xScale(deal.end) - xScale(deal.start));
+                  const y = laneY + 3 + di * (barH + gap);
+                  const durationDays = Math.round(
+                    (deal.end - deal.start) / (1000 * 60 * 60 * 24)
+                  );
+
+                  return (
+                    <rect
+                      key={di}
+                      x={x}
+                      y={y}
+                      width={w}
+                      height={barH}
+                      rx={2}
+                      fill={colorMap[group.name]}
+                      opacity={
+                        !hasSelection || deal.highlighted ? 0.85 : 0.15
+                      }
+                      style={{ cursor: "pointer" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (e.ctrlKey || e.metaKey) {
+                          addToSelection(view.yColumn, group.name);
+                        } else {
+                          replaceSelection(view.yColumn, group.name);
+                        }
+                      }}
+                    >
+                      <title>
+                        {`${group.name}: ${new Date(deal.start).toLocaleDateString()} → ${new Date(deal.end).toLocaleDateString()} (${durationDays}d)`}
+                      </title>
+                    </rect>
+                  );
+                })}
+              </g>
+            );
+          })}
+        </g>
+
+        {/* Category labels — outside clip path so they're always visible */}
         {groups.map((group, gi) => {
           const laneY = margin.top + gi * rowH;
-
-          // Sample deals if there are too many
-          const sample =
-            group.deals.length > maxBarsPerRow
-              ? group.deals.filter(
-                  (_, i) =>
-                    i %
-                      Math.ceil(group.deals.length / maxBarsPerRow) ===
-                    0
-                ).slice(0, maxBarsPerRow)
-              : group.deals;
-
-          const barH = Math.max(
-            2,
-            Math.min(6, (rowH - 4) / Math.max(1, sample.length))
-          );
-          const gap = Math.max(
-            0.5,
-            Math.min(1, (rowH - 4 - sample.length * barH) / Math.max(1, sample.length))
-          );
-
           return (
-            <g key={group.name}>
-              {/* Row separator */}
-              {gi > 0 && (
-                <line
-                  x1={margin.left}
-                  y1={laneY}
-                  x2={margin.left + plotW}
-                  y2={laneY}
-                  stroke="#e5e7eb"
-                  strokeOpacity={0.3}
-                />
-              )}
-
-              {/* Category label */}
-              <text
-                x={margin.left - 8}
-                y={laneY + rowH / 2}
-                textAnchor="end"
-                dominantBaseline="middle"
-                fontSize={11}
-                fill="#374151"
-              >
-                {group.name.length > 12
-                  ? group.name.slice(0, 12) + "\u2026"
-                  : group.name}
-              </text>
-
-              {/* Individual deal bars */}
-              {sample.map((deal, di) => {
-                const x = margin.left + xScale(deal.start);
-                const w = Math.max(2, xScale(deal.end) - xScale(deal.start));
-                const y = laneY + 2 + di * (barH + gap);
-                const durationDays = Math.round(
-                  (deal.end - deal.start) / (1000 * 60 * 60 * 24)
-                );
-
-                return (
-                  <rect
-                    key={di}
-                    x={x}
-                    y={y}
-                    width={w}
-                    height={barH}
-                    rx={1}
-                    fill={colorMap[group.name]}
-                    opacity={
-                      !hasSelection || deal.highlighted ? 0.85 : 0.15
-                    }
-                    style={{ cursor: "pointer" }}
-                    onClick={(e) => {
-                      if (e.ctrlKey || e.metaKey) {
-                        addToSelection(view.yColumn, group.name);
-                      } else {
-                        replaceSelection(view.yColumn, group.name);
-                      }
-                    }}
-                  >
-                    <title>
-                      {`${group.name}: ${new Date(deal.start).toLocaleDateString()} → ${new Date(deal.end).toLocaleDateString()} (${durationDays}d)`}
-                    </title>
-                  </rect>
-                );
-              })}
-            </g>
+            <text
+              key={`cat-${group.name}`}
+              x={margin.left - 8}
+              y={laneY + rowH / 2}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fontSize={11}
+              fill="#374151"
+            >
+              {group.name.length > 14
+                ? group.name.slice(0, 14) + "\u2026"
+                : group.name}
+            </text>
           );
         })}
       </svg>
