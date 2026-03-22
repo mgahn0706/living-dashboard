@@ -470,32 +470,7 @@ function ViewCard({
               <div className="min-w-0 flex flex-1 flex-col gap-1">
                 <CardTitle className="min-w-0 flex flex-wrap items-center gap-1 text-sm">
                   {view.title || view.id}
-              <div className="min-w-0 flex flex-1 flex-col gap-1">
-                <CardTitle className="min-w-0 flex flex-wrap items-center gap-1 text-sm">
-                  {view.title || view.id}
 
-                  {isEditing && (
-                    <span className="text-[10px] text-primary font-medium">
-                      (Editing)
-                    </span>
-                  )}
-
-                  {showFocusScore && typeof focusScoreValue === "number" && (
-                    <span className="rounded-full border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      Focus {Math.round(focusScoreValue)}
-                    </span>
-                  )}
-                </CardTitle>
-
-                {shouldShowFocusAnnotation && (
-                  <div className="flex items-start gap-1.5 rounded-md border border-amber-300/60 bg-amber-50 px-2 py-1 text-[10px] leading-snug text-amber-900">
-                    <IconInfoCircle className="mt-0.5 size-3 shrink-0 text-amber-700" />
-                    <CardDescription className="text-[10px] leading-snug text-amber-900">
-                      {focusExplanation}
-                    </CardDescription>
-                  </div>
-                )}
-              </div>
                   {isEditing && (
                     <span className="text-[10px] text-primary font-medium">
                       (Editing)
@@ -835,11 +810,7 @@ export default React.memo(ViewCard, (prev, next) => {
     isSameFocusInfo &&
     prev.isFocusEngaged === next.isFocusEngaged &&
     prev.widthPercent === next.widthPercent &&
-    isSameFocusInfo &&
-    prev.isFocusEngaged === next.isFocusEngaged &&
-    prev.widthPercent === next.widthPercent &&
     prev.heightPx === next.heightPx &&
-    prev.slotHeightPx === next.slotHeightPx &&
     prev.slotHeightPx === next.slotHeightPx &&
     prev.decayMode === next.decayMode &&
     prev.isSelected === next.isSelected &&
