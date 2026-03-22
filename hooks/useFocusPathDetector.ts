@@ -476,6 +476,23 @@ export function useFocusPathDetector(
     [configuration]
   );
 
+  /* =======================================================
+     Boost view estimates (sync internal tracker with external score boost)
+  ======================================================= */
+
+  const boostViewEstimates = useCallback(
+    (viewIds: string[]) => {
+      const initial = Math.max(
+        configuration.minimumFocusScore,
+        configuration.initialFocusScore
+      );
+      for (const id of viewIds) {
+        focusEstimateRef.current[id] = initial;
+      }
+    },
+    [configuration]
+  );
+
   return {
     handlePointerMove,
     handlePointerEnter,
@@ -483,6 +500,7 @@ export function useFocusPathDetector(
     setViewEngaged,
     handleClick,
     registerViewIds,
+    boostViewEstimates,
   };
 }
 

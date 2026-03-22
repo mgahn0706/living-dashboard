@@ -733,12 +733,13 @@ function AppContent() {
     Record<string, string>
   >({});
   const restoredFromStorageRef = useRef(false);
+  const aiBoostedViewIdsRef = useRef<Set<string>>(new Set());
   const { systemMode, setSystemMode } = useSystemMode();
   const isLivingFeaturesEnabled = systemMode !== "B";
   const areRecommendationsEnabled = systemMode !== "B";
 
   const { clearSelection, hasSelection } = useSelection();
-  const { focusScore, restoreFocusScore } = useFocus();
+  const { focusScore, restoreFocusScore, boostFocusForViews, disengageViews } = useFocus();
   const {
     schema,
     attributeKeys,
@@ -823,7 +824,12 @@ function AppContent() {
     clearRecommendations();
     setHoveredRec(null);
     setShownRecIds(new Set());
-  }, [clearRecommendations, isLivingFeaturesEnabled]);
+    // Disengage any AI-boosted views when living features are disabled
+    if (aiBoostedViewIdsRef.current.size > 0) {
+      disengageViews([...aiBoostedViewIdsRef.current]);
+      aiBoostedViewIdsRef.current = new Set();
+    }
+  }, [clearRecommendations, disengageViews, isLivingFeaturesEnabled]);
 
   /* ================= Voice ================= */
 
@@ -1109,6 +1115,47 @@ function AppContent() {
       acceptRecommendation(r);
     }
   }, [activeRecommendations, acceptRecommendation]);
+
+  // Boost focus for views referenced by AI recommendations (restore visibility + pause decay)
+  useEffect(() => {
+    if (!isLivingFeaturesEnabled) return;
+
+    // Collect targetViewIds from recommendations that reference existing views
+    const currentTargetIds = new Set<string>();
+    for (const r of activeRecommendations) {
+      if (r.type === "NEW_CONTENT") continue;
+      const targetId = getRecommendationTargetViewId(r);
+      if (targetId && views.some((v) => v.id === targetId)) {
+        currentTargetIds.add(targetId);
+      }
+    }
+
+    const prevBoosted = aiBoostedViewIdsRef.current;
+
+    // Disengage views that were previously boosted but are no longer targeted
+    const toDisengage: string[] = [];
+    for (const id of prevBoosted) {
+      if (!currentTargetIds.has(id)) {
+        toDisengage.push(id);
+      }
+    }
+    if (toDisengage.length > 0) {
+      disengageViews(toDisengage);
+    }
+
+    // Boost views that are newly targeted
+    const toBoost: string[] = [];
+    for (const id of currentTargetIds) {
+      if (!prevBoosted.has(id)) {
+        toBoost.push(id);
+      }
+    }
+    if (toBoost.length > 0) {
+      boostFocusForViews(toBoost);
+    }
+
+    aiBoostedViewIdsRef.current = currentTargetIds;
+  }, [activeRecommendations, views, isLivingFeaturesEnabled, boostFocusForViews, disengageViews]);
 
   // Clear "click" pulse highlights when the user makes a selection (cross-filter)
   useEffect(() => {
