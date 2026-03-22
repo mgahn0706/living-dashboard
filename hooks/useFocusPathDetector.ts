@@ -487,7 +487,8 @@ export function useFocusPathDetector(
         configuration.initialFocusScore
       );
       for (const id of viewIds) {
-        focusEstimateRef.current[id] = initial;
+        const current = focusEstimateRef.current[id] ?? initial;
+        focusEstimateRef.current[id] = Math.round(current + (initial - current) / 3);
       }
     },
     [configuration]

@@ -197,8 +197,9 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
       const next = { ...prev };
       let changed = false;
       for (const id of viewIds) {
-        if (next[id] !== INITIAL_FOCUS_SCORE) {
-          next[id] = INITIAL_FOCUS_SCORE;
+        const current = next[id] ?? INITIAL_FOCUS_SCORE;
+        if (current < INITIAL_FOCUS_SCORE) {
+          next[id] = Math.round(current + (INITIAL_FOCUS_SCORE - current) / 3);
           changed = true;
         }
       }
