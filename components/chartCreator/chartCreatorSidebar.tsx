@@ -290,6 +290,7 @@ function ChartConfigPanel({
   const [xAttr, setXAttr] = useState<string | null>(null);
   const [yAttr, setYAttr] = useState<string | null>(null);
   const [x2Attr, setX2Attr] = useState<string | null>(null);
+  const [groupByAttr, setGroupByAttr] = useState<string | null>(null);
   const [tableAttrs, setTableAttrs] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [size, setSize] = useState<"sm" | "md" | "lg" | "xl">("md");
@@ -316,18 +317,37 @@ function ChartConfigPanel({
       setXAttr(selectedView.xColumn ?? null);
       setYAttr(selectedView.yColumn ?? null);
       setX2Attr(selectedView.x2Column ?? null);
+      setGroupByAttr(selectedView.groupByColumn ?? null);
     } else {
       setXAttr(null);
       setYAttr(null);
       setX2Attr(null);
+      setGroupByAttr(null);
     }
   }, [isEditMode, selectedView, chartType]);
+
+  const needsGroupBy = chartType === "STACKED_BAR" || chartType === "GROUPED_BAR";
 
   const canApply =
     chartType === "TABLE"
       ? tableAttrs.length > 0
       : chartType === "RANGE_BAR"
       ? !!xAttr && !!yAttr && !!x2Attr
+      : needsGroupBy
+      ? !!groupByAttr && isSelectionCompatible(chartType, xAttr, yAttr, (attr) => {
+          if (attributeTypes[attr] === "number") return true;
+          const values = resolveAttribute(attr);
+          if (!Array.isArray(values) || values.length === 0) return false;
+          const filtered = values.filter((v) => v !== null && v !== undefined && v !== "");
+          if (filtered.length === 0) return false;
+          const numericCount = filtered.filter((v) => {
+            if (typeof v === "number") return !Number.isNaN(v);
+            if (typeof v !== "string") return false;
+            const cleaned = v.replace(/,/g, "").trim();
+            return cleaned !== "" && !Number.isNaN(Number(cleaned));
+          }).length;
+          return numericCount / filtered.length >= 0.7;
+        })
       : isSelectionCompatible(chartType, xAttr, yAttr, (attr) => {
           if (attributeTypes[attr] === "number") return true;
           const values = resolveAttribute(attr);
@@ -442,6 +462,21 @@ function ChartConfigPanel({
             </select>
           )}
 
+          {(chartType === "STACKED_BAR" || chartType === "GROUPED_BAR") && (
+            <select
+              className="w-full rounded-md border px-2 py-1"
+              value={groupByAttr ?? ""}
+              onChange={(e) => setGroupByAttr(e.target.value || null)}
+            >
+              <option value="">Select Group By</option>
+              {attributeKeys.map((k) => (
+                <option key={k} value={k}>
+                  {k} ({attributeTypes[k]})
+                </option>
+              ))}
+            </select>
+          )}
+
           {chartType === "PIE" && (
             <div className="text-[11px] text-muted-foreground">
               Pick a categorical column for Category and a numeric column for
@@ -449,7 +484,12 @@ function ChartConfigPanel({
             </div>
           )}
 
-          {!canApply && xAttr && yAttr && (
+          {!canApply && xAttr && yAttr && needsGroupBy && !groupByAttr && (
+            <div className="text-[11px] text-destructive">
+              Please select a Group By column for {chartType}.
+            </div>
+          )}
+          {!canApply && xAttr && yAttr && (!needsGroupBy || groupByAttr) && (
             <div className="text-[11px] text-destructive">
               Selected attributes are incompatible with {chartType}.
             </div>
@@ -498,6 +538,9 @@ function ChartConfigPanel({
                     ...(chartType === "RANGE_BAR" && x2Attr
                       ? { x2Column: x2Attr }
                       : {}),
+                    ...((chartType === "STACKED_BAR" || chartType === "GROUPED_BAR") && groupByAttr
+                      ? { groupByColumn: groupByAttr }
+                      : {}),
                   };
 
             onEditView(selectedView.id, nextView);
@@ -517,6 +560,9 @@ function ChartConfigPanel({
                   ...(chartType === "RANGE_BAR" && x2Attr
                     ? { x2Column: x2Attr }
                     : {}),
+                  ...((chartType === "STACKED_BAR" || chartType === "GROUPED_BAR") && groupByAttr
+                    ? { groupByColumn: groupByAttr }
+                    : {}),
                 };
 
           onAddView(payload);
@@ -524,6 +570,7 @@ function ChartConfigPanel({
           setXAttr(null);
           setYAttr(null);
           setX2Attr(null);
+          setGroupByAttr(null);
           setTableAttrs([]);
         }}
       >
