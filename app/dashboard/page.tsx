@@ -7,6 +7,7 @@ import React, {
   useEffect,
   useRef,
 } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { useRecommendation, type LlmReply } from "@/hooks/useRecommendation";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
@@ -710,6 +711,8 @@ function getDemoViews(): View[] {
 ===================================================== */
 
 function AppContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [views, setViews] = useState<View[]>([]);
   const [acceptedRecommendationIds, setAcceptedRecommendationIds] = useState<
     string[]
@@ -733,6 +736,7 @@ function AppContent() {
     Record<string, string>
   >({});
   const restoredFromStorageRef = useRef(false);
+  const hasAutoLoadedDemoRef = useRef(false);
   const aiBoostedViewIdsRef = useRef<Set<string>>(new Set());
   const { systemMode, setSystemMode } = useSystemMode();
   const isLivingFeaturesEnabled = systemMode !== "B";
@@ -1463,7 +1467,7 @@ function AppContent() {
     acceptRecommendation(r);
   };
 
-  const handleLoadDemo = async () => {
+  const handleLoadDemo = useCallback(async () => {
     try {
       setIsInitializing(true);
       await loadDemoDataset();
@@ -1476,7 +1480,28 @@ function AppContent() {
     } finally {
       setIsInitializing(false);
     }
-  };
+  }, [addCategoryFilter, loadDemoDataset]);
+
+  useEffect(() => {
+    const shouldAutoLoadDemo = searchParams.get("demo") === "1";
+    if (!shouldAutoLoadDemo || hasAutoLoadedDemoRef.current) return;
+    if (rawData || views.length > 0 || isInitializing) return;
+
+    hasAutoLoadedDemoRef.current = true;
+    setSystemMode("A");
+
+    void handleLoadDemo().finally(() => {
+      router.replace("/dashboard");
+    });
+  }, [
+    handleLoadDemo,
+    isInitializing,
+    rawData,
+    router,
+    searchParams,
+    setSystemMode,
+    views.length,
+  ]);
 
   const initializeDashboard = async () => {
     try {
