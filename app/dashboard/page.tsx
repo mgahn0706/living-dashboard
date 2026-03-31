@@ -1,6 +1,7 @@
 "use client";
 
 import React, {
+  Suspense,
   useCallback,
   useMemo,
   useState,
@@ -2095,7 +2096,9 @@ export default function Page() {
           <DatasetProvider>
             <TimeFilterProvider>
               <CategoryFilterProvider>
-                <AppContent />
+                <Suspense fallback={null}>
+                  <AppContent />
+                </Suspense>
               </CategoryFilterProvider>
             </TimeFilterProvider>
           </DatasetProvider>
