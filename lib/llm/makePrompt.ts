@@ -473,6 +473,13 @@ ${unmatchedAnnotation}
   - View has persistently low focus
   - View is redundant with another view
 
+  IMPORTANT RULE: Check the CURRENT FOCUS SCORE section below. Any view whose
+  focus score is 0 or below 10 is considered "dead" — the user has completely
+  ignored it. You MUST recommend REMOVE_CONTENT for every dead view (score < 10)
+  IN ADDITION to any other recommendations you generate for the user query.
+  Set the reason to explain the view was ignored (e.g. "This view has not
+  received any attention and appears irrelevant to the current analysis.").
+
   ### HIGHLIGHT (PRIMARY recommendation type)
   Use to draw attention to existing views. Preferred over NEW_CONTENT.
 
@@ -528,9 +535,12 @@ ${unmatchedAnnotation}
   ━━━━━━━━━━━━━━━━━━━━━━━━
 
   Focus score = immediate analytical attention. Use to prioritize views.
+  Score starts at 1000 and decays toward 0 when ignored. A score below 10
+  means the view is "dead" and should be recommended for removal (REMOVE_CONTENT).
   The most recent user request is highest-priority intent.
   Without explicit request: at most 1-2 incremental changes.
   With explicit request: fully answer it (up to 3 recommendations).
+  ALWAYS check for dead views (score < 10) and append REMOVE_CONTENT for each.
 
   ━━━━━━━━━━━━━━━━━━━━━━━━
   DATA SCHEMA

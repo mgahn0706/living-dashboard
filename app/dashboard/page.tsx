@@ -500,82 +500,7 @@ function buildFallbackTableView(
 ===================================================== */
 
 function getDemoViews(): View[] {
-  return [
-    // KPI 1: Total Revenue Won
-    {
-      id: "demo_kpi_revenue",
-      chartType: "KPI",
-      xColumn: "",
-      yColumn: "Revenue",
-      size: "sm",
-      priority: 100,
-      title: "Total Revenue Won",
-      aggregation: "sum",
-      yLabel: "$",
-      filter: {
-        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
-      },
-    },
-    // KPI 2: Total Units Sold
-    {
-      id: "demo_kpi_units",
-      chartType: "KPI",
-      xColumn: "",
-      yColumn: "Units",
-      size: "sm",
-      priority: 99,
-      title: "Total Units Sold",
-      aggregation: "sum",
-      filter: {
-        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
-      },
-    },
-    // KPI 3: Total Won Deals
-    {
-      id: "demo_kpi_winrate",
-      chartType: "KPI",
-      xColumn: "",
-      yColumn: "Revenue",
-      size: "sm",
-      priority: 98,
-      title: "Total Won Deals",
-      aggregation: "count",
-      filter: {
-        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
-      },
-    },
-    // KPI 4: Avg Deal Size
-    {
-      id: "demo_kpi_avgdeal",
-      chartType: "KPI",
-      xColumn: "",
-      yColumn: "Revenue",
-      size: "sm",
-      priority: 97,
-      title: "Avg Deal Size",
-      aggregation: "avg",
-      yLabel: "$",
-      filter: {
-        includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
-      },
-    },
-    // KPI 5: Total Lost Deals
-  
-    // KPI 6: Total Revenue Lost
-    {
-      id: "demo_kpi_revlost",
-      chartType: "KPI",
-      xColumn: "",
-      yColumn: "Revenue",
-      size: "sm",
-      priority: 97,
-      title: "Total Revenue Lost",
-      aggregation: "sum",
-      yLabel: "$",
-      filter: {
-        includeByColumn: [{ column: "Status", includeValues: ["Lost"] }],
-      },
-    },
+  return [   
     // Funnel Chart — Revenue by Stage
     {
       id: "demo_funnel",
@@ -587,28 +512,6 @@ function getDemoViews(): View[] {
       title: "Revenue by Stage",
       aggregation: "sum",
     },
-    // Stacked Bar — Sum of Units by Stage, split by Won/Lost
-    {
-      id: "demo_stacked_units",
-      chartType: "STACKED_BAR",
-      xColumn: "Stage",
-      yColumn: "Units",
-      groupByColumn: "Status",
-      size: "md",
-      priority: 95,
-      title: "Units by Stage (Won/Lost)",
-    },
-    // Revenue by Territory — Clustered bar chart
-    {
-      id: "demo_rev_territory",
-      chartType: "GROUPED_BAR",
-      xColumn: "Territory",
-      yColumn: "Revenue",
-      groupByColumn: "Status",
-      size: "md",
-      priority: 94,
-      title: "Revenue by Territory",
-    },
     // Revenue by Country — Bubble map
     {
       id: "demo_map_country",
@@ -619,41 +522,6 @@ function getDemoViews(): View[] {
       size: "xl",
       priority: 93,
       title: "Revenue by Country",
-    },
-    // Revenue by Segment — Stacked bar
-    {
-      id: "demo_rev_segment",
-      chartType: "STACKED_BAR",
-      xColumn: "Segment",
-      yColumn: "Revenue",
-      groupByColumn: "Status",
-      size: "md",
-      priority: 92,
-      title: "Revenue by Segment",
-    },
-    // Won vs Lost by Industry — Stacked bar chart
-    {
-      id: "demo_wr_industry",
-      chartType: "STACKED_BAR",
-      xColumn: "Industry",
-      yColumn: "Revenue",
-      groupByColumn: "Status",
-      aggregation: "count",
-      size: "md",
-      priority: 91,
-      title: "Won vs Lost by Industry",
-    },
-    // Won vs Lost by Experience Level — Grouped bar
-    {
-      id: "demo_wr_experience",
-      chartType: "GROUPED_BAR",
-      xColumn: "Experience Level",
-      yColumn: "Revenue",
-      groupByColumn: "Status",
-      aggregation: "count",
-      size: "md",
-      priority: 89,
-      title: "Won vs Lost by Experience Level",
     },
     // Revenue Trend Over Time — Line chart by CloseDate (Won deals only)
     {
@@ -667,16 +535,6 @@ function getDemoViews(): View[] {
       filter: {
         includeByColumn: [{ column: "Status", includeValues: ["Won"] }],
       },
-    },
-    // Revenue by Market Maturity — Column chart
-    {
-      id: "demo_rev_maturity",
-      chartType: "BAR",
-      xColumn: "Market Maturity",
-      yColumn: "Revenue",
-      size: "md",
-      priority: 85,
-      title: "Revenue by Market Maturity",
     },
     // Products by Revenue — Horizontal bar with drill-down by category (Won deals only)
     {

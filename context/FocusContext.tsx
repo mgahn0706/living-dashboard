@@ -121,6 +121,11 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
       pendingDeltaRef.current[viewId] =
         (pendingDeltaRef.current[viewId] ?? 0) + delta;
       scheduleFocusFlush();
+    },
+    {
+      // DEMO: fast decay so views "die" quickly when ignored
+      focusHalfLifeSeconds: 45,
+      idleDecayGracePeriodMilliseconds: 1_000,
     }
   );
 

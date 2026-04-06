@@ -21,7 +21,7 @@ const MIN_VISIBLE_FOCUS_INTENSITY = 0.25;
    Heights kept compact for a commercial dashboard feel. */
 const CHART_BASIS = { min: 16, max: 32 };
 const CHART_HEIGHT = { min: 100, max: 260 };
-const RANGE_BAR_HEIGHT = { min: 160, max: 400 };
+const RANGE_BAR_HEIGHT = { min: 100, max: 260 };
 const KPI_BASIS = { min: 8, max: 11.5 };
 const KPI_HEIGHT = { min: 56, max: 100 };
 const VISUAL_FOCUS_STEPS = 10;
