@@ -628,6 +628,7 @@ function AppContent() {
     recommendations,
     llmReplies,
     acceptRecommendation,
+    injectRecommendations,
     isLoading,
     streamingText,
     triggerRecommendation,
@@ -1019,6 +1020,38 @@ function AppContent() {
 
     aiBoostedViewIdsRef.current = currentTargetIds;
   }, [activeRecommendations, views, isLivingFeaturesEnabled, boostFocusForViews, disengageViews]);
+
+  // Auto-suggest removal for views whose focus score has dropped to zero.
+  // This fires without requiring user prompting — the system detects dead views
+  // and injects REMOVE_CONTENT recommendations automatically.
+  const autoRemovalSuggestedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!isLivingFeaturesEnabled) return;
+
+    const toSuggest: Recommendation[] = [];
+    for (const view of views) {
+      const score = focusScore[view.id];
+      // Only trigger when score is exactly 0 (fully decayed)
+      if (score !== 0) continue;
+      // Skip if we already auto-suggested removal for this view
+      if (autoRemovalSuggestedRef.current.has(view.id)) continue;
+
+      autoRemovalSuggestedRef.current.add(view.id);
+      toSuggest.push({
+        id: `auto_remove_${view.id}_${Date.now()}`,
+        title: `Remove "${view.title || view.id}"`,
+        type: "REMOVE_CONTENT",
+        targetViewId: view.id,
+        payload: {} as any,
+        reason:
+          "This view has not received any attention and appears irrelevant to the current analysis.",
+      });
+    }
+
+    if (toSuggest.length > 0) {
+      injectRecommendations(toSuggest);
+    }
+  }, [focusScore, views, isLivingFeaturesEnabled, injectRecommendations]);
 
   // Clear "click" pulse highlights when the user makes a selection (cross-filter)
   useEffect(() => {

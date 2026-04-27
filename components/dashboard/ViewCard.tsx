@@ -876,6 +876,19 @@ function RecommendationBanner({
             Apply
           </button>
         )}
+        {recommendation.type === "REMOVE_CONTENT" && (
+          <button
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ backgroundColor: "#ef4444" }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAccept?.(recommendation);
+            }}
+          >
+            <IconCheck className="size-3" />
+            Remove
+          </button>
+        )}
         <button
           className="rounded p-0.5 text-muted-foreground hover:text-destructive transition-colors"
           onClick={(e) => {

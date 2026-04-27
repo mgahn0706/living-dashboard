@@ -366,11 +366,29 @@ export function useRecommendation() {
     setIsLoading(false);
   }, []);
 
+  /** Inject recommendations directly (e.g. auto-generated removal suggestions)
+   *  without triggering an LLM call. Skips already-dismissed recs. */
+  const injectRecommendations = useCallback(
+    (newRecs: Recommendation[]) => {
+      setRecs((prev) => {
+        const existingIds = new Set(prev.map((r) => r.id));
+        const toAdd = newRecs.filter(
+          (r) =>
+            !existingIds.has(r.id) && !dismissedKeys.has(getRecommendationKey(r))
+        );
+        if (toAdd.length === 0) return prev;
+        return [...prev, ...toAdd];
+      });
+    },
+    [dismissedKeys]
+  );
+
   return {
     recommendations: recs,
     llmReplies,
     triggerRecommendation, // ✅ mutateAsync equivalent
     acceptRecommendation,
+    injectRecommendations,
     isLoading,
     streamingText,
     restoreHistory,
